@@ -129,6 +129,29 @@ describe('WindowsServiceHelper', () => {
       );
     });
 
+    it('install 脚本修复属主被改的支持目录：先 takeown /A，授权仍失败则挪开旧目录、新建后再授权', () => {
+      const script = helper.buildInstallScript(
+        'C:\\Program Files\\FlowZ\\com.flowz.helper.exe',
+        'C:\\Program Files\\FlowZ\\sing-box.exe',
+        'C:\\Users\\Ярослав\\AppData\\Roaming\\flowz',
+        'deadbeefdeadbeef'
+      );
+      const takeown = `& '${system32('takeown.exe')}' /F $support /A | Out-Null`;
+      const grant = `& '${system32('icacls.exe')}' $support /grant:r "*S-1-5-18:(OI)(CI)(F)" "*S-1-5-32-544:(OI)(CI)(F)"`;
+      const move = '[System.IO.Directory]::Move($support, $broken)';
+      expect(script).toContain(takeown);
+      // 不带 /R：递归时的确认提示 /D 选项随系统语言本地化（ru 为 Д），会在隐藏窗口里卡住。
+      expect(script).not.toMatch(/takeown\.exe' [^\n]*\/R/);
+      expect(script.indexOf(takeown)).toBeLessThan(script.indexOf(grant));
+      expect(script).toContain('$grantCode = $LASTEXITCODE');
+      expect(script).toContain(move);
+      // 挪开后在新目录上重新授权，且这次必须检查退出码；然后才去继承。
+      const afterMove = script.slice(script.indexOf(move));
+      expect(afterMove.indexOf(grant)).toBeGreaterThan(-1);
+      expect(afterMove.indexOf(grant)).toBeLessThan(afterMove.indexOf('/inheritance:r'));
+      expect(script).toContain('旧目录也无法挪开');
+    });
+
     it('install 脚本自愈旧版留下的空 DACL helper 副本（先补授权、再删、再拷，报错带真实原因）', () => {
       const script = helper.buildInstallScript(
         'C:\\Program Files\\FlowZ\\com.flowz.helper.exe',

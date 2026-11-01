@@ -456,6 +456,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     const binPath = `"${helperDst}" --singbox "${singboxPath}" --confdir "${confDir}" --support "${SUPPORT_DIR}"`;
     const tokenFile = path.join(SUPPORT_DIR, 'helper.token');
     const icacls = system32('icacls.exe');
+    const takeown = system32('takeown.exe');
     // icacls 是外部命令：非零退出不受 $ErrorActionPreference=Stop 约束 → 显式查 $LASTEXITCODE 并 throw，
     // 否则授权失败被静默吞掉、直到后续 Set-Content 才以「拒绝访问」这种远离根因的报错暴露。
     const icaclsCheck = (what: string): string =>
@@ -474,9 +475,23 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       // 下传 → 目录内 token/exe **出生即** SYSTEM/Admin 私有（Users 无任何访问：既不能替换 exe，也读不到 token，
       // 无「写后到设 ACL 之间 token 短暂可读」的竞态窗口）。对齐 macOS helper 落在 root-only 写的受保护目录。
       // 顺序：**先授权、后去继承**——授权失败时目录仍保留继承 ACE（可用、可重试），而不是被清成空 DACL 锁死。
-      // 已被旧版锁死（空 DACL）的目录也能自愈：属主（Admin）隐含 WRITE_DAC，授权可直接补回 SYSTEM/Admin。
+      // 已被旧版锁死（空 DACL）的目录也能自愈：属主隐含 WRITE_DAC，授权可直接补回 SYSTEM/Admin。
+      // 属主可能已不是 Admin（真机：用户在资源管理器里改过属主/权限后，提权 icacls 仍退出码 5）→ 先 takeown /A 以
+      // SeTakeOwnershipPrivilege 把属主夺回 Administrators（特权路径，不看 DACL；不带 /R，免本地化的 /D 确认提示）。
+      `& '${takeown}' /F $support /A | Out-Null`,
       `& '${icacls}' $support /grant:r "${SID_SYSTEM}:(OI)(CI)(F)" "${SID_ADMINISTRATORS}:(OI)(CI)(F)" | Out-Null`,
-      icaclsCheck('授权 $support'),
+      // 仍授权失败（属主夺不回 / 子项传播被拒等）→ 把整个旧目录挪开、新建干净目录：重命名只需 ProgramData 上的
+      // FILE_DELETE_CHILD（Admin 默认完全控制），不依赖旧目录自身的 ACL/属主。旧目录内只有失效 token 与非服务的 exe，
+      // 且 Users 对其零访问，留作残骸无安全影响。
+      '$grantCode = $LASTEXITCODE',
+      'if ($grantCode -ne 0) {',
+      "  $broken = $support + '.broken-' + (Get-Date -Format 'yyyyMMddHHmmss')",
+      '  try { [System.IO.Directory]::Move($support, $broken) }',
+      '  catch { throw "icacls 授权 $support 失败（退出码 $grantCode），旧目录也无法挪开：$($_.Exception.Message)" }',
+      '  New-Item -ItemType Directory -Force -Path $support | Out-Null',
+      `  & '${icacls}' $support /grant:r "${SID_SYSTEM}:(OI)(CI)(F)" "${SID_ADMINISTRATORS}:(OI)(CI)(F)" | Out-Null`,
+      `  ${icaclsCheck('授权 $support')}`,
+      '}',
       `& '${icacls}' $support /inheritance:r | Out-Null`,
       icaclsCheck('去继承 $support'),
       // 先删任何残留旧 token 再写：重装/修复时旧 token 可能是「Admin 只读」（旧版 ACL）或部分失败安装的残留，
