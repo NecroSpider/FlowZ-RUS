@@ -8,6 +8,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fsSync from 'fs';
+import { createHash } from 'crypto';
 
 const TMP = fsSync.mkdtempSync(path.join(os.tmpdir(), 'flowz-deb-confirm-'));
 
@@ -89,6 +90,11 @@ describe('UpdateService deb 更新一次授权说明框', () => {
       fsSync.writeFileSync(deb, 'dummy');
       (dialog.showMessageBox as jest.Mock).mockResolvedValue({ response: 1 });
       const svc = new UpdateService(log);
+      // installUpdate 只执行已通过 sha256 校验的安装包：本用例关注确认框，直接登记为已校验。
+      (svc as unknown as { verifiedInstallers: Map<string, string> }).verifiedInstallers.set(
+        deb,
+        createHash('sha256').update('dummy').digest('hex')
+      );
       const cleanup = jest.fn(async () => {});
       svc.setCleanupCallback(cleanup);
 

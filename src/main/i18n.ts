@@ -772,6 +772,14 @@ const MESSAGES = {
     ru: 'Загруженный файл неполный. Повторите попытку.',
     fa: 'فایل دانلود‌شده ناقص است. لطفاً دوباره تلاش کنید.',
   },
+  updErrIntegrity: {
+    'zh-CN': '安装包校验失败（与官方发布不一致），已拒绝安装。请重试或从 GitHub 手动下载',
+    'zh-TW': '安裝包校驗失敗（與官方發布不一致），已拒絕安裝。請重試或從 GitHub 手動下載',
+    'en-US':
+      'The installer failed verification (does not match the official release) and was not installed. Retry or download it manually from GitHub.',
+    ru: 'Установщик не прошёл проверку (не совпадает с официальным релизом) и не был установлен. Повторите попытку или скачайте вручную с GitHub.',
+    fa: 'فایل نصب از بررسی صحت رد شد (با نسخهٔ رسمی مطابقت ندارد) و نصب نشد. دوباره تلاش کنید یا آن را دستی از GitHub دانلود کنید.',
+  },
   updErrServer: {
     'zh-CN': '下载服务器返回错误，请稍后重试',
     'zh-TW': '下載伺服器回傳錯誤，請稍後重試',

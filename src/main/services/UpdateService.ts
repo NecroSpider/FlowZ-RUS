@@ -6,7 +6,9 @@
 import { app, shell, BrowserWindow, dialog, net, type Session } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { LogManager } from './LogManager';
+import { normalizeAssetDigest } from './singbox-asset';
 import type {
   UpdateInfo,
   UpdateCheckResult,
@@ -41,6 +43,17 @@ import { GITHUB_OWNER, GITHUB_REPO } from '../../shared/repository';
 // 防永久挂起致更新永不 resolve（进度窗/对话框永久转圈）。正常下载持续有 data、不断重置、不会误触发。
 const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
 
+/** 流式 sha256（安装包 100MB+，不整读进内存）。 */
+function sha256OfFile(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256');
+    fs.createReadStream(filePath)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('error', reject)
+      .on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
 /**
  * 单次下载的取消 token（per-call，非实例共享）：弹窗流持有自己的 token，取消只作用于它；关于页手动下载
  * 不传 token（不可取消、天然隔离）。避免两流并发时共享实例态互相误取消 / 吞镜像重试。
@@ -74,6 +87,11 @@ export class UpdateService {
   };
   private skippedVersion: string | null = null;
   private cleanupCallback: (() => Promise<void>) | null = null;
+  // 安装包完整性锚：downloadUrl → sha256，仅取自 checkForUpdate 直连 api.github.com 的 asset.digest（主进程私有）。
+  // 不信任渲染端经 IPC 回传的 UpdateInfo：只有本会话 API 列出的资产才能通过下载校验。
+  private assetSha256ByUrl = new Map<string, string>();
+  // 已通过校验的安装包：filePath → sha256。installUpdate 只执行此表内文件，且执行前重算摘要（防下载后被替换）。
+  private verifiedInstallers = new Map<string, string>();
   // #60：注入配置读取器（仅用于读 ghProxyPrefix 下载镜像前缀），构造后注入。未配置→null（直连，旧行为）。
   // 与 CoreUpdateService.configProvider / CoreDownloader 同口径——App 自更新与内核/资源下载共用同一 gh 加速前缀。
   private configProvider: (() => Promise<UserConfig | null>) | null = null;
@@ -183,6 +201,15 @@ export class UpdateService {
         return { hasUpdate: false };
       }
 
+      const sha256 = normalizeAssetDigest(asset);
+      if (sha256) this.assetSha256ByUrl.set(asset.browser_download_url, sha256);
+      else
+        this.logManager.addLog(
+          'warn',
+          `安装包缺少 sha256 摘要，将拒绝安装: ${asset.name}`,
+          'UpdateService'
+        );
+
       const updateInfo: UpdateInfo = {
         version: latestRelease.tag_name,
         title: latestRelease.name || latestRelease.tag_name,
@@ -251,6 +278,7 @@ export class UpdateService {
       }
 
       await this.downloadFile(updateInfo.downloadUrl, filePath, updateInfo.fileSize);
+      await this.verifyInstaller(filePath, updateInfo.downloadUrl);
 
       this.logManager.addLog('info', `更新下载完成: ${filePath}`, 'UpdateService');
       this.updateProgress({ status: 'downloaded', percentage: 100, message: '下载完成' });
@@ -298,6 +326,16 @@ export class UpdateService {
 
       if (!fs.existsSync(installerPath)) {
         this.logManager.addLog('error', `安装包不存在: ${installerPath}`, 'UpdateService');
+        return false;
+      }
+
+      const expected = this.verifiedInstallers.get(installerPath);
+      if (!expected || (await sha256OfFile(installerPath)) !== expected) {
+        this.logManager.addLog(
+          'error',
+          `拒绝安装未经校验或校验后被改动的安装包: ${installerPath}`,
+          'UpdateService'
+        );
         return false;
       }
 
@@ -760,6 +798,7 @@ export class UpdateService {
 
         // 竞态：取消恰在下载完成瞬间到达（download 已 resolve）→ 仍按取消处理，不进 done/不安装。
         if (ctl.cancelled) return this.finishPopupCancel(filePath, '（完成瞬间）');
+        await this.verifyInstaller(filePath, updateInfo.downloadUrl);
 
         this.popupDownloadControl = null;
         this.logManager.addLog('info', `更新下载完成: ${filePath}`, 'UpdateService');
@@ -818,9 +857,34 @@ export class UpdateService {
     ) {
       return mt('updErrNetwork');
     }
+    if (/校验失败/.test(raw)) return mt('updErrIntegrity');
     if (/不完整|截断|incomplete|truncat/i.test(raw)) return mt('updErrIncomplete');
     if (/HTTP\s*\d|返回错误|频率限制|响应过大|403|5\d\d/i.test(raw)) return mt('updErrServer');
     return mt('updErrGeneric');
+  }
+
+  /**
+   * 安装包完整性校验（对齐 CoreUpdateService「无摘要不装」）：下载失败会自动改走第三方 gh-proxy 镜像，仅比对
+   * Content-Length 挡不住被替换的安装包。摘要取自直连 api.github.com 的 asset.digest，与下载走哪条链路无关。
+   * 无摘要 / 不符 → 删残件并抛错（走既有失败态，不安装）；通过 → 登记供 installUpdate 放行。
+   */
+  private async verifyInstaller(filePath: string, downloadUrl: string): Promise<void> {
+    const expected = this.assetSha256ByUrl.get(downloadUrl);
+    const actual = expected ? await sha256OfFile(filePath) : null;
+    if (!expected || actual !== expected) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        /* 残件清理失败无害（temp 目录 OS 自清） */
+      }
+      throw new Error(
+        expected
+          ? `安装包校验失败：sha256 不匹配（期望 ${expected}，实际 ${actual}）`
+          : '安装包校验失败：缺少官方 sha256 摘要，拒绝安装'
+      );
+    }
+    this.verifiedInstallers.set(filePath, expected);
+    this.logManager.addLog('info', `安装包 sha256 校验通过: ${expected}`, 'UpdateService');
   }
 
   /** 取消下载的统一收尾：清 token + 删残件 + 关窗 + 返回 null（不安装）。 */
