@@ -36,6 +36,13 @@ const SERVICE_NAME = 'FlowZHelper';
 const PIPE_PATH = '\\\\.\\pipe\\flowz-helper';
 /** SYSTEM 侧支持目录：服务以 LocalSystem 读 helper.token；安装时 elevated 写入并设 ACL（SYSTEM + Administrators）。 */
 const SUPPORT_DIR = path.join(process.env.ProgramData || 'C:\\ProgramData', 'FlowZ');
+/**
+ * icacls 授权主体用**众所周知 SID**（`*S-…`），不用账户名：账户名随系统语言本地化（ru「Администраторы」/「СИСТЕМА」、
+ * de「Administratoren」…），英文名在非英文 Windows 上 icacls 报「无法映射账户名」→ 授权失败，而前一步 /inheritance:r
+ * 已清空继承 ACE → 目录 DACL 为空、连 Admin 都进不去（真机：ru Windows「Отказано в доступе по пути …helper.token」）。
+ */
+const SID_SYSTEM = '*S-1-5-18';
+const SID_ADMINISTRATORS = '*S-1-5-32-544';
 /** sc query 不存在服务时的退出码（ERROR_SERVICE_DOES_NOT_EXIST）。 */
 const ERROR_SERVICE_DOES_NOT_EXIST = 1060;
 /** 与 helper-win 的 protoVersion 对应。Windows 独立谱系：v1 = ping/version/status/start/stop/cleanup/freeport。 */
@@ -448,6 +455,11 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     // 注：binPath 指向 ProgramData 外置副本（$helperDst，无空格）；--singbox 仍可能含空格（app 安装目录）→ 仍需真双引号。
     const binPath = `"${helperDst}" --singbox "${singboxPath}" --confdir "${confDir}" --support "${SUPPORT_DIR}"`;
     const tokenFile = path.join(SUPPORT_DIR, 'helper.token');
+    const icacls = system32('icacls.exe');
+    // icacls 是外部命令：非零退出不受 $ErrorActionPreference=Stop 约束 → 显式查 $LASTEXITCODE 并 throw，
+    // 否则授权失败被静默吞掉、直到后续 Set-Content 才以「拒绝访问」这种远离根因的报错暴露。
+    const icaclsCheck = (what: string): string =>
+      `if ($LASTEXITCODE -ne 0) { throw "icacls ${what} 失败（退出码 $LASTEXITCODE）" }`;
     return [
       `$support = '${this.psq(SUPPORT_DIR)}'`,
       `$tokenFile = '${this.psq(tokenFile)}'`,
@@ -461,8 +473,12 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       // DACL。故去继承（清掉 CREATOR OWNER + Users 创建/删子权）、仅留 SYSTEM/Administrators 完全控制并以 (OI)(CI)
       // 下传 → 目录内 token/exe **出生即** SYSTEM/Admin 私有（Users 无任何访问：既不能替换 exe，也读不到 token，
       // 无「写后到设 ACL 之间 token 短暂可读」的竞态窗口）。对齐 macOS helper 落在 root-only 写的受保护目录。
-      `& '${system32('icacls.exe')}' $support /inheritance:r | Out-Null`,
-      `& '${system32('icacls.exe')}' $support /grant:r "SYSTEM:(OI)(CI)(F)" "Administrators:(OI)(CI)(F)" | Out-Null`,
+      // 顺序：**先授权、后去继承**——授权失败时目录仍保留继承 ACE（可用、可重试），而不是被清成空 DACL 锁死。
+      // 已被旧版锁死（空 DACL）的目录也能自愈：属主（Admin）隐含 WRITE_DAC，授权可直接补回 SYSTEM/Admin。
+      `& '${icacls}' $support /grant:r "${SID_SYSTEM}:(OI)(CI)(F)" "${SID_ADMINISTRATORS}:(OI)(CI)(F)" | Out-Null`,
+      icaclsCheck('授权 $support'),
+      `& '${icacls}' $support /inheritance:r | Out-Null`,
+      icaclsCheck('去继承 $support'),
       // 先删任何残留旧 token 再写：重装/修复时旧 token 可能是「Admin 只读」（旧版 ACL）或部分失败安装的残留，
       // 而 Set-Content 覆盖一个 Admin 只读的现存文件会被拒（真机实测「对…helper.token 的访问被拒绝」的根因）。
       // 经目录 Admin 的 FILE_DELETE_CHILD 删旧文件**不受其自身只读 DACL 阻挡** → 随后 Set-Content 必成（自愈已损状态）。
@@ -489,8 +505,10 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       'if (-not $copied) { throw "复制 helper.exe 到 ProgramData 失败（旧服务二进制可能仍被占用，请稍后重试或重启后再装）" }',
       // 显式收紧外置副本 ACL（兜底）：目录已锁 SYSTEM/Admin 私有、本副本继承之即足够；这里再去继承 + 仅 SYSTEM/Admin
       // 完全控制，确保 Users 对这个**以 SYSTEM 运行**的二进制零访问（不可写/不可替换 → 杜绝本地提权）。
-      `& '${system32('icacls.exe')}' $helperDst /inheritance:r | Out-Null`,
-      `& '${system32('icacls.exe')}' $helperDst /grant:r "SYSTEM:(F)" "Administrators:(F)" | Out-Null`,
+      `& '${icacls}' $helperDst /grant:r "${SID_SYSTEM}:(F)" "${SID_ADMINISTRATORS}:(F)" | Out-Null`,
+      icaclsCheck('授权 $helperDst'),
+      `& '${icacls}' $helperDst /inheritance:r | Out-Null`,
+      icaclsCheck('去继承 $helperDst'),
       // New-Service 退避重试兜底（删除标记态 1072 窗口期）：BinaryPathName 单一字符串直达 CreateService；
       // 默认账户即 LocalSystem；-StartupType Automatic = 开机自启常驻（app 全程只发管道命令、不 start/stop 服务）。
       '$created = $false',

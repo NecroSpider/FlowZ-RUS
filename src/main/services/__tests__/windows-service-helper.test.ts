@@ -88,18 +88,27 @@ describe('WindowsServiceHelper', () => {
       // 目录 ACL 硬化（防本地提权 + 闭 token TOCTOU）：去继承 + 仅 SYSTEM/Administrators 完全控制并 (OI)(CI) 下传。
       // ProgramData 默认让 Users 能在子目录建/删文件 → 不锁目录则普通用户可替换以 SYSTEM 运行的 helper.exe（=提权）。
       // icacls 经 System32 绝对路径调（规避 PATH 缺失），PS 调用算子 & '<abs>'
-      expect(script).toContain(`& '${system32('icacls.exe')}' $support /inheritance:r`);
-      expect(script).toContain(
-        `& '${system32('icacls.exe')}' $support /grant:r "SYSTEM:(OI)(CI)(F)" "Administrators:(OI)(CI)(F)"`
-      );
+      // 主体用众所周知 SID（S-1-5-18 = SYSTEM，S-1-5-32-544 = Administrators）——账户名随系统语言本地化。
+      const icacls = system32('icacls.exe');
+      const grantSupport = `& '${icacls}' $support /grant:r "*S-1-5-18:(OI)(CI)(F)" "*S-1-5-32-544:(OI)(CI)(F)"`;
+      const stripSupport = `& '${icacls}' $support /inheritance:r`;
+      expect(script).toContain(grantSupport);
+      expect(script).toContain(stripSupport);
       // 外置副本再显式收紧：去继承、仅 SYSTEM/Administrators 完全控制。
-      expect(script).toContain(`& '${system32('icacls.exe')}' $helperDst /inheritance:r`);
-      expect(script).toContain(
-        `& '${system32('icacls.exe')}' $helperDst /grant:r "SYSTEM:(F)" "Administrators:(F)"`
-      );
+      const grantDst = `& '${icacls}' $helperDst /grant:r "*S-1-5-18:(F)" "*S-1-5-32-544:(F)"`;
+      const stripDst = `& '${icacls}' $helperDst /inheritance:r`;
+      expect(script).toContain(grantDst);
+      expect(script).toContain(stripDst);
+      // 先授权后去继承：授权失败时不能留下空 DACL 把目录/副本锁死。
+      expect(script.indexOf(grantSupport)).toBeLessThan(script.indexOf(stripSupport));
+      expect(script.indexOf(grantDst)).toBeLessThan(script.indexOf(stripDst));
+      // 每次 icacls 后查退出码（外部命令不受 ErrorActionPreference=Stop 约束）。
+      expect(script.match(/if \(\$LASTEXITCODE -ne 0\) \{ throw "icacls /g)?.length).toBe(4);
       // 关键不变量：SYSTEM helper 目录/二进制对 Users 零授权（绝不出现 Users 授权 → 杜绝替换/提权）。
       expect(script).not.toContain('Users:(RX)');
       expect(script).not.toContain('"Users');
+      // 本地化 Windows（ru：Администраторы / СИСТЕМА）上英文账户名无法映射 → 不得再按名授权。
+      expect(script).not.toMatch(/"(SYSTEM|Administrators):/);
       // 启动服务（sc.exe 经 System32 绝对路径调）
       expect(script).toContain(`& '${system32('sc.exe')}' start FlowZHelper`);
       // 幂等：重装先停删旧服务
