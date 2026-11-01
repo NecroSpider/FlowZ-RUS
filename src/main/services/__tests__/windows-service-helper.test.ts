@@ -117,14 +117,37 @@ describe('WindowsServiceHelper', () => {
       // token 值写入
       expect(script).toContain('deadbeefdeadbeef');
       // 重装可重入：写 token 前先删旧 token（自愈旧版「Admin 只读」残留——否则 Set-Content 覆盖只读文件被拒，真机根因）。
-      expect(script).toContain('Remove-Item -Force -Path $tokenFile -ErrorAction SilentlyContinue');
+      // .NET File.Delete：不改属性、只靠目录的 FILE_DELETE_CHILD，失败不被吞（Remove-Item -Force 会先改属性而被拒）。
+      expect(script).toContain('[System.IO.File]::Delete($tokenFile)');
+      expect(script).not.toContain('Remove-Item -Force -Path $tokenFile');
       // 关键不变量：token **绝不**被设成 Admin 只读（机密性靠目录锁，不靠 token 只读；只读会破坏重装覆盖）。
       expect(script).not.toContain('icacls $tokenFile');
       expect(script).not.toContain('SYSTEM:(R)');
       // 删 token 必须在写 token 之前（顺序正确才自愈）。
-      expect(script.indexOf('Remove-Item -Force -Path $tokenFile')).toBeLessThan(
+      expect(script.indexOf('[System.IO.File]::Delete($tokenFile)')).toBeLessThan(
         script.indexOf('Set-Content -Path $tokenFile')
       );
+    });
+
+    it('install 脚本自愈旧版留下的空 DACL helper 副本（先补授权、再删、再拷，报错带真实原因）', () => {
+      const script = helper.buildInstallScript(
+        'C:\\Program Files\\FlowZ\\com.flowz.helper.exe',
+        'C:\\Program Files\\FlowZ\\sing-box.exe',
+        'C:\\Users\\Ярослав\\AppData\\Roaming\\flowz',
+        'deadbeefdeadbeef'
+      );
+      const icacls = system32('icacls.exe');
+      const repair = `if (Test-Path -LiteralPath $helperDst) {\n  & '${icacls}' $helperDst /grant:r "*S-1-5-18:(F)" "*S-1-5-32-544:(F)" | Out-Null\n}`;
+      const del = '[System.IO.File]::Delete($helperDst); Copy-Item -LiteralPath $helperSrc';
+      expect(script).toContain(repair);
+      expect(script).toContain(del);
+      // 顺序：停删服务 → 补授权 → 删+拷
+      expect(script.indexOf(`& '${system32('sc.exe')}' delete FlowZHelper`)).toBeLessThan(
+        script.indexOf(repair)
+      );
+      expect(script.indexOf(repair)).toBeLessThan(script.indexOf(del));
+      expect(script).toContain('$copyErr = $_');
+      expect(script).toContain('$($copyErr.Exception.Message)');
       // 受保护目录（默认 ProgramData\FlowZ）
       expect(script).toContain('FlowZ');
     });
@@ -135,6 +158,12 @@ describe('WindowsServiceHelper', () => {
       expect(script).toContain(`& '${system32('sc.exe')}' delete FlowZHelper`);
       expect(script).toContain('Remove-Item');
       expect(script).toContain('FlowZ');
+      // 删目录前先递归补回 Admin 权限（旧版可能留下空 DACL，否则 Remove-Item 静默删不掉）。
+      const grant = `& '${system32('icacls.exe')}' `;
+      expect(script).toMatch(
+        /icacls\.exe' '[^']*FlowZ' \/grant:r "\*S-1-5-32-544:\(OI\)\(CI\)\(F\)" \/T \/C \| Out-Null/
+      );
+      expect(script.indexOf(grant)).toBeLessThan(script.indexOf('Remove-Item'));
     });
 
     it('提权 .ps1 带 UTF-8 BOM（PS5.1 无 BOM 按 ANSI 解码，非 ASCII 字节被读成弯引号 → 整脚本解析失败）', () => {

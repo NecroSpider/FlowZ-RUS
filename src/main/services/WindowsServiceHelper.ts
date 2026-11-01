@@ -482,7 +482,9 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       // 先删任何残留旧 token 再写：重装/修复时旧 token 可能是「Admin 只读」（旧版 ACL）或部分失败安装的残留，
       // 而 Set-Content 覆盖一个 Admin 只读的现存文件会被拒（真机实测「对…helper.token 的访问被拒绝」的根因）。
       // 经目录 Admin 的 FILE_DELETE_CHILD 删旧文件**不受其自身只读 DACL 阻挡** → 随后 Set-Content 必成（自愈已损状态）。
-      'Remove-Item -Force -Path $tokenFile -ErrorAction SilentlyContinue',
+      // 用 .NET File.Delete（不存在不抛）而非 Remove-Item -Force：后者会先改文件属性（需文件自身的写属性权限），
+      // 对 DACL 为空/只读的残留文件恰恰失败，且 SilentlyContinue 把失败吞成后续 Set-Content 的「拒绝访问」。
+      '[System.IO.File]::Delete($tokenFile)',
       // 写 token（无 BOM ASCII）。机密性由**目录锁**保证（Users 对 $support 零访问，根本进不来读）→ token 继承目录的
       // SYSTEM/Admin 全权即可：SYSTEM 可读（服务鉴权用）、Admin 可写（**重装可覆盖**）。刻意不再单独给 token 上「只读」
       // ACL——只读对机密性零增益（Users 已被目录挡死），却会令重装时 Set-Content 覆盖被拒（即上面那个真机根因）。
@@ -497,12 +499,19 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       `while ((Get-Service -Name ${SERVICE_NAME} -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }`,
       // 外置复制：旧服务已停删 → ProgramData 旧副本（若有）已解锁 → -Force 覆盖。带退避重试兜「文件仍被占用」
       // 的解锁窗口竞态（sc delete 后进程退出有微小延迟）。失败 fail-loud（不静默留旧副本跑老逻辑）。
-      '$copied = $false',
-      'for ($i = 0; $i -lt 10 -and -not $copied; $i++) {',
-      '  try { Copy-Item -LiteralPath $helperSrc -Destination $helperDst -Force; $copied = $true }',
-      '  catch { Start-Sleep -Milliseconds 300 }',
+      // 自愈旧版残留：按账户名授权的旧脚本在本地化 Windows 上给副本留下**空 DACL**（SYSTEM 无法执行 → 服务永不就绪；
+      // 修复时 Copy-Item 覆盖被拒，手动也删不掉——真机 ru Windows）。属主（Admin）隐含 WRITE_DAC → 先补回授权；
+      // 再经目录的 FILE_DELETE_CHILD 先删后拷（即使补授权失败，删除也不看文件自身 DACL）。补授权失败不致命，不查退出码。
+      'if (Test-Path -LiteralPath $helperDst) {',
+      `  & '${icacls}' $helperDst /grant:r "${SID_SYSTEM}:(F)" "${SID_ADMINISTRATORS}:(F)" | Out-Null`,
       '}',
-      'if (-not $copied) { throw "复制 helper.exe 到 ProgramData 失败（旧服务二进制可能仍被占用，请稍后重试或重启后再装）" }',
+      '$copied = $false',
+      '$copyErr = $null',
+      'for ($i = 0; $i -lt 10 -and -not $copied; $i++) {',
+      '  try { [System.IO.File]::Delete($helperDst); Copy-Item -LiteralPath $helperSrc -Destination $helperDst -Force; $copied = $true }',
+      '  catch { $copyErr = $_; Start-Sleep -Milliseconds 300 }',
+      '}',
+      'if (-not $copied) { throw "复制 helper.exe 到 ProgramData 失败（旧服务二进制可能仍被占用，请稍后重试或重启后再装）：$($copyErr.Exception.Message)" }',
       // 显式收紧外置副本 ACL（兜底）：目录已锁 SYSTEM/Admin 私有、本副本继承之即足够；这里再去继承 + 仅 SYSTEM/Admin
       // 完全控制，确保 Users 对这个**以 SYSTEM 运行**的二进制零访问（不可写/不可替换 → 杜绝本地提权）。
       `& '${icacls}' $helperDst /grant:r "${SID_SYSTEM}:(F)" "${SID_ADMINISTRATORS}:(F)" | Out-Null`,
@@ -530,6 +539,8 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       `& '${system32('sc.exe')}' stop ${SERVICE_NAME} 2>$null | Out-Null`,
       'Start-Sleep -Milliseconds 300',
       `& '${system32('sc.exe')}' delete ${SERVICE_NAME} 2>$null | Out-Null`,
+      // 先递归补回 Admin 权限：旧版在本地化 Windows 上可能留下空 DACL 的目录/副本，否则 Remove-Item 静默删不掉。
+      `& '${system32('icacls.exe')}' '${this.psq(SUPPORT_DIR)}' /grant:r "${SID_ADMINISTRATORS}:(OI)(CI)(F)" /T /C | Out-Null`,
       `Remove-Item -Recurse -Force -Path '${this.psq(SUPPORT_DIR)}' -ErrorAction SilentlyContinue`,
     ].join('\n');
   }
