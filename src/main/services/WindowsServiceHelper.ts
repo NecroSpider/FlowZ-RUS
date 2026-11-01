@@ -517,6 +517,30 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
   }
 
   /**
+   * 提权 .ps1 文件内容（$ErrorActionPreference=Stop + try/catch 包裹 inner，回写 flag/err）。
+   * **必须带 UTF-8 BOM**：Windows PowerShell 5.1 把无 BOM 的 .ps1 按系统 ANSI 代码页解码（ru=cp1251、en=cp1252），
+   * 脚本内中文 throw 文案 / 含西里尔等非 ASCII 的用户目录路径被拆成单字节乱码，其中 0x82/0x84/0x91–0x94 恰被读成
+   * ‚ „ ‘ ’ “ ”——PS 词法把它们当引号 → 整个脚本解析失败、一行不执行（服务装不上，只回「未写回结果」，每次启动重弹安装引导）。
+   */
+  private buildElevatedScriptFile(inner: string, flagPath: string, errPath: string): string {
+    return (
+      '\ufeff' +
+      [
+        "$ErrorActionPreference = 'Stop'",
+        'try {',
+        inner,
+        `  "0" | Out-File -FilePath '${this.psq(flagPath)}' -Encoding ascii`,
+        '} catch {',
+        // 用 .NET WriteAllText（默认 UTF-8 无 BOM）写异常信息——避免 PS5.1 `Out-File -Encoding utf8` 的 BOM
+        // 在 app 回传文案前残留零宽字符。
+        `  [System.IO.File]::WriteAllText('${this.psq(errPath)}', $_.Exception.Message)`,
+        `  "1" | Out-File -FilePath '${this.psq(flagPath)}' -Encoding ascii`,
+        '}',
+      ].join('\n')
+    );
+  }
+
+  /**
    * 以一次 UAC 跑 PowerShell 脚本：写临时 .ps1 → 外层 Start-Process -Verb RunAs -Wait 触发 UAC。
    * 内层以 $ErrorActionPreference=Stop + try/catch 包裹脚本体：成功写 flag "0"；失败把**异常信息**写 .err + flag "1"，
    * 供 app 回传具体失败原因（对齐「失败须带原因」——否则只见「退出码 N」无法区分 1072 竞态 / 路径错 / ACL 失败）。
@@ -529,26 +553,20 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       const scriptPath = path.join(os.tmpdir(), `flowz-helper-${stamp}.ps1`);
       const flagPath = path.join(os.tmpdir(), `flowz-helper-${stamp}.done`);
       const errPath = path.join(os.tmpdir(), `flowz-helper-${stamp}.err`);
-      const script = [
-        "$ErrorActionPreference = 'Stop'",
-        'try {',
-        inner,
-        `  "0" | Out-File -FilePath '${this.psq(flagPath)}' -Encoding ascii`,
-        '} catch {',
-        // 用 .NET WriteAllText（默认 UTF-8 无 BOM）写异常信息——避免 PS5.1 `Out-File -Encoding utf8` 的 BOM
-        // 在 app 回传文案前残留零宽字符。
-        `  [System.IO.File]::WriteAllText('${this.psq(errPath)}', $_.Exception.Message)`,
-        `  "1" | Out-File -FilePath '${this.psq(flagPath)}' -Encoding ascii`,
-        '}',
-      ].join('\n');
       try {
-        fs.writeFileSync(scriptPath, script, 'utf8');
+        fs.writeFileSync(
+          scriptPath,
+          this.buildElevatedScriptFile(inner, flagPath, errPath),
+          'utf8'
+        );
       } catch (e) {
         return resolve({ success: false, error: `写入提权脚本失败: ${String(e)}` });
       }
+      // -File 路径加真双引号：PS5.1 Start-Process 把 ArgumentList 按空格拼接、不自动加引号 → 用户名含空格时
+      // %TEMP% 路径被拆成多个参数，内层 PS 找不到脚本。
       const outer =
         `try { Start-Process '${powershellPath()}' -Verb RunAs -WindowStyle Hidden -Wait ` +
-        `-ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','${this.psq(scriptPath)}'; exit 0 } ` +
+        `-ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','"${this.psq(scriptPath)}"'; exit 0 } ` +
         `catch { exit 1 }`;
       execFile(
         powershellPath(),

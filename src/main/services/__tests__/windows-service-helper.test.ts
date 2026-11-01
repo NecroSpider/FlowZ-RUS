@@ -127,5 +127,25 @@ describe('WindowsServiceHelper', () => {
       expect(script).toContain('Remove-Item');
       expect(script).toContain('FlowZ');
     });
+
+    it('提权 .ps1 带 UTF-8 BOM（PS5.1 无 BOM 按 ANSI 解码，非 ASCII 字节被读成弯引号 → 整脚本解析失败）', () => {
+      const h = helper as unknown as {
+        buildElevatedScriptFile(inner: string, flag: string, err: string): string;
+      };
+      const inner = helper.buildInstallScript(
+        'C:\\Users\\Дмитрий\\AppData\\Local\\Programs\\FlowZ\\resources\\win\\com.flowz.helper.exe',
+        'C:\\Users\\Дмитрий\\AppData\\Roaming\\flowz\\core_update\\sing-box.exe',
+        'C:\\Users\\Дмитрий\\AppData\\Roaming\\flowz',
+        'deadbeefdeadbeef'
+      );
+      const bytes = Buffer.from(
+        h.buildElevatedScriptFile(inner, 'C:\\t\\x.done', 'C:\\t\\x.err'),
+        'utf8'
+      );
+      expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+      // 反证 BOM 的必要性：同一脚本若按 cp1251/cp1252 逐字节解码，会冒出 PS 词法视作引号的 ‚ „ ‘ ’ “ ”（0x82/0x84/0x91–0x94）。
+      const ansiQuoteBytes = [0x82, 0x84, 0x91, 0x92, 0x93, 0x94];
+      expect([...bytes.subarray(3)].some((b) => ansiQuoteBytes.includes(b))).toBe(true);
+    });
   });
 });

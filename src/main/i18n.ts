@@ -497,6 +497,13 @@ const MESSAGES = {
     ru: 'Установить привилегированную службу?',
     fa: 'سرویس ممتاز نصب شود؟',
   },
+  dlgWinHelperInstallFailedMsg: {
+    'zh-CN': 'Windows 提权服务安装失败',
+    'zh-TW': 'Windows 提權服務安裝失敗',
+    'en-US': 'Failed to install privileged service',
+    ru: 'Не удалось установить привилегированную службу',
+    fa: 'نصب سرویس ممتاز ناموفق بود',
+  },
   dlgMacBgOffMsg: {
     'zh-CN': '提权助手的「允许在后台」被系统关闭',
     'zh-TW': '提權助手的「允許在背景」被系統關閉',
@@ -539,6 +546,13 @@ const MESSAGES = {
       'After install, Windows TUN start/stop no longer needs UAC each time (installing the service needs one admin prompt); or start with UAC this time.',
     ru: 'После установки запуск/остановка TUN в Windows больше не требует UAC каждый раз (установка службы требует одного запроса администратора); либо запустите через UAC сейчас.',
     fa: 'پس از نصب، شروع/توقف TUN در ویندوز دیگر هر بار به UAC نیاز ندارد (نصب سرویس یک بار درخواست مدیر دارد)؛ یا این بار با UAC راه‌اندازی کنید.',
+  },
+  dlgWinHelperInstallFailedDetail: {
+    'zh-CN': '本次将改用 UAC 启动。详情见应用日志。',
+    'zh-TW': '本次將改用 UAC 啟動。詳情見應用程式日誌。',
+    'en-US': 'This start will use UAC instead. See the app log for details.',
+    ru: 'Этот запуск пройдёт через UAC. Подробности — в журнале приложения.',
+    fa: 'این بار با UAC راه‌اندازی می‌شود. جزئیات را در گزارش برنامه ببینید.',
   },
   dlgLinuxInstallServiceMsg: {
     'zh-CN': '安装 Linux 提权助手？',

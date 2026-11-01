@@ -486,9 +486,11 @@ rm -f "$STOPFLAG"
       // Fix：原 `Stop-Process -Name "sing-box"` 盲杀所有 sing-box.exe，与换核 async 窗口叠加会误杀用户重连启动的核。
       // 改为仅按 ExecutablePath 定向终止「正在运行本次待覆盖二进制(dest)」的进程（与 writeWindowsWatchdogScript 的
       // 精确匹配同口径）：只有它锁着 dest → 覆盖前必须先放行，其它路径的核一律不动。try/catch 保证枚举失败不阻断复制。
+      // 带 UTF-8 BOM：PS5.1 按 ANSI 代码页读无 BOM 的 .ps1，含非 ASCII（如西里尔用户名）的 src/dest 路径会被解成乱码。
       fs.writeFileSync(
         scriptPath,
-        `$ErrorActionPreference = 'Stop'\n` +
+        '\ufeff' +
+          `$ErrorActionPreference = 'Stop'\n` +
           `try { Get-CimInstance Win32_Process -Filter "Name='sing-box.exe'" | ` +
           `Where-Object { $_.ExecutablePath -eq '${escapedDest}' } | ` +
           `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } } catch {}\n` +

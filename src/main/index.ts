@@ -365,6 +365,24 @@ let helperManager: IPrivilegedHelper | null = null;
 let currentNodeSortByLatency = false;
 
 /**
+ * Windows 引导框内「安装/修复」：install() 失败以 success:false 返回（不抛）。须把真因落日志并告知用户——
+ * 否则静默回退 UAC 启动，下次起核服务仍不存在 → 每次都重弹同一安装引导，用户无从排查。
+ */
+async function installWinHelperFromGate(helper: IPrivilegedHelper): Promise<void> {
+  const result = await helper.install().catch((e: unknown) => ({
+    success: false,
+    error: e instanceof Error ? e.message : String(e),
+  }));
+  if (result.success) return;
+  logManager?.addLog('error', `Windows 提权服务安装失败: ${result.error ?? '未知原因'}`, 'Helper');
+  await dialog.showMessageBox({
+    type: 'warning',
+    message: mt('dlgWinHelperInstallFailedMsg'),
+    detail: [result.error, mt('dlgWinHelperInstallFailedDetail')].filter(Boolean).join('\n\n'),
+  });
+}
+
+/**
  * helper 引导对话框（注入 ProxyManager.setHelperGate，由 start() 在 darwin+TUN+helper 未就绪+未 dismiss
  * 时统一调用——收敛单点，覆盖按钮/托盘/切模式/config-changed 重启等全部入口）。
  * 返回 'abort' → 终止本次启动（终态等价 osascript 取消=停止态）；'proceed' → 继续（装好走零提权，否则 osascript 回退）。
@@ -391,7 +409,7 @@ async function promptHelperGate(
         detail: mt('dlgWinRepairDetail'),
       });
       if (response === 2) return 'abort';
-      if (response === 0) await helperManager.install().catch(() => {});
+      if (response === 0) await installWinHelperFromGate(helperManager);
       return 'proceed';
     }
     const { response } = await dialog.showMessageBox({
@@ -403,7 +421,7 @@ async function promptHelperGate(
       detail: mt('dlgWinInstallDetail'),
     });
     if (response === 2) return 'abort';
-    if (response === 0) await helperManager.install().catch(() => {});
+    if (response === 0) await installWinHelperFromGate(helperManager);
     return 'proceed';
   }
   if (process.platform === 'linux') {
