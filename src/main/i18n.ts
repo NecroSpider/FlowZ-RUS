@@ -504,6 +504,13 @@ const MESSAGES = {
     ru: 'Не удалось установить привилегированную службу',
     fa: 'نصب سرویس ممتاز ناموفق بود',
   },
+  dlgHelperInstallFailedMsg: {
+    'zh-CN': '提权助手安装失败',
+    'zh-TW': '提權助手安裝失敗',
+    'en-US': 'Failed to install privileged helper',
+    ru: 'Не удалось установить привилегированный помощник',
+    fa: 'نصب دستیار ممتاز ناموفق بود',
+  },
   dlgMacBgOffMsg: {
     'zh-CN': '提权助手的「允许在后台」被系统关闭',
     'zh-TW': '提權助手的「允許在背景」被系統關閉',
@@ -553,6 +560,14 @@ const MESSAGES = {
     'en-US': 'This start will use UAC instead. See the app log for details.',
     ru: 'Этот запуск пройдёт через UAC. Подробности — в журнале приложения.',
     fa: 'این بار با UAC راه‌اندازی می‌شود. جزئیات را در گزارش برنامه ببینید.',
+  },
+  dlgHelperInstallFailedDetail: {
+    'zh-CN': '本次将改为请求管理员密码启动。详情见应用日志。',
+    'zh-TW': '本次將改為請求管理員密碼啟動。詳情見應用程式日誌。',
+    'en-US':
+      'This start will ask for your administrator password instead. See the app log for details.',
+    ru: 'Этот запуск запросит пароль администратора. Подробности — в журнале приложения.',
+    fa: 'این بار برای راه‌اندازی رمز مدیر درخواست می‌شود. جزئیات را در گزارش برنامه ببینید.',
   },
   dlgLinuxInstallServiceMsg: {
     'zh-CN': '安装 Linux 提权助手？',
