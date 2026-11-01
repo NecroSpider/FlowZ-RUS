@@ -2,7 +2,7 @@
  * xray-import 单测（node env，零 electron）。覆盖 vmess/vless/trojan/shadowsocks 映射 +
  * streamSettings(tls/reality/ws/grpc) + 不支持协议跳过 + 内部协议忽略 + 缺字段失败。
  */
-import { parseXrayOutbounds } from '../xray-import';
+import { isXrayConfigArray, parseXrayConfigArray, parseXrayOutbounds } from '../xray-import';
 
 const NOW = '2026-06-30T00:00:00.000Z';
 
@@ -142,5 +142,48 @@ describe('parseXrayOutbounds', () => {
     expect(r.servers).toHaveLength(0);
     expect(r.skipped).toBe(0);
     expect(r.failed).toBe(0);
+  });
+});
+
+describe('parseXrayConfigArray / isXrayConfigArray', () => {
+  const vless = (tag: string, address: string, network = 'tcp') => ({
+    tag,
+    protocol: 'vless',
+    settings: { vnext: [{ address, port: 443, users: [{ id: 'u' }] }] },
+    streamSettings: { network },
+  });
+
+  it('单出口配置 → 名为 remarks', () => {
+    const r = parseXrayConfigArray(
+      [{ remarks: 'NL', outbounds: [vless('proxy', '1.1.1.1')] }],
+      NOW
+    );
+    expect(r.servers.map((s) => s.name)).toEqual(['NL']);
+  });
+
+  it('无 remarks → 保留 tag 名', () => {
+    const r = parseXrayConfigArray([{ outbounds: [vless('proxy', '1.1.1.1')] }], NOW);
+    expect(r.servers.map((s) => s.name)).toEqual(['proxy']);
+  });
+
+  it('xhttp/kcp 等 sing-box 无对应传输 → 跳过（不降级成假 TCP 节点），计入 warning', () => {
+    const r = parseXrayConfigArray(
+      [
+        { remarks: 'A', outbounds: [vless('proxy', '1.1.1.1', 'xhttp')] },
+        { remarks: 'B', outbounds: [vless('proxy', '2.2.2.2', 'raw')] },
+      ],
+      NOW
+    );
+    expect(r.servers.map((s) => s.name)).toEqual(['B']);
+    expect(r.servers[0].network).toBe('tcp');
+    expect(r.skipped).toBe(1);
+    expect(r.warnings.join()).toMatch(/vless\+xhttp\(1\)/);
+  });
+
+  it('isXrayConfigArray 只认「每项都有 outbounds 数组」的非空数组', () => {
+    expect(isXrayConfigArray([{ outbounds: [] }])).toBe(true);
+    expect(isXrayConfigArray([])).toBe(false);
+    expect(isXrayConfigArray([{ outbounds: [] }, { proxies: [] }])).toBe(false);
+    expect(isXrayConfigArray({ outbounds: [] })).toBe(false);
   });
 });

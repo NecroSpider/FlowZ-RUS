@@ -16,7 +16,7 @@ import {
   resolveProxyProviders,
   type ClashDoc,
 } from './ClashSubscriptionParser';
-import { parseXrayOutbounds } from './xray-import';
+import { isXrayConfigArray, parseXrayConfigArray, parseXrayOutbounds } from './xray-import';
 import { isServerComplete } from '../../shared/server-completeness';
 import { normalizeDuration } from '../../shared/duration';
 import {
@@ -582,7 +582,11 @@ export class SubscriptionService {
           }
           if (!ob.psk?.trim()) {
             // trim 语义与 protocolRequirementError 的 password?.trim() 对齐：空白 psk 穿闸入库会连累整份订阅保存。
-            this.logManager.addLog('warn', `跳过 snell outbound "${ob.tag}"：缺 psk`, 'Subscription');
+            this.logManager.addLog(
+              'warn',
+              `跳过 snell outbound "${ob.tag}"：缺 psk`,
+              'Subscription'
+            );
             continue;
           }
           const snell: NonNullable<ServerConfig['snellSettings']> = { version: ob.version };
@@ -848,6 +852,26 @@ export class SubscriptionService {
     } catch {
       // 非 JSON（SyntaxError）→ fall through 到 YAML / URL-list 分支
     }
+    if (isJson && isXrayConfigArray(json)) {
+      this.logManager.addLog(
+        'info',
+        '检测到 Xray JSON 配置数组格式，解析 outbounds...',
+        'Subscription'
+      );
+      const r = parseXrayConfigArray(json, new Date().toISOString());
+      for (const w of r.warnings) this.logManager.addLog('warn', w, 'Subscription');
+      const servers = r.servers.map((s) => ({ ...s, subscriptionId }));
+      if (servers.length === 0) {
+        if (throwOnEmpty) throw new Error('Xray JSON 订阅解析得到 0 个可用节点');
+        return { servers: [] };
+      }
+      this.logManager.addLog(
+        'info',
+        `成功从 Xray JSON 订阅解析了 ${servers.length} 个节点`,
+        'Subscription'
+      );
+      return { servers };
+    }
     if (isJson && json && typeof json === 'object') {
       const obj = json as Record<string, unknown>;
       if (Array.isArray(obj.outbounds)) {
@@ -930,17 +954,16 @@ export class SubscriptionService {
           this.logManager.addLog('warn', `解析订阅中的节点失败: ${e.message}`, 'Subscription');
         }
       } else if (line.includes('://')) {
-        const scheme = line.split('://')[0].trim().toLowerCase();
+        // 只取形如 scheme:// 的合法前缀；否则（如整段 JSON/配置文本里恰含 https://）归为「非链接行」——
+        // 绝不把 '://' 前的原文当 scheme 写进日志：那会把节点地址/密钥带进诊断报告（脱敏只认已解析的节点）。
+        const m = /^([a-z][a-z0-9+.-]{0,31}):\/\//i.exec(line);
+        const scheme = m ? m[1].toLowerCase() : '非链接行';
         unsupportedSchemes.set(scheme, (unsupportedSchemes.get(scheme) ?? 0) + 1);
       }
     }
     if (unsupportedSchemes.size > 0) {
       const detail = [...unsupportedSchemes.entries()].map(([s, c]) => `${s}(${c})`).join(', ');
-      this.logManager.addLog(
-        'warn',
-        `跳过不支持的协议链接: ${detail}`,
-        'Subscription'
-      );
+      this.logManager.addLog('warn', `跳过不支持的协议链接: ${detail}`, 'Subscription');
     }
 
     if (servers.length === 0) {
@@ -1104,13 +1127,7 @@ export class SubscriptionService {
       const ua = userAgent?.trim() || defaultSubscriptionUserAgent();
       // 主订阅 fetch 加超时（30s，比 provider 15s 宽）→ 防 slow-loris 挂死 scheduler.isRunning 永真。
       // §16.3.4：conditional 由调用方决定是否传（provider 型订阅豁免——见 subscription-handlers/scheduler）。
-      const {
-        text,
-        userInfo,
-        etag,
-        lastModified,
-        notModified,
-      } = await this.fetchSubscriptionText(
+      const { text, userInfo, etag, lastModified, notModified } = await this.fetchSubscriptionText(
         url,
         viaProxy,
         ua,
@@ -1239,7 +1256,14 @@ export class SubscriptionService {
       } catch {
         /* 非 JSON，fall through */
       }
-      if (isJson && json && typeof json === 'object') {
+      if (isJson && isXrayConfigArray(json)) {
+        format = 'xray';
+        const r = parseXrayConfigArray(json, now);
+        candidates.push(...r.servers);
+        skipped += r.skipped;
+        failed += r.failed;
+        warnings.push(...r.warnings);
+      } else if (isJson && json && typeof json === 'object') {
         const obj = json as Record<string, unknown>;
         if (Array.isArray(obj.outbounds)) {
           const obs = obj.outbounds as Array<Record<string, unknown>>;

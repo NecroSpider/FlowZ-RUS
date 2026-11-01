@@ -620,10 +620,9 @@ describe('issue #263 — 聚合可见性 / 指纹传输维度 / ssh 映射', () 
   it('URL-list：xhttp 节点 fail 计入结果 info（issue #263 主症状可见化）', async () => {
     const log = new FakeLog();
     const svc = newService(log);
-    const content = [
-      'anytls://pw@a.com:443#any',
-      'vless://uuid-1@a.com:443?type=xhttp#dead',
-    ].join('\n');
+    const content = ['anytls://pw@a.com:443#any', 'vless://uuid-1@a.com:443?type=xhttp#dead'].join(
+      '\n'
+    );
     const r = await (svc as any).parseSubscriptionContent(content, 'sub-x', CTX);
     expect(r.servers).toHaveLength(1);
     expect(r.servers[0].protocol).toBe('anytls');
@@ -646,7 +645,14 @@ describe('issue #263 — 聚合可见性 / 指纹传输维度 / ssh 映射', () 
       { type: 'vless', tag: 'ok', server: 'a.com', server_port: 443, uuid: 'u' },
       { type: 'wireguard', tag: 'wg', server: 'a.com', server_port: 51820 },
       { type: 'vless', tag: 'noport', server: 'a.com', uuid: 'u' },
-      { type: 'vless', tag: 'quic', server: 'a.com', server_port: 443, uuid: 'u', transport: { type: 'quic' } },
+      {
+        type: 'vless',
+        tag: 'quic',
+        server: 'a.com',
+        server_port: 443,
+        uuid: 'u',
+        transport: { type: 'quic' },
+      },
       { type: 'direct', tag: 'direct' },
       { type: 'selector', tag: 'sel', outbounds: [] },
     ];
@@ -842,7 +848,11 @@ describe('parseSingboxOutbounds — snell', () => {
     expect(servers).toHaveLength(2);
     expect(servers[0].protocol).toBe('snell');
     expect(servers[0].password).toBe('psk-secret');
-    expect(servers[0].snellSettings).toEqual({ version: 4, obfsMode: 'http', obfsHost: 'bing.com' });
+    expect(servers[0].snellSettings).toEqual({
+      version: 4,
+      obfsMode: 'http',
+      obfsHost: 'bing.com',
+    });
     expect(servers[1].snellSettings).toEqual({
       version: 6,
       mode: 'unsafe-raw',
@@ -904,7 +914,10 @@ describe('parseSingboxOutbounds — snell review 边界补测', () => {
     );
     expect(servers).toHaveLength(0);
     expect(
-      log.entries.filter((e) => e.level === 'warn').map((e) => e.message).join('\n')
+      log.entries
+        .filter((e) => e.level === 'warn')
+        .map((e) => e.message)
+        .join('\n')
     ).toMatch(/缺 psk/);
   });
 });
@@ -1011,5 +1024,88 @@ describe('§16.3.4 条件 GET / 304 短路', () => {
     mockFetch.mockResolvedValue(makeResponse({ status: 304 }));
     // 未传 conditional（如 provider 拉取路径）→ 304 不认 notModified，维持「304 非 ok → throw」→ transient。
     await expect(svc.fetchSubscription('https://sub.example.com/x', SUB_ID)).rejects.toThrow(/304/);
+  });
+});
+
+// ── Xray JSON 配置数组（Remnawave/Marzban 对 v2rayN/Happ 类 UA 返回）：真机诊断报告里此格式被当 URL-list，
+//    0 节点 + 把整段配置（节点 IP / reality 公钥）当「scheme」写进日志 ──
+describe('Xray JSON 配置数组订阅', () => {
+  const CTX = { allowProviders: true, viaProxy: false, userAgent: 'ua' };
+  const vless = (tag: string, address: string) => ({
+    tag,
+    protocol: 'vless',
+    settings: {
+      vnext: [
+        {
+          address,
+          port: 8443,
+          users: [{ id: 'uuid-1', encryption: 'none', flow: 'xtls-rprx-vision' }],
+        },
+      ],
+    },
+    streamSettings: {
+      network: 'tcp',
+      security: 'reality',
+      realitySettings: { serverName: 'apple.com', fingerprint: 'firefox', publicKey: 'SECRET-PK' },
+    },
+  });
+  const body = JSON.stringify([
+    {
+      remarks: '🇳🇱 Нидерланды',
+      log: { loglevel: 'warning' },
+      inbounds: [{ tag: 'socks', port: 10808, protocol: 'socks' }],
+      outbounds: [
+        vless('proxy', '203.0.113.10'),
+        vless('proxy-youtube', '203.0.113.99'),
+        { tag: 'direct', protocol: 'freedom' },
+      ],
+    },
+    {
+      remarks: '🇩🇪 Германия',
+      outbounds: [
+        vless('proxy', '203.0.113.20'),
+        vless('proxy-youtube', '203.0.113.99'),
+        { tag: 'block', protocol: 'blackhole' },
+      ],
+    },
+  ]);
+
+  it('解析为节点：名取 remarks，同配置多出口补 tag，共享出口去重，挂 subscriptionId', async () => {
+    const svc = newService(new FakeLog());
+    const r = await (svc as any).parseSubscriptionContent(body, SUB_ID, CTX);
+    expect(r.servers.map((s: ServerConfig) => s.name)).toEqual([
+      '🇳🇱 Нидерланды · proxy',
+      '🇳🇱 Нидерланды · proxy-youtube',
+      '🇩🇪 Германия · proxy',
+    ]);
+    expect(r.servers.every((s: ServerConfig) => s.subscriptionId === SUB_ID)).toBe(true);
+    expect(r.servers[0]).toMatchObject({
+      protocol: 'vless',
+      address: '203.0.113.10',
+      port: 8443,
+      flow: 'xtls-rprx-vision',
+      security: 'reality',
+    });
+  });
+
+  it('本地导入同样识别为 xray 格式', async () => {
+    const svc = newService(new FakeLog());
+    const r = await svc.parseLocalContent(body);
+    expect(r.format).toBe('xray');
+    expect(r.nodes).toHaveLength(3);
+  });
+
+  it('URL-list 中的非链接行不把原文写进日志（只记「非链接行」计数）', async () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const content = [
+      'vless://uuid-1@a.com:443?encryption=none#ok',
+      '{"address":"203.0.113.10","publicKey":"SECRET-PK","email":"https://x"}',
+    ].join('\n');
+    const r = await (svc as any).parseSubscriptionContent(content, SUB_ID, CTX);
+    expect(r.servers).toHaveLength(1);
+    const all = log.entries.map((e) => e.message).join('\n');
+    expect(all).toMatch(/非链接行\(1\)/);
+    expect(all).not.toMatch(/203\.0\.113\.10|SECRET-PK/i);
   });
 });
