@@ -35,13 +35,11 @@ import {
   macAppBundleFromExe,
 } from './update-install-script';
 import { mt, getMainLanguage } from '../i18n';
+import { GITHUB_OWNER, GITHUB_REPO } from '../../shared/repository';
 
 // 下载停滞超时：连接/下载 30s 无数据即视为卡死 → abort + 失败兜底（github 链接自动换镜像重试一次）。
 // 防永久挂起致更新永不 resolve（进度窗/对话框永久转圈）。正常下载持续有 data、不断重置、不会误触发。
 const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
-
-const GITHUB_OWNER = 'dododook';
-const GITHUB_REPO = 'FlowZ';
 
 /**
  * 单次下载的取消 token（per-call，非实例共享）：弹窗流持有自己的 token，取消只作用于它；关于页手动下载
