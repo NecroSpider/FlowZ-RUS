@@ -80,7 +80,7 @@
     "clsx": "^2.1.1",
     "country-flag-icons": "^1.6.20",
     "cross-env": "^10.1.0",
-    "electron": "^42.4.0",
+    "electron": "^42.11.18",
     "electron-builder": "^26.15.2",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
