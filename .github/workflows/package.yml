@@ -11,7 +11,7 @@ name: Package
 # push 与 pull_request 的 paths 列表必须逐行一致（不用 YAML anchor，稳妥优先）；新增打包输入
 # （新资源目录/新原生构建步骤）时两处同时补。build=buildResources（installer.nsh/图标/entitlements），
 # resources=extraResources 源（geo .srs/dashboard/图标）——二者均为打包产物输入。
-# runner 钉版本对齐 release.yml（macos-14/windows-2022），使冒烟真正代表发布路径。本 workflow 不设 required check
+# runner 钉版本对齐 release.yml（macos-15/windows-2022；macos-14 镜像 2026-11-02 退役），使冒烟真正代表发布路径。本 workflow 不设 required check
 # （paths 过滤的 check 设 required 会遇「check 从未上报 → merge 卡 expected」死锁）。
 on:
   push:
@@ -60,7 +60,7 @@ jobs:
         include:
           - os: windows-2022
             platform: win
-          - os: macos-14
+          - os: macos-15
             platform: mac
 
     env:
