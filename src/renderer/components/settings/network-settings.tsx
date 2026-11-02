@@ -539,7 +539,7 @@ export function NetworkSettings() {
       </div>
 
       {/* 与工作 VPN 共存（shared/work-vpn）：目前只实现了 macOS 的识别，其它平台不显示。 */}
-      {isMac && (
+      {(isMac || isWin) && (
         <div className="card set-card">
           <div className="set-h">
             <b>{t('settings.workVpn.title', '工作 VPN')}</b>
@@ -581,7 +581,9 @@ export function NetworkSettings() {
                 defaults={[]}
                 onChange={(v) => updateWorkVpn({ domains: v })}
                 placeholder={t('settings.workVpn.domainsPlaceholder', 'corp.example.com')}
-                hint={t('settings.workVpn.domainsHint')}
+                hint={
+                  isWin ? t('settings.workVpn.domainsHintWin') : t('settings.workVpn.domainsHint')
+                }
               />
             </>
           )}

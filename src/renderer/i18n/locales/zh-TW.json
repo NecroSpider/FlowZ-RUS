@@ -814,7 +814,8 @@
       "domains": "內部網域",
       "domainsDesc": "這些網域（含子網域）一律由工作 VPN 的 DNS 解析並經 VPN 存取。",
       "domainsPlaceholder": "每行一個，例如：\ncorp.example.com\nintranet.local",
-      "domainsHint": "VPN 本身下發的網域會自動生效，這裡只需填寫它未下發的。"
+      "domainsHint": "VPN 本身下發的網域會自動生效，這裡只需填寫它未下發的。",
+      "domainsHintWin": "Windows 上所有 DNS 都經過 FlowZ，VPN 未下發的內部網域須在此填寫（或開啟自動識別）才能解析。"
     }
   },
   "servers": {

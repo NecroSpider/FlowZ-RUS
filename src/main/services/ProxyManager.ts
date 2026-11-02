@@ -105,7 +105,7 @@ import {
   type WorkVpnSnapshot,
 } from '../../shared/work-vpn';
 import {
-  detectMacWorkVpn,
+  detectHostWorkVpn,
   getPhysicalLanCidrs,
   readVpnProfileRemotes,
   resolveVpnServerHosts,
@@ -1007,6 +1007,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //   语义见 applyTunAddressPreflight 的 await 点（3.9.5）。
     this.lastStartupFatal = null;
     const tunAddressPick = this.startTunAddressPreflight(config, isTunMode);
+    // 3.2b 与工作 VPN 共存：探测同样在此发起（Windows 是一次 PowerShell ≈1 s），3.9.7 才收。best-effort，绝不抛。
+    const workVpnRefresh = this.refreshWorkVpnState(config).catch(() => undefined);
 
     // 检查是否选择了服务器
     if (!config.selectedServerId) {
@@ -1143,8 +1145,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 此时系统 default 仍是 en0，sing-box 的 auto detect 会误绑 en0；route get 目标地址才能得到 utun。
     this.tunDefaultInterface = await this.resolveMacTunDefaultInterface(config, resolvedServerIps);
 
-    // 3.9.7 与工作 VPN 共存：识别外部 VPN 的网段 / DNS / 服务器，供 generateSingBoxConfig 注入（无 VPN 时零改动）。
-    await this.refreshWorkVpnState(config);
+    // 3.9.7 与工作 VPN 共存：收 3.2b 识别的外部 VPN 网段 / DNS / 服务器，供 generateSingBoxConfig 注入（无 VPN 时零改动）。
+    await workVpnRefresh;
+    this.markStart('workVpnWait'); // 含 3.9.6 的 macOS route get；Windows 下应 ≈0（PowerShell 已被前面的步骤藏住）
 
     // 4. 生成 sing-box 配置文件
     let singboxConfig = this.generateSingBoxConfig(config, resolvedServerIps);
@@ -3823,9 +3826,10 @@ done
     };
   }
 
-  /** 与工作 VPN 共存是否生效（仅 macOS；缺省开）。 */
+  /** 与工作 VPN 共存是否生效（macOS / Windows；缺省开）。 */
   private workVpnEnabled(config: UserConfig | null): config is UserConfig {
-    return process.platform === 'darwin' && !!config && config.workVpn?.enabled !== false;
+    const platformOk = process.platform === 'darwin' || process.platform === 'win32';
+    return platformOk && !!config && config.workVpn?.enabled !== false;
   }
 
   /** FlowZ 自家组网系统接口（WG/Tailscale system interface）的地址段：这些 utun 是自己的，不算外部 VPN。 */
@@ -3844,10 +3848,11 @@ done
     if (this.effectiveTunInet4Address) this.workVpnOwnTunAddrs.add(this.effectiveTunInet4Address);
     const userTunAddr = config.tunConfig?.inet4Address?.split('/')[0];
     if (userTunAddr) this.workVpnOwnTunAddrs.add(userTunAddr);
-    const snap = await detectMacWorkVpn({
+    const snap = await detectHostWorkVpn({
       ownTunAddrs: [...this.workVpnOwnTunAddrs],
       ownMeshCidrs: this.workVpnOwnMeshCidrs(config),
       ownTunExcludes: this.workVpnTunExcludes,
+      ownTunName: process.platform === 'win32' ? resolveWinTunInterfaceName(config) : undefined,
     });
     if (!snap) return null;
     const merged = mergeStickyWorkVpnDns(snap, this.workVpnLastSeen);
@@ -3896,8 +3901,10 @@ done
             config.workVpn?.autoDetectDomains === true && !this.workVpnEvaluateRejected,
           tunMode: config.proxyModeType === 'tun',
           realResolverTag: getNodeResolverTag(cfg, 'rule'),
-          ownLanCidrs: getPhysicalLanCidrs(),
+          // 物理 LAN 段不排除只是 macOS 的约束（NE 反向路由丢回包）；Windows bypassLAN 本就整段排除私网。
+          ownLanCidrs: process.platform === 'darwin' ? getPhysicalLanCidrs() : [],
           fakeipRanges: [FAKEIP_INET4_RANGE],
+          platform: process.platform,
         }
       );
       this.workVpnUsedEvaluate = res.usedEvaluate;
@@ -3929,6 +3936,9 @@ done
    * TUN 上——发往内网 DNS/网段的流量会回灌自己，必须重生成。
    */
   private async checkWorkVpnChange(): Promise<void> {
+    // Windows：watcher 是 30 s 指纹轮询，每轮都会走到这里，而探测要起一次 PowerShell；那里网卡名也不会被 TUN 重排，
+    // 变化又从不触发重启——只在起核时探测。
+    if (process.platform !== 'darwin') return;
     const config = this.currentConfig;
     if (!this.workVpnEnabled(config)) return;
     const snap = await this.detectWorkVpnNow(config);

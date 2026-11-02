@@ -1,5 +1,5 @@
 /**
- * 「与工作 VPN 共存」纯逻辑（macOS 先行）：识别 OpenVPN / Cisco / Tunnelblick 等**外部** VPN 隧道下发的路由与 DNS，
+ * 「与工作 VPN 共存」纯逻辑（macOS + Windows）：识别 OpenVPN / Cisco / Tunnelblick 等**外部** VPN 隧道下发的路由与 DNS，
  * 让 FlowZ 与其并行工作而不互相干扰。真机现象（OpenVPN Connect + FlowZ TUN，2026-11-02）：
  *  - VPN 连在 FlowZ 之后时，OpenVPN 为服务器装的旁路路由走的是 FlowZ 的 TUN 网关（`<server>/32 → 172.19.0.1`），
  *    VPN 自身的传输层穿过 sing-box，FlowZ 一重启 / 该 IP 落到代理规则，VPN 就断；服务器域名还可能拿到 fakeip。
@@ -20,7 +20,7 @@ import { dedupe } from './collections';
 
 // ── 路由表（netstat -rn -f inet）────────────────────────────────────────────────────────────
 
-export interface MacRouteEntry {
+export interface RouteEntry {
   /** 规范 CIDR（a.b.c.d/n）。 */
   cidr: string;
   gateway: string;
@@ -68,8 +68,8 @@ export function netstatDestinationToCidr(dest: string, flags: string): string | 
 }
 
 /** 解析 `netstat -rn -f inet` 输出（只取 Internet 段的数据行）。 */
-export function parseMacNetstatRoutes(stdout: string): MacRouteEntry[] {
-  const out: MacRouteEntry[] = [];
+export function parseMacNetstatRoutes(stdout: string): RouteEntry[] {
+  const out: RouteEntry[] = [];
   for (const raw of stdout.split('\n')) {
     const cols = raw.trim().split(/\s+/);
     if (cols.length < 4 || cols[0] === 'Destination' || cols[0] === 'Routing') continue;
@@ -235,7 +235,7 @@ export interface WorkVpnSnapshot {
 }
 
 export interface WorkVpnDetectInput {
-  routes: MacRouteEntry[];
+  routes: RouteEntry[];
   /** 接口名 → 其 IPv4 地址（os.networkInterfaces）。 */
   ifaceAddrs: Record<string, string[]>;
   /** FlowZ 自家 TUN 的 IPv4 地址（不带掩码；含本会话用过的全部）。 */
@@ -245,6 +245,8 @@ export interface WorkVpnDetectInput {
   /** FlowZ 当前 TUN 的 route_exclude_address：用于认出 sing-tun 自己拆出来的 /32 补集路由。 */
   ownTunExcludes: string[];
   dnsEntries: DnsResolverEntry[];
+  /** 外部隧道接口名单（Windows 按网卡驱动描述认出，见 parseWinNetSnapshot）；缺省按 macOS 接口名正则认。 */
+  tunnelIfaces?: string[];
 }
 
 function ipv4ToInt(ip: string): number {
@@ -284,10 +286,12 @@ export function detectWorkVpn(input: WorkVpnDetectInput): WorkVpnSnapshot {
   const isOwnAddr = (addr: string): boolean =>
     ownTun.has(addr) || cidrOverlapsAny(`${addr}/32`, input.ownMeshCidrs);
 
+  const isTunnel = (name: string): boolean =>
+    input.tunnelIfaces ? input.tunnelIfaces.includes(name) : TUNNEL_IFACE_RE.test(name);
   const vpnIfaces = new Map<string, WorkVpnInterface>();
   for (const [name, addrs] of Object.entries(input.ifaceAddrs)) {
     const v4 = (addrs || []).filter(isIpv4);
-    if (!TUNNEL_IFACE_RE.test(name) || v4.length === 0) continue;
+    if (!isTunnel(name) || v4.length === 0) continue;
     if (v4.some(isOwnAddr)) continue;
     vpnIfaces.set(name, {
       name,
@@ -303,6 +307,9 @@ export function detectWorkVpn(input: WorkVpnDetectInput): WorkVpnSnapshot {
   for (const r of input.routes) {
     const vpn = vpnIfaces.get(r.iface);
     if (vpn) {
+      // 先剔整段落在忽略区里的（Windows 每张网卡都挂 224.0.0.0/4 组播路由，前缀 /4 会被误当全隧道）；
+      // 只剔「被包含」的，0/1、default 与 0.0.0.0/8 相交但不被包含，仍要标全隧道。
+      if (IGNORED_CIDRS.some((ig) => cidrContains(ig, r.cidr))) continue;
       const prefix = prefixOf(r.cidr);
       if (prefix < MIN_VPN_PREFIX) {
         vpn.fullTunnel = true;
@@ -347,6 +354,109 @@ export function detectWorkVpn(input: WorkVpnDetectInput): WorkVpnSnapshot {
 
   ifaces.sort((a, b) => a.name.localeCompare(b.name));
   return { interfaces: ifaces, serverIps: dedupe(serverIps) };
+}
+
+// ── Windows（PowerShell NetTCPIP / DnsClient 快照）──────────────────────────────────────────
+
+/**
+ * 外部 VPN 虚拟网卡的驱动描述（InterfaceDescription 是驱动字符串，不随系统语言本地化；网卡名则可能是
+ * 「Ethernet 2」「Подключение по локальной сети 2」之类，认不出来）。
+ */
+const WIN_VPN_ADAPTER_RE =
+  /tap-windows|wintun|openvpn|wireguard|anyconnect|cisco|fortinet|forticlient|pangp|globalprotect|juniper|pulse secure|ivanti|sonicwall|netextender|check ?point|zerotier|wan miniport|tunnel/i;
+
+/** work-vpn-detector 的 PowerShell 脚本输出的 JSON（键名缩写；任一段取不到即缺省）。 */
+interface WinNetSnapshotJson {
+  adapters?: Array<{ n?: string; d?: string }>;
+  addrs?: Array<{ n?: string; a?: string }>;
+  routes?: Array<{ n?: string; p?: string; g?: string }>;
+  dns?: Array<{ n?: string; s?: string[] }>;
+  suffix?: Array<{ n?: string; d?: string }>;
+  nrpt?: Array<{ ns?: string[]; s?: string[] }>;
+}
+
+export interface WinWorkVpnInputs {
+  routes: RouteEntry[];
+  ifaceAddrs: Record<string, string[]>;
+  tunnelIfaces: string[];
+  dnsEntries: DnsResolverEntry[];
+}
+
+const asArray = <T>(v: T[] | T | undefined | null): T[] =>
+  v === undefined || v === null ? [] : Array.isArray(v) ? v : [v];
+
+/**
+ * 解析 Windows 网络快照（Get-NetAdapter / Get-NetIPAddress / Get-NetRoute / Get-DnsClientServerAddress /
+ * Get-DnsClient / Get-DnsClientNrptPolicy）。外部 VPN 网卡 = 驱动描述命中 WIN_VPN_ADAPTER_RE，或不在网卡列表里却有
+ * 地址（系统自带 IKEv2/L2TP/SSTP 等 RAS 连接不是 NDIS 网卡）；FlowZ 自家 TUN 按名排除。
+ * DNS：VPN 网卡上配置的服务器 + 连接专用后缀、NRPT 分域规则，都按补充解析器处理（服务器须落在 VPN 网段才采纳）。
+ * 无法解析 → null。
+ */
+export function parseWinNetSnapshot(json: string, ownTunName: string): WinWorkVpnInputs | null {
+  let raw: WinNetSnapshotJson;
+  try {
+    raw = JSON.parse(json) as WinNetSnapshotJson;
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== 'object') return null;
+  const own = ownTunName.toLowerCase();
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+  const ifaceAddrs: Record<string, string[]> = {};
+  for (const a of asArray(raw.addrs)) {
+    const name = str(a?.n);
+    const ip = str(a?.a);
+    if (!name || !isIpv4(ip) || ip.startsWith('127.') || ip.startsWith('169.254.')) continue;
+    (ifaceAddrs[name] ??= []).push(ip);
+  }
+
+  const adapters = asArray(raw.adapters).filter((a) => str(a?.n));
+  const adapterNames = new Set(adapters.map((a) => str(a.n)));
+  const tunnelIfaces = new Set<string>();
+  for (const a of adapters) {
+    if (WIN_VPN_ADAPTER_RE.test(str(a.d))) tunnelIfaces.add(str(a.n));
+  }
+  // 网卡列表为空（CIM 被拦等）时不做「不在列表里」推断，否则所有接口都成了 VPN。
+  if (adapterNames.size > 0) {
+    for (const name of Object.keys(ifaceAddrs)) {
+      if (!adapterNames.has(name)) tunnelIfaces.add(name);
+    }
+  }
+  for (const name of [...tunnelIfaces]) {
+    if (name.toLowerCase() === own) tunnelIfaces.delete(name);
+  }
+
+  const routes: RouteEntry[] = [];
+  for (const r of asArray(raw.routes)) {
+    const iface = str(r?.n);
+    const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(str(r?.p));
+    if (!iface || !m || !isIpv4(m[1]) || Number(m[2]) > 32) continue;
+    routes.push({ cidr: `${m[1]}/${m[2]}`, gateway: str(r?.g), flags: '', iface });
+  }
+
+  const suffixOf = new Map<string, string>();
+  for (const s of asArray(raw.suffix)) {
+    if (str(s?.n) && str(s?.d)) suffixOf.set(str(s.n), str(s.d));
+  }
+  const dnsEntries: DnsResolverEntry[] = [];
+  for (const d of asArray(raw.dns)) {
+    const name = str(d?.n);
+    if (!tunnelIfaces.has(name)) continue;
+    const servers = asArray(d.s).map(str).filter(isIpv4);
+    if (servers.length === 0) continue;
+    const suffix = suffixOf.get(name);
+    dnsEntries.push({ servers, domains: suffix ? [suffix] : [], supplemental: true });
+  }
+  for (const n of asArray(raw.nrpt)) {
+    const servers = asArray(n?.s).map(str).filter(isIpv4);
+    const domains = asArray(n?.ns).map(str).filter(Boolean);
+    if (servers.length > 0 && domains.length > 0) {
+      dnsEntries.push({ servers, domains, supplemental: true });
+    }
+  }
+
+  return { routes, ifaceAddrs, tunnelIfaces: [...tunnelIfaces], dnsEntries };
 }
 
 /**
@@ -410,7 +520,7 @@ export function parseOpenVpnRemotes(text: string): string[] {
   return dedupe(out);
 }
 
-/** 自身走物理网卡、必须直连的 VPN 客户端进程（其传输层若被 TUN 捕获，按进程兜底直连）。 */
+/** 自身走物理网卡、必须直连的 VPN 客户端进程（其传输层若被 TUN 捕获，按进程兜底直连）。macOS 名 + Windows 可执行文件名。 */
 export const VPN_CLIENT_PROCESS_NAMES = [
   'OpenVPN Connect',
   'openvpn',
@@ -424,6 +534,26 @@ export const VPN_CLIENT_PROCESS_NAMES = [
   'PanGPS',
   'GlobalProtect',
   'openconnect',
+  'openvpn.exe',
+  'openvpnserv.exe',
+  'vpnagent.exe',
+  'FortiSSLVPNdaemon.exe',
+  'PanGPS.exe',
+  'wireguard.exe',
+  'openconnect.exe',
+];
+
+/**
+ * Windows：按安装目录认 VPN 客户端进程。OpenVPN Connect 的隧道进程名带版本时间戳（agent_ovpnconnect_<数字>.exe），
+ * 按名单匹配不到；sing-box 的 process_path_regex 是 RE2，(?i) 不分大小写。
+ */
+export const WIN_VPN_CLIENT_PATH_REGEX = [
+  String.raw`(?i)\\OpenVPN Connect\\[^\\]+\.exe$`,
+  String.raw`(?i)\\OpenVPN\\bin\\[^\\]+\.exe$`,
+  String.raw`(?i)\\Cisco\\Cisco (AnyConnect Secure Mobility Client|Secure Client)\\[^\\]+\.exe$`,
+  String.raw`(?i)\\Fortinet\\FortiClient\\[^\\]+\.exe$`,
+  String.raw`(?i)\\Palo Alto Networks\\GlobalProtect\\[^\\]+\.exe$`,
+  String.raw`(?i)\\WireGuard\\[^\\]+\.exe$`,
 ];
 
 // ── 注入 sing-box 配置 ────────────────────────────────────────────────────────────────────
@@ -453,6 +583,8 @@ export interface WorkVpnApplyInput {
   ownLanCidrs: string[];
   /** fakeip 段：与之相交的不排除。 */
   fakeipRanges: string[];
+  /** 'win32' 时另按安装目录认 VPN 客户端进程（WIN_VPN_CLIENT_PATH_REGEX）。 */
+  platform?: string;
 }
 
 export interface WorkVpnApplyResult {
@@ -611,6 +743,13 @@ export function applyWorkVpnToSingBoxConfig(
     const add: Array<Record<string, unknown>> = [
       { process_name: VPN_CLIENT_PROCESS_NAMES, action: 'route', outbound: 'direct' },
     ];
+    if (input.platform === 'win32') {
+      add.push({
+        process_path_regex: WIN_VPN_CLIENT_PATH_REGEX,
+        action: 'route',
+        outbound: 'direct',
+      });
+    }
     if (serverIps.length > 0 || serverHosts.length > 0) {
       add.push({
         ...(serverIps.length > 0 ? { ip_cidr: serverIps.map((ip) => `${ip}/32`) } : {}),

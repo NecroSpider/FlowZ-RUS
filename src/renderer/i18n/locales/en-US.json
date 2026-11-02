@@ -814,7 +814,8 @@
       "domains": "Internal domains",
       "domainsDesc": "Domains (including subdomains) always resolved by the work VPN DNS and sent through the VPN.",
       "domainsPlaceholder": "One per line, e.g.:\ncorp.example.com\nintranet.local",
-      "domainsHint": "Domains pushed by the VPN itself are picked up automatically — add only the ones it does not announce."
+      "domainsHint": "Domains pushed by the VPN itself are picked up automatically — add only the ones it does not announce.",
+      "domainsHintWin": "On Windows all DNS goes through FlowZ, so internal names the VPN does not announce work only if their domains are listed here (or auto-detect is on)."
     }
   },
   "servers": {

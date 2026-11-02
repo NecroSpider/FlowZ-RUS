@@ -347,6 +347,7 @@ export interface SingBoxRouteRule {
   source_hostname?: string[];
   process_name?: string | string[];
   process_path?: string | string[];
+  process_path_regex?: string | string[];
   process_name_not?: string | string[]; // sing-box 1.13+
   inbound?: string | string[]; // sing-box 1.13+
   action?: string; // logical 子规则为纯 matcher 无 action；default/logical 外层显式设 'route'

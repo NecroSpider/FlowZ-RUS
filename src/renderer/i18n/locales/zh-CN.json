@@ -814,7 +814,8 @@
       "domains": "内部域名",
       "domainsDesc": "这些域名（含子域）始终由工作 VPN 的 DNS 解析并经 VPN 访问。",
       "domainsPlaceholder": "每行一个，例如：\ncorp.example.com\nintranet.local",
-      "domainsHint": "VPN 自身下发的域名会自动生效，这里只需填写它未下发的。"
+      "domainsHint": "VPN 自身下发的域名会自动生效，这里只需填写它未下发的。",
+      "domainsHintWin": "Windows 上所有 DNS 都经过 FlowZ，VPN 未下发的内部域名须在此填写（或开启自动识别）才能解析。"
     }
   },
   "servers": {

@@ -11,6 +11,8 @@ import {
   applyWorkVpnToSingBoxConfig,
   dnsRulesUseLegacyAddressFilter,
   normalizeWorkDomain,
+  parseWinNetSnapshot,
+  WIN_VPN_CLIENT_PATH_REGEX,
 } from '../work-vpn';
 
 // 真机抓取（macOS 26，OpenVPN Connect 连在 FlowZ TUN 之后）：utun4 = FlowZ，utun5 = OpenVPN。
@@ -421,5 +423,201 @@ describe('dnsRulesUseLegacyAddressFilter', () => {
     expect(
       dnsRulesUseLegacyAddressFilter([{ type: 'logical', rules: [{ ip_cidr: ['1.0.0.0/8'] }] }])
     ).toBe(true);
+  });
+});
+
+// Windows 快照（work-vpn-detector 的 PowerShell 脚本输出形状）：OpenVPN DCO + 系统自带 IKEv2（RAS，不在网卡列表）
+// + 未连的 TAP + WSL 虚拟网卡 + FlowZ 自家 TUN。网卡名含西里尔字母（俄文系统）。
+const WIN_SNAPSHOT = {
+  adapters: [
+    { n: 'Ethernet', d: 'Intel(R) Ethernet Connection (17) I219-V' },
+    { n: 'Беспроводная сеть', d: 'Intel(R) Wi-Fi 6E AX211 160MHz' },
+    { n: 'OpenVPN Data Channel Offload', d: 'OpenVPN Data Channel Offload' },
+    { n: 'Подключение по локальной сети 2', d: 'TAP-Windows Adapter V9 for OpenVPN Connect' },
+    { n: 'vEthernet (WSL)', d: 'Hyper-V Virtual Ethernet Adapter' },
+    { n: 'flowz-tun0', d: 'FlowZ Tunnel' },
+  ],
+  addrs: [
+    { n: 'Ethernet', a: '192.168.1.50' },
+    { n: 'Беспроводная сеть', a: '169.254.10.10' },
+    { n: 'OpenVPN Data Channel Offload', a: '10.8.0.6' },
+    { n: 'vEthernet (WSL)', a: '172.29.80.1' },
+    { n: 'flowz-tun0', a: '172.19.0.1' },
+    { n: 'Loopback Pseudo-Interface 1', a: '127.0.0.1' },
+    { n: 'Corp IKEv2', a: '10.200.0.15' },
+  ],
+  routes: [
+    { n: 'Ethernet', p: '0.0.0.0/0', g: '192.168.1.1' },
+    { n: 'Ethernet', p: 'garbage', g: '0.0.0.0' },
+    { n: 'flowz-tun0', p: '0.0.0.0/1', g: '0.0.0.0' },
+    { n: 'flowz-tun0', p: '128.0.0.0/1', g: '0.0.0.0' },
+    { n: 'OpenVPN Data Channel Offload', p: '10.175.0.0/24', g: '10.8.0.1' },
+    { n: 'OpenVPN Data Channel Offload', p: '175.175.0.0/16', g: '10.8.0.1' },
+    { n: 'OpenVPN Data Channel Offload', p: '10.8.0.0/24', g: '0.0.0.0' },
+    { n: 'OpenVPN Data Channel Offload', p: '10.8.0.6/32', g: '0.0.0.0' },
+    { n: 'OpenVPN Data Channel Offload', p: '10.8.0.255/32', g: '0.0.0.0' },
+    { n: 'OpenVPN Data Channel Offload', p: '224.0.0.0/4', g: '0.0.0.0' },
+    { n: 'OpenVPN Data Channel Offload', p: '255.255.255.255/32', g: '0.0.0.0' },
+    { n: 'vEthernet (WSL)', p: '172.29.80.0/20', g: '0.0.0.0' },
+    { n: 'Corp IKEv2', p: '10.200.0.0/16', g: '0.0.0.0' },
+  ],
+  dns: [
+    { n: 'Ethernet', s: ['192.168.1.1'] },
+    { n: 'OpenVPN Data Channel Offload', s: ['10.175.0.249'] },
+    { n: 'Corp IKEv2', s: ['10.200.0.1'] },
+    { n: 'vEthernet (WSL)', s: [] },
+  ],
+  suffix: [
+    { n: 'Ethernet', d: 'lan' },
+    { n: 'OpenVPN Data Channel Offload', d: 'corp.example' },
+  ],
+  nrpt: [
+    { ns: ['.intra.example'], s: ['10.175.0.249'] },
+    { ns: ['.public.example'], s: ['8.8.8.8'] },
+  ],
+};
+
+function detectWin(snapshot: unknown = WIN_SNAPSHOT) {
+  const parsed = parseWinNetSnapshot(JSON.stringify(snapshot), 'flowz-tun0');
+  if (!parsed) throw new Error('parse failed');
+  return detectWorkVpn({
+    ...parsed,
+    ownTunAddrs: ['172.19.0.1'],
+    ownMeshCidrs: [],
+    ownTunExcludes: [],
+  });
+}
+
+describe('Windows：parseWinNetSnapshot + detectWorkVpn', () => {
+  it('按驱动描述认 VPN 网卡，RAS 连接按「不在网卡列表」认；物理网卡 / WSL / 自家 TUN 不算', () => {
+    const parsed = parseWinNetSnapshot(JSON.stringify(WIN_SNAPSHOT), 'flowz-tun0');
+    expect(parsed?.tunnelIfaces.sort()).toEqual([
+      'Corp IKEv2',
+      'OpenVPN Data Channel Offload',
+      'Подключение по локальной сети 2',
+    ]);
+    expect(parsed?.ifaceAddrs['Беспроводная сеть']).toBeUndefined(); // 169.254 不算地址
+    expect(parsed?.ifaceAddrs['Loopback Pseudo-Interface 1']).toBeUndefined();
+    expect(parsed?.routes.some((r) => r.cidr === 'garbage')).toBe(false);
+  });
+
+  it('网段、VPN DNS、连接后缀与 NRPT 域名归到对应 VPN；不走 VPN 的 NRPT 服务器丢弃', () => {
+    expect(detectWin()).toEqual({
+      interfaces: [
+        {
+          name: 'Corp IKEv2',
+          addresses: ['10.200.0.15'],
+          cidrs: ['10.200.0.0/16'],
+          dnsServers: ['10.200.0.1'],
+          domains: [],
+          fullTunnel: false,
+        },
+        {
+          name: 'OpenVPN Data Channel Offload',
+          addresses: ['10.8.0.6'],
+          cidrs: ['10.175.0.0/24', '175.175.0.0/16', '10.8.0.0/24'],
+          dnsServers: ['10.175.0.249'],
+          domains: ['corp.example', 'intra.example'],
+          fullTunnel: false,
+        },
+      ],
+      serverIps: [],
+    });
+  });
+
+  it('redirect-gateway（0/1 + 128/1 走 VPN 网卡）→ fullTunnel', () => {
+    const snap = {
+      ...WIN_SNAPSHOT,
+      routes: [
+        ...WIN_SNAPSHOT.routes,
+        { n: 'OpenVPN Data Channel Offload', p: '0.0.0.0/1', g: '10.8.0.1' },
+        { n: 'OpenVPN Data Channel Offload', p: '128.0.0.0/1', g: '10.8.0.1' },
+      ],
+    };
+    const dco = detectWin(snap).interfaces.find((it) => it.name === 'OpenVPN Data Channel Offload');
+    expect(dco?.fullTunnel).toBe(true);
+    expect(dco?.cidrs).not.toContain('0.0.0.0/1');
+  });
+
+  it('PowerShell 把非 ASCII 转成 \\uXXXX：网卡名原样还原；单个对象（非数组）也收', () => {
+    const raw =
+      '{"adapters":{"n":"\\u0421\\u0435\\u0442\\u044c","d":"TAP-Windows Adapter V9"},' +
+      '"addrs":[{"n":"\\u0421\\u0435\\u0442\\u044c","a":"10.9.0.2"}],' +
+      '"routes":[{"n":"\\u0421\\u0435\\u0442\\u044c","p":"10.9.0.0/24","g":"0.0.0.0"}]}';
+    const parsed = parseWinNetSnapshot(raw, 'flowz-tun0');
+    expect(parsed?.tunnelIfaces).toEqual(['Сеть']);
+    expect(parsed?.routes).toEqual([
+      { cidr: '10.9.0.0/24', gateway: '0.0.0.0', flags: '', iface: 'Сеть' },
+    ]);
+  });
+
+  it('网卡列表取不到（CIM 被拦）→ 不做 RAS 推断，不把所有接口当 VPN', () => {
+    expect(detectWin({ ...WIN_SNAPSHOT, adapters: [] }).interfaces).toEqual([]);
+  });
+
+  it('坏 JSON → null', () => {
+    expect(parseWinNetSnapshot('not json', 'flowz-tun0')).toBeNull();
+    expect(parseWinNetSnapshot('null', 'flowz-tun0')).toBeNull();
+  });
+
+  it('Windows 起核：绑 VPN 网卡（别名含空格）+ 按安装目录认 VPN 客户端进程', () => {
+    const cfg = baseConfig();
+    applyWorkVpnToSingBoxConfig(cfg, {
+      snapshot: detectWin(),
+      serverIps: [],
+      serverHosts: [],
+      userDomains: [],
+      autoDetectDomains: false,
+      tunMode: true,
+      realResolverTag: 'dns-node-race',
+      ownLanCidrs: [],
+      fakeipRanges: ['198.18.0.0/15'],
+      platform: 'win32',
+    });
+    expect(cfg.outbounds).toContainEqual({
+      type: 'direct',
+      tag: 'work-vpn-OpenVPN_Data_Channel_Offload',
+      bind_interface: 'OpenVPN Data Channel Offload',
+      domain_resolver: 'work-vpn-dns-1',
+    });
+    expect(cfg.route.rules).toContainEqual({
+      process_path_regex: WIN_VPN_CLIENT_PATH_REGEX,
+      action: 'route',
+      outbound: 'direct',
+    });
+    const tun = cfg.inbounds.find((ib) => ib.type === 'tun');
+    expect(tun?.route_exclude_address).toEqual(
+      expect.arrayContaining(['175.175.0.0/16', '10.175.0.0/24', '10.200.0.0/16'])
+    );
+  });
+
+  it('macOS 不发 process_path_regex', () => {
+    const cfg = baseConfig();
+    applyWorkVpnToSingBoxConfig(cfg, {
+      snapshot: detectLive(),
+      serverIps: [],
+      serverHosts: [],
+      userDomains: [],
+      autoDetectDomains: false,
+      tunMode: true,
+      realResolverTag: 'dns-node-race',
+      ownLanCidrs: [],
+      fakeipRanges: [],
+      platform: 'darwin',
+    });
+    expect(cfg.route.rules.some((r) => 'process_path_regex' in r)).toBe(false);
+  });
+
+  it('安装目录正则（RE2 语法，这里按 JS 等价写法验）', () => {
+    const res = WIN_VPN_CLIENT_PATH_REGEX.map((r) => new RegExp(r.replace('(?i)', ''), 'i'));
+    const hit = (p: string): boolean => res.some((re) => re.test(p));
+    expect(hit('C:\\Program Files\\OpenVPN Connect\\agent_ovpnconnect_1594367036109.exe')).toBe(
+      true
+    );
+    expect(hit('C:\\Program Files\\OpenVPN\\bin\\openvpn.exe')).toBe(true);
+    expect(hit('C:\\Program Files (x86)\\Cisco\\Cisco Secure Client\\vpnagent.exe')).toBe(true);
+    expect(hit('C:\\Program Files\\WireGuard\\wireguard.exe')).toBe(true);
+    expect(hit('C:\\Program Files\\FlowZ\\FlowZ.exe')).toBe(false);
+    expect(hit('C:\\Program Files\\OpenVPN Connect\\resources\\app\\x.dll')).toBe(false);
   });
 });
