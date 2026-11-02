@@ -32,6 +32,13 @@ jest.mock('dns', () => ({
   promises: { lookup: (...a: unknown[]) => mockLookup(...a) },
 }));
 
+// ── 设备标识 mock：真实实现会跑 ioreg / reg / sysctl，测试里给固定值（deviceHeaders 用真实拼装）──
+jest.mock('../device-identity', () => ({
+  ...jest.requireActual('../device-identity'),
+  getDeviceInfo: () =>
+    Promise.resolve({ hwid: 'a'.repeat(32), os: 'macOS', osVersion: '26.0.1', model: 'Mac15,6' }),
+}));
+
 import { SubscriptionService } from '../SubscriptionService';
 import { ProtocolParser } from '../ProtocolParser';
 import type { ServerConfig } from '../../../shared/types';
@@ -1107,5 +1114,96 @@ describe('Xray JSON 配置数组订阅', () => {
     const all = log.entries.map((e) => e.message).join('\n');
     expect(all).toMatch(/非链接行\(1\)/);
     expect(all).not.toMatch(/203\.0\.113\.10|SECRET-PK/i);
+  });
+});
+
+describe('设备标识（HWID，Remnawave 设备数限制）', () => {
+  const body = JSON.stringify({
+    proxies: [{ name: 'n', type: 'vless', server: '1.1.1.1', port: 443, uuid: 'a' }],
+  });
+  const headersOf = (call = 0) =>
+    (mockFetch.mock.calls[call][1] as { headers: Record<string, string> }).headers;
+
+  it('缺省带 x-hwid 与设备信息头', async () => {
+    const svc = newService(new FakeLog());
+    mockFetch.mockResolvedValue(makeResponse({ body }));
+    await svc.fetchSubscription('https://sub.example.com/x', SUB_ID);
+    expect(headersOf()).toMatchObject({
+      'x-hwid': 'a'.repeat(32),
+      'x-device-os': 'macOS',
+      'x-ver-os': '26.0.1',
+      'x-device-model': 'Mac15,6',
+    });
+  });
+
+  it('sendHwid=false → 不带设备头', async () => {
+    const svc = newService(new FakeLog());
+    mockFetch.mockResolvedValue(makeResponse({ body }));
+    await svc.fetchSubscription(
+      'https://sub.example.com/x',
+      SUB_ID,
+      false,
+      undefined,
+      undefined,
+      false
+    );
+    expect(headersOf()['x-hwid']).toBeUndefined();
+    expect(headersOf()['x-device-os']).toBeUndefined();
+  });
+
+  it('与条件 GET 头并存', async () => {
+    const svc = newService(new FakeLog());
+    mockFetch.mockResolvedValue(makeResponse({ status: 304 }));
+    await svc.fetchSubscription('https://sub.example.com/x', SUB_ID, false, undefined, {
+      etag: 'W/"e"',
+    });
+    expect(headersOf()['If-None-Match']).toBe('W/"e"');
+    expect(headersOf()['x-hwid']).toBe('a'.repeat(32));
+  });
+
+  it('Clash provider 地址来自订阅正文 → 不发设备头', async () => {
+    const svc = newService(new FakeLog());
+    const main = JSON.stringify({
+      proxies: [{ name: 'inline', type: 'vless', server: '1.1.1.1', port: 443, uuid: 'a' }],
+      'proxy-providers': { p1: { type: 'http', url: 'https://prov.example.com/p1' } },
+    });
+    mockFetch.mockImplementation(async (url: string) =>
+      makeResponse({ body: url.includes('prov.example.com') ? body : main })
+    );
+    await svc.fetchSubscription('https://sub.example.com/c', SUB_ID);
+    const calls = mockFetch.mock.calls.map((c, i) => ({ url: c[0] as string, h: headersOf(i) }));
+    expect(calls.find((c) => c.url.includes('sub.example.com'))?.h['x-hwid']).toBe('a'.repeat(32));
+    expect(calls.find((c) => c.url.includes('prov.example.com'))?.h['x-hwid']).toBeUndefined();
+  });
+
+  it('预检（新增订阅）同样带设备头，可关', async () => {
+    const svc = newService(new FakeLog());
+    mockFetch.mockResolvedValue(makeResponse({ body }));
+    await svc.previewSubscription('https://sub.example.com/x', {});
+    expect(headersOf(0)['x-hwid']).toBe('a'.repeat(32));
+    await svc.previewSubscription('https://sub.example.com/x', { sendHwid: false });
+    expect(headersOf(1)['x-hwid']).toBeUndefined();
+  });
+
+  it('面板回 x-hwid-not-supported / x-hwid-max-devices-reached → 日志提示', async () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        body,
+        headers: { 'x-hwid-not-supported': 'true', 'x-hwid-max-devices-reached': 'true' },
+      })
+    );
+    await svc.fetchSubscription(
+      'https://sub.example.com/x',
+      SUB_ID,
+      false,
+      undefined,
+      undefined,
+      false
+    );
+    const warns = log.entries.filter((e) => e.level === 'warn').map((e) => e.message);
+    expect(warns.some((m) => m.includes('发送设备 ID'))).toBe(true);
+    expect(warns.some((m) => m.includes('设备数上限'))).toBe(true);
   });
 });

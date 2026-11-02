@@ -9,6 +9,7 @@ import type {
 import { ProtocolParser } from './ProtocolParser';
 import { LogManager } from './LogManager';
 import { safeRedirectFetch } from '../safe-redirect-fetch';
+import { deviceHeaders, getDeviceInfo } from './device-identity';
 import {
   CLASH_PROBE_RE,
   tryLoadClashDoc,
@@ -668,7 +669,9 @@ export class SubscriptionService {
     viaProxy: boolean,
     userAgent: string,
     signal?: AbortSignal,
-    conditional?: { etag?: string; lastModified?: string }
+    conditional?: { etag?: string; lastModified?: string },
+    /** 设备标识头（x-hwid 等）：只给主订阅地址，provider 地址来自订阅正文、不发。 */
+    extraHeaders?: Record<string, string>
   ): Promise<{
     text: string;
     userInfo?: SubscriptionConfig['userInfo'];
@@ -726,12 +729,13 @@ export class SubscriptionService {
     const condHeaders: Record<string, string> = {};
     if (conditional?.etag) condHeaders['If-None-Match'] = conditional.etag;
     if (conditional?.lastModified) condHeaders['If-Modified-Since'] = conditional.lastModified;
+    const reqHeaders = { ...condHeaders, ...extraHeaders };
     const response = await safeRedirectFetch<GlobalResponse>({
       fetchImpl: (u, init) => fetchImpl(u, init),
       url,
       userAgent,
       exemptFakeIp: viaProxiedSession,
-      ...(Object.keys(condHeaders).length ? { headers: condHeaders } : {}),
+      ...(Object.keys(reqHeaders).length ? { headers: reqHeaders } : {}),
       ...(signal ? { signal } : {}),
     });
     // §16.3.4：304 Not Modified → 短路，不读 body、不 parse/reconcile（零节点扰动、省流省渲染）。
@@ -765,6 +769,7 @@ export class SubscriptionService {
       }
     }
 
+    this.logHwidStatus(response.headers, !!extraHeaders?.['x-hwid']);
     const userInfo = this.parseUserInfo(response.headers.get('subscription-userinfo'));
     // §16.3.4：回传本次 200 的验证器供回写 sub（下次条件 GET）。
     const etag = response.headers.get('etag') ?? undefined;
@@ -772,6 +777,38 @@ export class SubscriptionService {
     // 流式读取并按字节累计上限（content-length 可缺失/撒谎，读取侧硬校验兜底）。
     const text = await this.readBodyCapped(response);
     return { text, userInfo, etag, lastModified };
+  }
+
+  /** Remnawave 设备数限制的响应头 → 日志（订阅里只剩「⛔」占位节点时，用户据此知道该开哪个开关）。 */
+  private logHwidStatus(headers: { get(name: string): string | null }, sentHwid: boolean): void {
+    if (headers.get('x-hwid-not-supported') === 'true') {
+      this.logManager.addLog(
+        'warn',
+        sentHwid
+          ? '订阅面板仍认为未传设备 ID（x-hwid-not-supported）'
+          : '订阅要求设备 ID（HWID）：请在该订阅设置里开启「发送设备 ID」',
+        'Subscription'
+      );
+    }
+    if (headers.get('x-hwid-max-devices-reached') === 'true') {
+      this.logManager.addLog(
+        'warn',
+        '订阅已达设备数上限：在服务商的机器人/面板里删除不用的设备后再更新',
+        'Subscription'
+      );
+    }
+  }
+
+  /** 设备标识头；取不到 → undefined（照常拉取，只是不带 HWID）。 */
+  private async deviceHeadersOrNone(
+    sendHwid: boolean
+  ): Promise<Record<string, string> | undefined> {
+    if (!sendHwid) return undefined;
+    try {
+      return deviceHeaders(await getDeviceInfo());
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -1096,6 +1133,7 @@ export class SubscriptionService {
    *   3. 明文 URL 列表 (每行一个 vless:// / ss:// / trojan:// ...)
    *   4. Base64 编码的 URL 列表
    * @param userAgent 可选 UA（per-sub ?? 全局 ?? 默认）；缺省时用 defaultSubscriptionUserAgent()。
+   * @param sendHwid 带设备标识头（per-sub `sendHwid`，缺省开）。
    * @returns partial=true 当 Clash provider 部分失败 → 调用方 reconcile 改 merge-only 防穿仓。
    */
   async fetchSubscription(
@@ -1103,7 +1141,8 @@ export class SubscriptionService {
     subscriptionId: string,
     viaProxy: boolean = false,
     userAgent?: string,
-    conditional?: { etag?: string; lastModified?: string }
+    conditional?: { etag?: string; lastModified?: string },
+    sendHwid: boolean = true
   ): Promise<{
     servers: ServerConfig[];
     userInfo?: SubscriptionConfig['userInfo'];
@@ -1132,7 +1171,8 @@ export class SubscriptionService {
         viaProxy,
         ua,
         AbortSignal.timeout(SubscriptionService.MAIN_FETCH_TIMEOUT_MS),
-        conditional
+        conditional,
+        await this.deviceHeadersOrNone(sendHwid)
       );
       // §16.3.4：304 → 内容无变化，短路 parse/reconcile（零节点扰动）。
       if (notModified) {
@@ -1183,7 +1223,7 @@ export class SubscriptionService {
    */
   async previewSubscription(
     url: string,
-    opts: { viaProxy?: boolean; userAgent?: string }
+    opts: { viaProxy?: boolean; userAgent?: string; sendHwid?: boolean }
   ): Promise<SubscriptionPreviewResult> {
     const viaProxy = opts.viaProxy ?? false;
     const userAgent = opts.userAgent?.trim() || defaultSubscriptionUserAgent();
@@ -1193,7 +1233,9 @@ export class SubscriptionService {
         url,
         viaProxy,
         userAgent,
-        AbortSignal.timeout(SubscriptionService.MAIN_FETCH_TIMEOUT_MS)
+        AbortSignal.timeout(SubscriptionService.MAIN_FETCH_TIMEOUT_MS),
+        undefined,
+        await this.deviceHeadersOrNone(opts.sendHwid !== false)
       );
       const { servers } = await this.parseSubscriptionContent(text.trim(), tempSubId, {
         allowProviders: true,

@@ -245,6 +245,7 @@ export function useServerActions() {
     const pre = await apiPreviewSubscription(subData.url, {
       viaProxy: subData.updateViaProxy,
       userAgent: subData.userAgent,
+      sendHwid: subData.sendHwid,
     });
     if (!pre.ok) {
       // 不建任何记录 → 对话框据 errorKind/httpStatus 展示错误、留窗；无闪现节点。

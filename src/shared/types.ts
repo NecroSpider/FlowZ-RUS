@@ -152,6 +152,9 @@ export interface SubscriptionConfig {
   // 该订阅是否经代理更新（per-sub；默认 false=直连）。仅全局 subscriptionProxyPolicy='follow' 时生效，
   // 'proxy'/'direct' 时被全局覆盖（忽略本字段）。生效求值见 shared/subscription-proxy#resolveSubscriptionViaProxy。
   updateViaProxy?: boolean;
+  // 拉取时带设备标识（x-hwid / x-device-os / x-ver-os / x-device-model；Remnawave 设备数限制要求）。缺省开，
+  // 仅 false 关闭。见 main/services/device-identity。
+  sendHwid?: boolean;
   // 订阅流量/到期信息（从 Subscription-UserInfo header 解析）
   userInfo?: {
     upload?: number; // 已上传字节

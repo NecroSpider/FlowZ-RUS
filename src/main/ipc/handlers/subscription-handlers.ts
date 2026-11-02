@@ -113,7 +113,8 @@ export function registerSubscriptionHandlers(
           subscription.id,
           resolveSubscriptionViaProxy(config.subscriptionProxyPolicy, subscription.updateViaProxy),
           subscription.userAgent ?? config.subscriptionUserAgent,
-          conditional
+          conditional,
+          subscription.sendHwid !== false
         );
 
         // §16.3.4：304 无变化 → 仅刷元数据（lastUpdated + validators），不 reconcile、不 force-restart（零节点扰动）。
@@ -239,17 +240,18 @@ export function registerSubscriptionHandlers(
 
   // 订阅预检（新增订阅前先行，不写 config）：拉取+解析 URL 返回节点数或分类错误，成功才建记录（避免先加后删闪现）。
   registerIpcHandler<
-    { url: string; viaProxy?: boolean; userAgent?: string },
+    { url: string; viaProxy?: boolean; userAgent?: string; sendHwid?: boolean },
     SubscriptionPreviewResult
   >(
     IPC_CHANNELS.SUBSCRIPTION_PREVIEW,
     async (
       _event: IpcMainInvokeEvent,
-      args: { url: string; viaProxy?: boolean; userAgent?: string }
+      args: { url: string; viaProxy?: boolean; userAgent?: string; sendHwid?: boolean }
     ) => {
       return subscriptionService.previewSubscription(args.url, {
         viaProxy: args.viaProxy,
         userAgent: args.userAgent,
+        sendHwid: args.sendHwid,
       });
     }
   );

@@ -56,6 +56,7 @@ export function SubscriptionDialog({
   const [autoUpdate, setAutoUpdate] = useState(false); // 新增订阅默认【关闭】自动更新：避免订阅刷新带来节点变动触发重启断流，由用户按需手动开启（开启时下方提示重启代价）
   const [userAgent, setUserAgent] = useState('');
   const [updateViaProxy, setUpdateViaProxy] = useState(false); // per-sub 经代理更新（默认关）
+  const [sendHwid, setSendHwid] = useState(true); // per-sub 发送设备 ID（默认开，同 Happ / v2RayTun）
   const [appVersion, setAppVersion] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   // 字段级校验错误内联展示（§6：可归位到字段的错误不走 toast 通知流，就地红框+红字）。
@@ -86,12 +87,14 @@ export function SubscriptionDialog({
         setAutoUpdate(subscription.autoUpdate);
         setUserAgent(subscription.userAgent ?? '');
         setUpdateViaProxy(subscription.updateViaProxy ?? false);
+        setSendHwid(subscription.sendHwid !== false);
       } else {
         setName('');
         setUrl('');
         setAutoUpdate(false);
         setUserAgent('');
         setUpdateViaProxy(false);
+        setSendHwid(true);
       }
     }
   }, [open, subscription]);
@@ -119,6 +122,8 @@ export function SubscriptionDialog({
         ...(trimmedUa ? { userAgent: trimmedUa } : {}),
         // 仅 true 才写入（默认关 = 不带字段，落回直连）。
         ...(updateViaProxy ? { updateViaProxy: true } : {}),
+        // 仅 false 才写入（默认开 = 不带字段）。
+        ...(sendHwid ? {} : { sendHwid: false }),
       });
       // 仅保存成功才关窗；失败(ok:false)保留对话框与已填内容，免用户重填。onSave 返回 void（旧契约）时按成功关窗。
       if (!result || result.ok) {
@@ -286,6 +291,18 @@ export function SubscriptionDialog({
                   onCheckedChange={setUpdateViaProxy}
                   disabled={subscriptionProxyPolicy !== 'follow'}
                 />
+              </div>
+
+              {/* 发送设备 ID（per-sub，默认开）：Remnawave 等面板的设备数限制要求 x-hwid，否则只回「⛔」占位节点 */}
+              <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="sub-send-hwid">{t('sub.sendHwid', '发送设备 ID')}</Label>
+                    <InfoTooltip content={t('sub.sendHwidDescFull')} />
+                  </div>
+                  <div className="text-[0.8rem] text-muted-foreground">{t('sub.sendHwidDesc')}</div>
+                </div>
+                <Switch id="sub-send-hwid" checked={sendHwid} onCheckedChange={setSendHwid} />
               </div>
             </div>
           </details>

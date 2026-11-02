@@ -253,7 +253,7 @@ export async function updateSubscriptionServers(subscriptionId: string): Promise
  */
 export async function previewSubscription(
   url: string,
-  opts: { viaProxy?: boolean; userAgent?: string }
+  opts: { viaProxy?: boolean; userAgent?: string; sendHwid?: boolean }
 ): Promise<SubscriptionPreviewResult> {
   try {
     return await api.subscription.preview(url, opts);
