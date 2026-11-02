@@ -72,6 +72,8 @@ function makePm() {
     'writeSingBoxConfig',
     'checkAndPruneConfig',
     'ensureSystemProxyCleared',
+    // 工作 VPN 探测：Windows runner 上 process.platform 真是 win32，会起真 PowerShell（≈1–3 s）。
+    'refreshWorkVpnState',
   ]) {
     jest.spyOn(pm, m).mockImplementation(noop);
   }
@@ -194,5 +196,6 @@ describe('A7 run-phase 备用腿：retry 的 shouldRetry / onRetry 对 dependenc
     // ref-fix 腿未触发。
     expect(pruneSpy).not.toHaveBeenCalled();
     expect(pm.refFixAttempted).toBe(false);
-  });
+    // 同上一用例：Windows runner 慢，默认 5 s 曾判红（2026-11-02 v4.3.10 CI）。
+  }, 30_000);
 });
