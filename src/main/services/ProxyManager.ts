@@ -65,6 +65,7 @@ import {
   effectiveAppRules,
   applyRuleSetPrune,
   buildIdToTagMap,
+  getNodeResolverTag,
 } from './singbox-config-helpers';
 import { buildDnsConfig } from './singbox-dns-builder';
 import { buildRouteConfig } from './singbox-route-builder';
@@ -93,8 +94,24 @@ import {
   meshAlwaysRoutesSubnets,
   endpointForcedRouteCidrs,
   meshSystemSupportedOnPlatform,
+  meshUsesSystemInterface,
   referencedServerIds,
 } from '../../shared/endpoint-routes';
+import {
+  applyWorkVpnToSingBoxConfig,
+  describeWorkVpn,
+  mergeStickyWorkVpnDns,
+  workVpnFingerprint,
+  type WorkVpnSnapshot,
+} from '../../shared/work-vpn';
+import {
+  detectMacWorkVpn,
+  getPhysicalLanCidrs,
+  readVpnProfileRemotes,
+  resolveVpnServerHosts,
+} from './work-vpn-detector';
+import { FAKEIP_INET4_RANGE } from '../../shared/fakeip-filter';
+import { isIpv4 } from '../../shared/ip';
 import { resolveStartRetryBudget } from '../../shared/start-retry-policy';
 import { PROBE_POOL_SIZE, type MainCoreProbe } from '../../shared/speed-test';
 import { meshLoginFallbackShouldEngage } from '../../shared/mesh-login-fallback';
@@ -355,6 +372,24 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 与 tunDefaultInterface 同一启动世代的节点目标 IP。macOS 域名节点先解析为 IP 并进入 route_exclude，
   // route monitor 触发后继续查询这些稳定目标，避免运行中域名 route get 被 FlowZ 自家 TUN 路由截获。
   private macTunRouteTargets: string[] = [];
+  // 与工作 VPN 共存（shared/work-vpn，macOS）：本次起核所依据的外部 VPN 快照与其指纹（链路 watcher 对差 → 重起核）。
+  private workVpnSnapshot: WorkVpnSnapshot | null = null;
+  private workVpnFingerprint = '';
+  // 最近一次探测结果（含 watcher 在重启前看到的）：FlowZ 接管/还原系统 DNS 会抹掉 VPN 写进主服务的 DNS，
+  // 起核时据此沿用（mergeStickyWorkVpnDns），否则首次连 VPN 后的那次重启就丢了 VPN DNS。
+  private workVpnLastSeen: WorkVpnSnapshot | null = null;
+  // VPN 服务器 IP（路由识别 + 配置文件解析），会话内只增不减：重启后旁路路由随旧 TUN 消失，但仍须排除出新 TUN。
+  private workVpnServerIps = new Set<string>();
+  private workVpnProfileHosts: string[] = [];
+  // FlowZ 本会话用过的 TUN 地址（识别自家 utun，不当成外部 VPN）。
+  private workVpnOwnTunAddrs = new Set<string>(['172.19.0.1']);
+  // 当前 TUN 的 route_exclude_address（识别 sing-tun 拆出来的 /32 补集路由）。
+  private workVpnTunExcludes: string[] = [];
+  // 本次生成是否发射了 evaluate 探测；内核拒绝时本会话关闭自动识别（回退为仅推送/手填域名）。
+  private workVpnUsedEvaluate = false;
+  private workVpnEvaluateRejected = false;
+  // watcher 已记过日志的指纹（链路事件很频繁，同一变化只记一次）。
+  private workVpnLastLoggedFingerprint = '';
   // issue #147：本地节点域名 race DNS server（多上游并发 race）+ 其监听端口。start 路径（race on）起；
   // raceServerPort>0 = race 就绪 → getNodeResolverTag on→dns-node-race + buildDnsConfig 生成该 server；
   // =0（off / 起失败 / snapshot/preflight/未启动路径）→ 降级单上游（生成物逐字节回现状，快照零变化）。
@@ -499,6 +534,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // trailing 触发时取 this.currentConfig（恒最新），故各 switchMode 分支须先更新 currentConfig。
   private restartDebounceTimer: NodeJS.Timeout | null = null;
   private static readonly RESTART_DEBOUNCE_MS = 1500;
+  /** TUN 起核前节点域名预解析的单条超时（ms）。 */
+  private static readonly NODE_PRERESOLVE_TIMEOUT_MS = 3000;
   // issue #176 配置变更重启轴单飞：lifecycleDepth>0 = 有 start/stop/restart 在飞。去抖重启 trailing 命中时不并发
   // 起第二条（杜绝「就绪等待中又来重启」叠加 stop/超时/restart 互踩 → wintun 适配器抢放 → 「管理 API 未绑定」假
   // 超时风暴），只置 restartPending；在飞操作 settle 回 depth 0 时由 endLifecycleOp 排空一次尾随重启（吃最新
@@ -1030,13 +1067,23 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           !/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(server.address) &&
           !server.address.includes(':')
         ) {
+          // 限时：dns.lookup 本身无超时，系统 DNS 落在慢/不通的上游（如工作 VPN 推送的内网 DNS）时会把起核拖住
+          // 几十秒（真机 25s）。超时即跳过该节点的预解析，与解析失败同处置。
+          let timer: ReturnType<typeof setTimeout> | undefined;
           try {
-            const { address } = await dns.lookup(server.address);
-            if (address) {
-              resolvedServerIps[serverId] = address;
+            const result = await Promise.race([
+              dns.lookup(server.address),
+              new Promise<null>((resolve) => {
+                timer = setTimeout(() => resolve(null), ProxyManager.NODE_PRERESOLVE_TIMEOUT_MS);
+              }),
+            ]);
+            if (result?.address) {
+              resolvedServerIps[serverId] = result.address;
             }
           } catch {
             /* ignore */
+          } finally {
+            if (timer) clearTimeout(timer);
           }
         }
       });
@@ -1096,11 +1143,28 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 此时系统 default 仍是 en0，sing-box 的 auto detect 会误绑 en0；route get 目标地址才能得到 utun。
     this.tunDefaultInterface = await this.resolveMacTunDefaultInterface(config, resolvedServerIps);
 
+    // 3.9.7 与工作 VPN 共存：识别外部 VPN 的网段 / DNS / 服务器，供 generateSingBoxConfig 注入（无 VPN 时零改动）。
+    await this.refreshWorkVpnState(config);
+
     // 4. 生成 sing-box 配置文件
-    const singboxConfig = this.generateSingBoxConfig(config, resolvedServerIps);
+    let singboxConfig = this.generateSingBoxConfig(config, resolvedServerIps);
 
     // 写入配置文件
     await this.writeSingBoxConfig(singboxConfig);
+
+    // 4.4 evaluate 探测是 1.14 新语法：内核不认（自定义旧核等）→ 本会话关闭自动识别后重生成，绝不因它起不来。
+    if (this.workVpnUsedEvaluate) {
+      const res = await this.runSingBoxCheck(this.configPath);
+      if (res.stderr) {
+        this.workVpnEvaluateRejected = true;
+        this.logToManager(
+          'warn',
+          `工作 VPN：内核不接受内部域名自动识别规则，本次已关闭（${res.stderr.trim().split('\n').pop()}）`
+        );
+        singboxConfig = this.generateSingBoxConfig(config, resolvedServerIps);
+        await this.writeSingBoxConfig(singboxConfig);
+      }
+    }
     this.markStart('configGen'); // 生成 + 写盘
     this.logToManager('info', 'sing-box 配置文件已生成');
 
@@ -3759,6 +3823,136 @@ done
     };
   }
 
+  /** 与工作 VPN 共存是否生效（仅 macOS；缺省开）。 */
+  private workVpnEnabled(config: UserConfig | null): config is UserConfig {
+    return process.platform === 'darwin' && !!config && config.workVpn?.enabled !== false;
+  }
+
+  /** FlowZ 自家组网系统接口（WG/Tailscale system interface）的地址段：这些 utun 是自己的，不算外部 VPN。 */
+  private workVpnOwnMeshCidrs(config: UserConfig): string[] {
+    const out: string[] = [];
+    for (const s of config.servers) {
+      if (!meshUsesSystemInterface(s)) continue;
+      if (s.protocol?.toLowerCase() === 'tailscale') out.push('100.64.0.0/10');
+      else out.push(...(s.wireguardSettings?.localAddress ?? []).filter((a) => a.includes('.')));
+    }
+    return out;
+  }
+
+  /** 探测外部 VPN（合并上次读到的 VPN DNS），顺带收集经 FlowZ TUN 的 VPN 服务器旁路路由。 */
+  private async detectWorkVpnNow(config: UserConfig): Promise<WorkVpnSnapshot | null> {
+    if (this.effectiveTunInet4Address) this.workVpnOwnTunAddrs.add(this.effectiveTunInet4Address);
+    const userTunAddr = config.tunConfig?.inet4Address?.split('/')[0];
+    if (userTunAddr) this.workVpnOwnTunAddrs.add(userTunAddr);
+    const snap = await detectMacWorkVpn({
+      ownTunAddrs: [...this.workVpnOwnTunAddrs],
+      ownMeshCidrs: this.workVpnOwnMeshCidrs(config),
+      ownTunExcludes: this.workVpnTunExcludes,
+    });
+    if (!snap) return null;
+    const merged = mergeStickyWorkVpnDns(snap, this.workVpnLastSeen);
+    this.workVpnLastSeen = merged;
+    for (const ip of merged.serverIps) this.workVpnServerIps.add(ip);
+    return merged;
+  }
+
+  /** 起核前刷新工作 VPN 状态：外部 VPN 快照 + VPN 客户端配置文件里的服务器（域名解析为 IP 以排除出 TUN）。 */
+  private async refreshWorkVpnState(config: UserConfig): Promise<void> {
+    if (!this.workVpnEnabled(config)) {
+      this.workVpnSnapshot = null;
+      this.workVpnFingerprint = '';
+      this.workVpnProfileHosts = [];
+      return;
+    }
+    const [snap, remotes] = await Promise.all([
+      this.detectWorkVpnNow(config),
+      readVpnProfileRemotes().then(async (hosts) => ({
+        hosts,
+        resolved: await resolveVpnServerHosts(hosts, [FAKEIP_INET4_RANGE]),
+      })),
+    ]);
+    this.workVpnProfileHosts = remotes.hosts.filter((h) => !isIpv4(h));
+    for (const ip of [...remotes.hosts.filter(isIpv4), ...remotes.resolved]) {
+      this.workVpnServerIps.add(ip);
+    }
+    this.workVpnSnapshot = snap;
+    this.workVpnFingerprint = workVpnFingerprint(snap);
+    const summary = describeWorkVpn(snap);
+    if (summary) this.logToManager('info', `检测到工作 VPN：${summary}`);
+  }
+
+  /** 把工作 VPN 的路由 / DNS / 服务器直连注入生成的配置，并记下 TUN 排除段供下次识别。 */
+  private applyWorkVpn(singboxConfig: SingBoxConfig, config: UserConfig, cfg: UserConfig): void {
+    this.workVpnUsedEvaluate = false;
+    if (this.workVpnEnabled(config)) {
+      const res = applyWorkVpnToSingBoxConfig(
+        singboxConfig as unknown as Parameters<typeof applyWorkVpnToSingBoxConfig>[0],
+        {
+          snapshot: this.workVpnSnapshot,
+          serverIps: [...this.workVpnServerIps],
+          serverHosts: this.workVpnProfileHosts,
+          userDomains: config.workVpn?.domains ?? [],
+          autoDetectDomains:
+            config.workVpn?.autoDetectDomains === true && !this.workVpnEvaluateRejected,
+          tunMode: config.proxyModeType === 'tun',
+          realResolverTag: getNodeResolverTag(cfg, 'rule'),
+          ownLanCidrs: getPhysicalLanCidrs(),
+          fakeipRanges: [FAKEIP_INET4_RANGE],
+        }
+      );
+      this.workVpnUsedEvaluate = res.usedEvaluate;
+      for (const l of res.logs) this.logToManager(l.level, l.message);
+      if (res.tunExcludes.length > 0) {
+        this.logToManager(
+          'info',
+          `工作 VPN：${res.tunExcludes.length} 个网段/服务器绕过 FlowZ TUN：${res.tunExcludes.join(', ')}`
+        );
+      }
+    }
+    const tun = singboxConfig.inbounds.find((ib) => ib.type === 'tun');
+    this.workVpnTunExcludes = tun?.route_exclude_address ?? [];
+  }
+
+  /** 接口是否为 FlowZ 自家 TUN（按本会话用过的 TUN 地址认）。 */
+  private isOwnTunInterface(iface: string): boolean {
+    try {
+      return (networkInterfaces()[iface] ?? []).some((a) => this.workVpnOwnTunAddrs.has(a.address));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 链路变化后复查外部 VPN。**不因 VPN 起落重启**：用户整机上网依赖 FlowZ，每次重启都断网十余秒；而 VPN 连在
+   * FlowZ 之后时 OS 已把 VPN 网段 / DNS 交给 VPN、服务器 IP 起核时已排除，无需重启也能用。变化只记日志并为下次起核
+   * 备好数据（VPN DNS 粘性、服务器 IP）。唯一例外：起核时与 VPN 重连撞车，绑定的「VPN 接口」名落到了 FlowZ 自家
+   * TUN 上——发往内网 DNS/网段的流量会回灌自己，必须重生成。
+   */
+  private async checkWorkVpnChange(): Promise<void> {
+    const config = this.currentConfig;
+    if (!this.workVpnEnabled(config)) return;
+    const snap = await this.detectWorkVpnNow(config);
+    if (!snap) return;
+    const bound = (this.workVpnSnapshot?.interfaces ?? []).map((it) => it.name);
+    const hijacked = bound.filter((name) => this.isOwnTunInterface(name));
+    if (hijacked.length > 0 && config.proxyModeType === 'tun') {
+      this.logToManager(
+        'warn',
+        `工作 VPN 接口 ${hijacked.join(', ')} 已被 FlowZ 自家 TUN 占用（起核时 VPN 正在重连），重新生成配置`
+      );
+      this.scheduleDebouncedRestart();
+      return;
+    }
+    const fp = workVpnFingerprint(snap);
+    if (fp !== this.workVpnFingerprint && fp !== this.workVpnLastLoggedFingerprint) {
+      this.workVpnLastLoggedFingerprint = fp;
+      this.logToManager(
+        'info',
+        `工作 VPN 变化：${describeWorkVpn(snap) || '已断开'}（不重启 FlowZ；下次连接时应用规则）`
+      );
+    }
+  }
+
   /**
    * macOS TUN 的上游接口不能只看 `route get default`：OpenVPN/EasyConnect 常用更具体路由接管目标，
    * 同时保留 en0 default。逐节点查询实际路由，只有所有待拨号节点结果一致才显式绑定；混合出口或探测失败
@@ -3802,6 +3996,9 @@ done
         });
         const iface = parseMacRouteInterface(stdout);
         if (!iface) return null;
+        // 自家 TUN 不是「上游」：域名节点未预解析成功时，运行中 route get 会被 FlowZ 自己的路由截获。
+        // 当成变化会让每次链路事件都触发一次重启（真机：`auto → utun6`）。
+        if (this.isOwnTunInterface(iface)) return null;
         interfaces.add(iface);
       } catch (error) {
         this.logToManager(
@@ -3974,6 +4171,8 @@ done
           : { enabled: true, http_client };
       }
     }
+
+    this.applyWorkVpn(singboxConfig, config, cfg);
 
     // 路由规则若指向「已被跳过/不存在的出站」（如缺 libcronet 被跳过的 naive 节点），sing-box 会以
     // "outbound not found" 启动失败。统一把这类死引用修正为 selector（app/custom 分流
@@ -7224,6 +7423,8 @@ rm -f "$STOPFLAG"
         // 门控与 systemDnsManager **都必须在每次触发时**求值：currentConfig / marker 会随模式切换与接管
         // 状态变化；manager 若在某次核 start 之后才注入，构造时捕获会让这一代 watcher 的 reconcile 腿永久为 null。
         reconcile: async () => {
+          // 先于重灌 DNS：VPN 写进主服务的 DNS 只在被 FlowZ 覆盖前读得到。
+          await this.checkWorkVpnChange();
           const mgr = this.systemDnsManager;
           if (mgr && shouldReconcileDns(this.currentConfig, mgr.hasMarker())) {
             await mgr.reconcileDns();

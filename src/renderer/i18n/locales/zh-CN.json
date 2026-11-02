@@ -801,6 +801,20 @@
       "checkUpdate": "检查更新",
       "downloading": "正在下载更新...",
       "updateAvailable": "可更新 {{version}}"
+    },
+    "workVpn": {
+      "title": "工作 VPN",
+      "sub": "OpenVPN、Cisco 等与 FlowZ 同时运行",
+      "enabled": "与工作 VPN 共存",
+      "enabledDesc": "工作 VPN 的路由与 DNS 绕过 FlowZ，VPN 自身不走代理。VPN 连接或断开时 FlowZ 不会重启。",
+      "enabledDescFull": "FlowZ 连接时会识别活动的 VPN（OpenVPN Connect、Tunnelblick、Viscosity、Cisco 等）及其网段与 DNS，以及 VPN 客户端配置文件中的服务器。VPN 网段与服务器排除出 TUN，因此 FlowZ 重启时 VPN 不会断开。VPN 下发的域名与下方列出的域名由工作 DNS 解析。若 VPN 在 FlowZ 之后连接，系统已能直接处理；FlowZ 规则在下次连接时更新。未连接 VPN 时不做任何改动。",
+      "autoDetect": "自动识别内部域名",
+      "autoDetectDesc": "先询问工作 VPN 的 DNS，地址落在 VPN 网段内即采用。默认关闭。",
+      "autoDetectDescFull": "仅在 VPN 不下发域名、且系统 DNS 由 FlowZ 接管时需要。每个新域名先经工作 VPN 的 DNS 查询（最多 0.5 秒）；答案落在 VPN 网段内即采用，否则按 FlowZ 原有逻辑。VPN 卡住时每个新网站都会慢 0.5 秒，因此在下方填写内部域名更可靠。",
+      "domains": "内部域名",
+      "domainsDesc": "这些域名（含子域）始终由工作 VPN 的 DNS 解析并经 VPN 访问。",
+      "domainsPlaceholder": "每行一个，例如：\ncorp.example.com\nintranet.local",
+      "domainsHint": "VPN 自身下发的域名会自动生效，这里只需填写它未下发的。"
     }
   },
   "servers": {

@@ -333,6 +333,17 @@ export interface DnsConfig {
   dnsTimeoutMs?: number;
 }
 
+// 与工作 VPN 共存：OpenVPN 等外部 VPN 推送的网段 / 服务器绕过 FlowZ，内部域名走 VPN 的 DNS。
+export interface WorkVpnConfig {
+  // 总开关：缺省/true=开。
+  enabled?: boolean;
+  // 自动识别内部域名（先问 VPN DNS，答案落在 VPN 网段才采纳）：缺省/false=关，仅 true 开。
+  // 开启后所有新域名都先经 VPN DNS，VPN 卡住时整机解析变慢，故须用户明确选择。
+  autoDetectDomains?: boolean;
+  // 手填的内部域名（含子域），解析走 VPN DNS、流量走 VPN 接口。
+  domains?: string[];
+}
+
 // issue #147：自定义节点解析上游（强制纯 IP，DoH/DoT/UDP）。spec 经 shared/dns.parseDnsServerSpec 校验
 // （isDomain=true 拒绝，保证零 bootstrap + route 直连放行确定）。详见 docs/design/issue147-node-dns-race-resolver.md §9.1。
 export interface CustomDnsUpstream {
@@ -443,6 +454,9 @@ export interface UserConfig {
   windowBounds?: { width: number; height: number };
 
   dnsConfig?: DnsConfig;
+
+  // 与工作 VPN 共存（macOS，见 shared/work-vpn）：缺省即开，无外部 VPN 时配置零改动。
+  workVpn?: WorkVpnConfig;
 
   customRuleSets?: CustomRuleSet[];
 

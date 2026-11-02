@@ -178,6 +178,12 @@ export function NetworkSettings() {
       toast.error(t('common.saveFailed'))
     );
 
+  const updateWorkVpn = (patch: Partial<NonNullable<typeof config.workVpn>>) =>
+    saveConfig({ ...config, workVpn: { ...config.workVpn, ...patch } }).catch(() =>
+      toast.error(t('common.saveFailed'))
+    );
+  const workVpnOn = config.workVpn?.enabled !== false;
+
   // FakeIP 开关切换：TUN 模式下 ON→OFF 先弹一次性风险确认（节点将收真实 IP，部分机场可能拒连，客户端无法缓解）；
   // 其它情况（开启、或非 TUN 关闭）直接落盘。
   const handleFakeIpToggle = (checked: boolean) => {
@@ -531,6 +537,56 @@ export function NetworkSettings() {
           </Srow>
         </Collapse>
       </div>
+
+      {/* 与工作 VPN 共存（shared/work-vpn）：目前只实现了 macOS 的识别，其它平台不显示。 */}
+      {isMac && (
+        <div className="card set-card">
+          <div className="set-h">
+            <b>{t('settings.workVpn.title', '工作 VPN')}</b>
+            <small>{t('settings.workVpn.sub', 'OpenVPN、Cisco 等与 FlowZ 同时运行')}</small>
+          </div>
+          <Srow
+            label={
+              <>
+                {t('settings.workVpn.enabled', '与工作 VPN 共存')}
+                <InfoTooltip content={t('settings.workVpn.enabledDescFull')} />
+              </>
+            }
+            desc={t('settings.workVpn.enabledDesc')}
+          >
+            <Swt checked={workVpnOn} onChange={(c) => updateWorkVpn({ enabled: c })} />
+          </Srow>
+          {workVpnOn && (
+            <>
+              <Srow
+                label={
+                  <>
+                    {t('settings.workVpn.autoDetect', '自动识别内部域名')}
+                    <InfoTooltip content={t('settings.workVpn.autoDetectDescFull')} />
+                  </>
+                }
+                desc={t('settings.workVpn.autoDetectDesc')}
+              >
+                <Swt
+                  checked={config.workVpn?.autoDetectDomains === true}
+                  onChange={(c) => updateWorkVpn({ autoDetectDomains: c })}
+                />
+              </Srow>
+              <Srow
+                label={t('settings.workVpn.domains', '内部域名')}
+                desc={t('settings.workVpn.domainsDesc')}
+              />
+              <ExceptionList
+                value={config.workVpn?.domains}
+                defaults={[]}
+                onChange={(v) => updateWorkVpn({ domains: v })}
+                placeholder={t('settings.workVpn.domainsPlaceholder', 'corp.example.com')}
+                hint={t('settings.workVpn.domainsHint')}
+              />
+            </>
+          )}
+        </div>
+      )}
 
       <div className="card set-card">
         <div className="set-h">

@@ -45,6 +45,7 @@ import {
 } from '../../shared/tun-defaults';
 import { dedupe } from '../../shared/collections';
 import { normalizeTunExcludeCidr } from '../../shared/tun-route-exclude';
+import { normalizeWorkDomain } from '../../shared/work-vpn';
 
 export interface IConfigManager {
   loadConfig(): Promise<UserConfig>;
@@ -689,6 +690,16 @@ export class ConfigManager implements IConfigManager {
         if (deduped.length > 0) config.tunConfig.inboundExcludeCidrs = deduped;
         else delete config.tunConfig.inboundExcludeCidrs; // 空 → 删（避免 [] 触发 norm 翻转/无谓重启）
       }
+    }
+
+    // 工作 VPN 内部域名 sanitize（不 throw）：规范化（小写、去 *. 与首尾点）、剔非法/重复；空 → 删字段（同上，防 norm 翻转）。
+    if (config.workVpn?.domains !== undefined) {
+      const raw = Array.isArray(config.workVpn.domains) ? config.workVpn.domains : [];
+      const cleaned = dedupe(
+        raw.map((d) => normalizeWorkDomain(d as string)).filter((d): d is string => !!d)
+      );
+      if (cleaned.length > 0) config.workVpn.domains = cleaned;
+      else delete config.workVpn.domains;
     }
 
     // P2c DNS 查询超时 sanitize（一律不 throw，与上方 CIDR/规则同标准防整配置回落）：

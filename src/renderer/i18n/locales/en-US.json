@@ -801,6 +801,20 @@
       "checkUpdate": "Check for Updates",
       "downloading": "Downloading update...",
       "updateAvailable": "Update {{version}} available"
+    },
+    "workVpn": {
+      "title": "Work VPN",
+      "sub": "Run OpenVPN, Cisco and other VPNs alongside FlowZ",
+      "enabled": "Work VPN compatibility",
+      "enabledDesc": "Work VPN routes and DNS bypass FlowZ, and the VPN itself never goes through the proxy. FlowZ does not restart when the VPN connects or disconnects.",
+      "enabledDescFull": "On connect, FlowZ detects active VPNs (OpenVPN Connect, Tunnelblick, Viscosity, Cisco, etc.) with their subnets and DNS, plus the servers listed in VPN client profiles. VPN subnets and servers are excluded from TUN, so the VPN does not drop when FlowZ restarts. Domains announced by the VPN and those listed below are resolved by the work DNS. If the VPN connects after FlowZ, the system already handles it; FlowZ rules refresh on the next connect. Nothing changes without a VPN.",
+      "autoDetect": "Auto-detect internal domains",
+      "autoDetectDesc": "Ask the work VPN DNS first and use the answer if it is inside the VPN subnets. Off by default.",
+      "autoDetectDescFull": "Only needed when the VPN does not announce its domains and FlowZ has taken over the system DNS. Each new domain is first looked up via the work VPN DNS (up to 0.5 s); answers inside the VPN subnets are used, everything else follows normal FlowZ logic. If the VPN hangs, every new site opens 0.5 s slower — listing the work domains below is more reliable.",
+      "domains": "Internal domains",
+      "domainsDesc": "Domains (including subdomains) always resolved by the work VPN DNS and sent through the VPN.",
+      "domainsPlaceholder": "One per line, e.g.:\ncorp.example.com\nintranet.local",
+      "domainsHint": "Domains pushed by the VPN itself are picked up automatically — add only the ones it does not announce."
     }
   },
   "servers": {

@@ -801,6 +801,20 @@
       "checkUpdate": "檢查更新",
       "downloading": "正在下載更新...",
       "updateAvailable": "可更新 {{version}}"
+    },
+    "workVpn": {
+      "title": "工作 VPN",
+      "sub": "OpenVPN、Cisco 等與 FlowZ 同時執行",
+      "enabled": "與工作 VPN 共存",
+      "enabledDesc": "工作 VPN 的路由與 DNS 繞過 FlowZ，VPN 本身不走代理。VPN 連線或中斷時 FlowZ 不會重新啟動。",
+      "enabledDescFull": "FlowZ 連線時會識別作用中的 VPN（OpenVPN Connect、Tunnelblick、Viscosity、Cisco 等）及其網段與 DNS，以及 VPN 用戶端設定檔中的伺服器。VPN 網段與伺服器排除出 TUN，因此 FlowZ 重新啟動時 VPN 不會中斷。VPN 下發的網域與下方列出的網域由工作 DNS 解析。若 VPN 在 FlowZ 之後連線，系統已能直接處理；FlowZ 規則於下次連線時更新。未連線 VPN 時不做任何變更。",
+      "autoDetect": "自動識別內部網域",
+      "autoDetectDesc": "先詢問工作 VPN 的 DNS，位址落在 VPN 網段內即採用。預設關閉。",
+      "autoDetectDescFull": "僅在 VPN 不下發網域、且系統 DNS 由 FlowZ 接管時需要。每個新網域先經工作 VPN 的 DNS 查詢（最多 0.5 秒）；答案落在 VPN 網段內即採用，否則依 FlowZ 原有邏輯。VPN 卡住時每個新網站都會慢 0.5 秒，因此在下方填寫內部網域更可靠。",
+      "domains": "內部網域",
+      "domainsDesc": "這些網域（含子網域）一律由工作 VPN 的 DNS 解析並經 VPN 存取。",
+      "domainsPlaceholder": "每行一個，例如：\ncorp.example.com\nintranet.local",
+      "domainsHint": "VPN 本身下發的網域會自動生效，這裡只需填寫它未下發的。"
     }
   },
   "servers": {

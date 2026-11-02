@@ -48,6 +48,8 @@ export interface SingBoxDnsServer {
   // 解析（主机名→IP）。每条**须以 '.' 开头**（内核 init `entry must start with '.'`）；仅 Linux/macOS 生效。
   // 实证：resources/linux/sing-box(1.14-alpha.32) check —— 接受数组/单串，'.' 匹配任意单标签名。
   neighbor_domain?: string[];
+  // Dial Fields：工作 VPN 的 DNS server 绑定 VPN 接口（shared/work-vpn）。
+  bind_interface?: string;
   // Legacy / compat fields (not emitted in new format)
   address?: string;
   address_resolver?: string;
@@ -81,6 +83,11 @@ export interface SingBoxDnsRule {
   // 与 route action resolve 上的同名字段不是一回事——后者只改核内部 lookup 结果的缓存时长，客户端看不到。
   // 内核对 dns.rules 的未知键有牙（拼错即 FATAL unknown field），故笔误不会静默通过。
   rewrite_ttl?: number;
+  // 1.14 evaluate / respond（工作 VPN 内部域名自动识别，shared/work-vpn）：match_response 下的 ip_cidr 匹配
+  // evaluate 得到的应答；timeout 覆盖本条查询超时。
+  match_response?: boolean;
+  ip_cidr?: string[];
+  timeout?: string;
 }
 
 export interface SingBoxFakeIPConfig {
@@ -139,6 +146,7 @@ export interface SingBoxOutbound {
   type: string;
   tag: string;
   detour?: string; // 代理链
+  bind_interface?: string; // Dial Fields：工作 VPN 出站绑定 VPN 接口（shared/work-vpn）
   server?: string;
   server_port?: number;
   override_address?: string;
