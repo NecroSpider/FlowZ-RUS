@@ -2,11 +2,11 @@
 
 <img src="docs/banner.png" width="100%" alt="FlowZ — a clean, modern cross-platform proxy client built on sing-box, WYSIWYG" />
 
-[![release](https://img.shields.io/github/v/release/dododook/FlowZ?style=flat-square&color=0E98A4&label=release)](https://github.com/dododook/FlowZ/releases)
+[![release](https://img.shields.io/github/v/release/NecroSpider/FlowZ-RUS?include_prereleases&style=flat-square&color=0E98A4&label=release)](https://github.com/NecroSpider/FlowZ-RUS/releases)
 [![sing-box](https://img.shields.io/badge/sing--box-1.14-0E98A4?style=flat-square)](https://github.com/SagerNet/sing-box)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-0E98A4?style=flat-square)](#-installation)
 [![license](https://img.shields.io/badge/license-MIT-0E98A4?style=flat-square)](LICENSE.txt)
-[![stars](https://img.shields.io/github/stars/dododook/FlowZ?style=flat-square&color=0E98A4)](https://github.com/dododook/FlowZ/stargazers)
+[![stars](https://img.shields.io/github/stars/NecroSpider/FlowZ-RUS?style=flat-square&color=0E98A4)](https://github.com/NecroSpider/FlowZ-RUS/stargazers)
 
 [简体中文](README.md) · **English** · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [فارسی](README.fa.md)
 
@@ -15,6 +15,21 @@
 > Original open-source project: https://github.com/zhangjh/FlowZ
 
 Built around: **simple setup · clear rules · uninterrupted switching · authorize once, zero re-prompts**.
+
+---
+
+## 🧩 About this fork
+
+FlowZ-RUS is a fork of [dododook/FlowZ](https://github.com/dododook/FlowZ) (original project: [zhangjh/FlowZ](https://github.com/zhangjh/FlowZ)). Windows, macOS and Linux builds are in [Releases](https://github.com/NecroSpider/FlowZ-RUS/releases). While they are being tested they are published as pre-releases, which the in-app updater skips, so install new versions by hand.
+
+What it adds on top of the original:
+
+- **Runs alongside work VPNs** (macOS; Windows in testing). OpenVPN Connect, Tunnelblick, Viscosity, Cisco, FortiClient, GlobalProtect, WireGuard and built-in Windows VPNs work in parallel with FlowZ in TUN mode: the work VPN's subnets and DNS bypass FlowZ, and the VPN itself never goes through the proxy or drops when FlowZ restarts. Settings → Network → "Work VPN".
+- **Xray JSON subscriptions** — import subscriptions that serve an array of Xray configs.
+- **The helper installs on Russian and other localized Windows**: permissions are granted by SID instead of group names, and files with broken permissions left by older installs repair themselves. Helper install failures are now reported on every platform.
+- **App updates are verified by SHA-256** before installing and come from this repository.
+- **sing-box 1.14.4**, Electron 42.11.18, patched vulnerable dependencies.
+- **Fast start on macOS with a work VPN connected** (connecting used to take up to 40 s) and no spurious core restarts.
 
 ---
 
@@ -176,7 +191,7 @@ This restart is fast and connections come back on their own. **Please don't file
 
 ## 📥 Installation
 
-Download the latest build from [Releases](https://github.com/dododook/FlowZ/releases).
+Download the latest build from [Releases](https://github.com/NecroSpider/FlowZ-RUS/releases).
 
 | Platform | Install |
 |------|------|
@@ -204,8 +219,8 @@ xattr -cr /Applications/FlowZ.app
 ## 🛠 Build from Source
 
 ```bash
-git clone https://github.com/dododook/FlowZ.git
-cd FlowZ
+git clone https://github.com/NecroSpider/FlowZ-RUS.git
+cd FlowZ-RUS
 npm install
 
 npm run dev            # development (Vite + Electron hot reload)
@@ -278,4 +293,4 @@ This software is for learning and research only. Comply with your local laws and
 
 ## ⭐ Star History
 
-[![Star History Chart](https://star-history.dera.page/svg?repos=dododook/FlowZ&type=Date)](https://star-history.dera.page/#dododook/FlowZ&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=NecroSpider/FlowZ-RUS&type=Date)](https://star-history.dera.page/#NecroSpider/FlowZ-RUS&Date)

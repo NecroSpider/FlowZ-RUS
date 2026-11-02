@@ -2,17 +2,21 @@
 
 <img src="docs/banner.png" width="100%" alt="FlowZ — 简洁现代的跨平台代理客户端，基于 sing-box，所见即所得" />
 
-[![release](https://img.shields.io/github/v/release/dododook/FlowZ?style=flat-square&color=0E98A4&label=release)](https://github.com/dododook/FlowZ/releases)
+[![release](https://img.shields.io/github/v/release/NecroSpider/FlowZ-RUS?include_prereleases&style=flat-square&color=0E98A4&label=release)](https://github.com/NecroSpider/FlowZ-RUS/releases)
 [![sing-box](https://img.shields.io/badge/sing--box-1.14-0E98A4?style=flat-square)](https://github.com/SagerNet/sing-box)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-0E98A4?style=flat-square)](#-安装)
 [![license](https://img.shields.io/badge/license-MIT-0E98A4?style=flat-square)](LICENSE.txt)
-[![stars](https://img.shields.io/github/stars/dododook/FlowZ?style=flat-square&color=0E98A4)](https://github.com/dododook/FlowZ/stargazers)
+[![stars](https://img.shields.io/github/stars/NecroSpider/FlowZ-RUS?style=flat-square&color=0E98A4)](https://github.com/NecroSpider/FlowZ-RUS/stargazers)
 
 **简体中文** · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [فارسی](README.fa.md)
 
 </div>
 
 > 原作者开源地址：https://github.com/zhangjh/FlowZ
+
+> **FlowZ-RUS** — форк [dododook/FlowZ](https://github.com/dododook/FlowZ): работа вместе с рабочими VPN, исправления для русской Windows. [Подробнее по-русски →](README.ru.md#-о-форке-flowz-rus) · A fork with work-VPN coexistence and fixes for localized Windows. [Details in English →](README.en.md#-about-this-fork)
+>
+> 本仓库为 dododook/FlowZ 的分支 FlowZ-RUS。
 
 主打：**配置简单 · 规则明确 · 切换不断流 · 一次授权零提权**。
 
@@ -176,7 +180,7 @@
 
 ## 📥 安装
 
-从 [Releases](https://github.com/dododook/FlowZ/releases) 下载最新版本。
+从 [Releases](https://github.com/NecroSpider/FlowZ-RUS/releases) 下载最新版本。
 
 | 平台 | 安装 |
 |------|------|
@@ -204,8 +208,8 @@ xattr -cr /Applications/FlowZ.app
 ## 🛠 从源码构建
 
 ```bash
-git clone https://github.com/dododook/FlowZ.git
-cd FlowZ
+git clone https://github.com/NecroSpider/FlowZ-RUS.git
+cd FlowZ-RUS
 npm install
 
 npm run dev            # 开发（Vite + Electron 热重载）
@@ -278,4 +282,4 @@ MIT License
 
 ## ⭐ Star 趋势
 
-[![Star History Chart](https://star-history.dera.page/svg?repos=dododook/FlowZ&type=Date)](https://star-history.dera.page/#dododook/FlowZ&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=NecroSpider/FlowZ-RUS&type=Date)](https://star-history.dera.page/#NecroSpider/FlowZ-RUS&Date)

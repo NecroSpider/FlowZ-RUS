@@ -2,11 +2,11 @@
 
 <img src="docs/banner.png" width="100%" alt="FlowZ — a clean, modern cross-platform proxy client built on sing-box, WYSIWYG" />
 
-[![release](https://img.shields.io/github/v/release/dododook/FlowZ?style=flat-square&color=0E98A4&label=release)](https://github.com/dododook/FlowZ/releases)
+[![release](https://img.shields.io/github/v/release/NecroSpider/FlowZ-RUS?include_prereleases&style=flat-square&color=0E98A4&label=release)](https://github.com/NecroSpider/FlowZ-RUS/releases)
 [![sing-box](https://img.shields.io/badge/sing--box-1.14-0E98A4?style=flat-square)](https://github.com/SagerNet/sing-box)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-0E98A4?style=flat-square)](#-установка)
 [![license](https://img.shields.io/badge/license-MIT-0E98A4?style=flat-square)](LICENSE.txt)
-[![stars](https://img.shields.io/github/stars/dododook/FlowZ?style=flat-square&color=0E98A4)](https://github.com/dododook/FlowZ/stargazers)
+[![stars](https://img.shields.io/github/stars/NecroSpider/FlowZ-RUS?style=flat-square&color=0E98A4)](https://github.com/NecroSpider/FlowZ-RUS/stargazers)
 
 [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · **Русский** · [فارسی](README.fa.md)
 
@@ -15,6 +15,21 @@
 > Исходный open-source проект: https://github.com/zhangjh/FlowZ
 
 В основе: **простая настройка · понятные правила · переключение без обрывов · авторизуйтесь один раз, без повторных запросов**.
+
+---
+
+## 🧩 О форке FlowZ-RUS
+
+FlowZ-RUS — форк [dododook/FlowZ](https://github.com/dododook/FlowZ) (оригинальный проект — [zhangjh/FlowZ](https://github.com/zhangjh/FlowZ)). Сборки для Windows, macOS и Linux лежат в [Releases](https://github.com/NecroSpider/FlowZ-RUS/releases). Пока идёт тестирование, они публикуются как pre-release: встроенное обновление их пропускает, новую версию ставьте вручную.
+
+Что добавлено к оригиналу:
+
+- **Работа вместе с рабочими VPN** (macOS; Windows — в тестировании). OpenVPN Connect, Tunnelblick, Viscosity, Cisco, FortiClient, GlobalProtect, WireGuard и встроенные VPN Windows работают параллельно с FlowZ в режиме TUN: подсети и DNS рабочего VPN идут мимо FlowZ, сам VPN не ходит через прокси и не рвётся при перезапуске FlowZ. Настройки → Сеть → «Рабочие VPN».
+- **Подписки Xray JSON** — импорт подписок, которые отдают массив конфигураций Xray.
+- **Помощник ставится на русской и других локализованных Windows**: права выдаются по SID, а не по названиям групп; файлы с испорченными правами от старых установок чинятся сами. Ошибки установки помощника теперь видны на всех платформах.
+- **Обновления проверяются по SHA-256** перед установкой и берутся из этого репозитория.
+- **sing-box 1.14.4**, Electron 42.11.18, исправленные уязвимые зависимости.
+- **Быстрый старт на macOS при включённом рабочем VPN** (раньше подключение могло идти до 40 с) и без лишних перезапусков ядра.
 
 ---
 
@@ -176,7 +191,7 @@ WYSIWYG-статус соединения, переключение узлов, 
 
 ## 📥 Установка
 
-Скачайте последнюю сборку из [Releases](https://github.com/dododook/FlowZ/releases).
+Скачайте последнюю сборку из [Releases](https://github.com/NecroSpider/FlowZ-RUS/releases).
 
 | Платформа | Установка |
 |------|------|
@@ -204,8 +219,8 @@ xattr -cr /Applications/FlowZ.app
 ## 🛠 Сборка из исходников
 
 ```bash
-git clone https://github.com/dododook/FlowZ.git
-cd FlowZ
+git clone https://github.com/NecroSpider/FlowZ-RUS.git
+cd FlowZ-RUS
 npm install
 
 npm run dev            # development (Vite + Electron hot reload)
@@ -278,4 +293,4 @@ MIT License
 
 ## ⭐ История звёзд
 
-[![Star History Chart](https://star-history.dera.page/svg?repos=dododook/FlowZ&type=Date)](https://star-history.dera.page/#dododook/FlowZ&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=NecroSpider/FlowZ-RUS&type=Date)](https://star-history.dera.page/#NecroSpider/FlowZ-RUS&Date)

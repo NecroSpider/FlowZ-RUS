@@ -2,17 +2,19 @@
 
 <img src="docs/banner.png" width="100%" alt="FlowZ — a clean, modern cross-platform proxy client built on sing-box, WYSIWYG" />
 
-[![release](https://img.shields.io/github/v/release/dododook/FlowZ?style=flat-square&color=0E98A4&label=release)](https://github.com/dododook/FlowZ/releases)
+[![release](https://img.shields.io/github/v/release/NecroSpider/FlowZ-RUS?include_prereleases&style=flat-square&color=0E98A4&label=release)](https://github.com/NecroSpider/FlowZ-RUS/releases)
 [![sing-box](https://img.shields.io/badge/sing--box-1.14-0E98A4?style=flat-square)](https://github.com/SagerNet/sing-box)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-0E98A4?style=flat-square)](#-نصب)
 [![license](https://img.shields.io/badge/license-MIT-0E98A4?style=flat-square)](LICENSE.txt)
-[![stars](https://img.shields.io/github/stars/dododook/FlowZ?style=flat-square&color=0E98A4)](https://github.com/dododook/FlowZ/stargazers)
+[![stars](https://img.shields.io/github/stars/NecroSpider/FlowZ-RUS?style=flat-square&color=0E98A4)](https://github.com/NecroSpider/FlowZ-RUS/stargazers)
 
 [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · **فارسی**
 
 </div>
 
 > پروژهٔ متن‌باز اصلی: https://github.com/zhangjh/FlowZ
+
+> این مخزن، FlowZ-RUS، فورکی از [dododook/FlowZ](https://github.com/dododook/FlowZ) است؛ تغییرات آن (از جمله کار هم‌زمان با VPN کاری) در [README.en.md](README.en.md#-about-this-fork) آمده است.
 
 ساخته‌شده پیرامون: **راه‌اندازی ساده · قوانین شفاف · جابجایی بدون قطعی · یک‌بار اجازه بده، بدون درخواست مجدد**.
 
@@ -176,7 +178,7 @@
 
 ## 📥 نصب
 
-آخرین build را از [Releases](https://github.com/dododook/FlowZ/releases) دانلود کن.
+آخرین build را از [Releases](https://github.com/NecroSpider/FlowZ-RUS/releases) دانلود کن.
 
 | سکو | نصب |
 |------|------|
@@ -204,8 +206,8 @@ xattr -cr /Applications/FlowZ.app
 ## 🛠 ساخت از منبع
 
 ```bash
-git clone https://github.com/dododook/FlowZ.git
-cd FlowZ
+git clone https://github.com/NecroSpider/FlowZ-RUS.git
+cd FlowZ-RUS
 npm install
 
 npm run dev            # development (Vite + Electron hot reload)
@@ -278,4 +280,4 @@ MIT License
 
 ## ⭐ تاریخچهٔ Star
 
-[![Star History Chart](https://star-history.dera.page/svg?repos=dododook/FlowZ&type=Date)](https://star-history.dera.page/#dododook/FlowZ&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=NecroSpider/FlowZ-RUS&type=Date)](https://star-history.dera.page/#NecroSpider/FlowZ-RUS&Date)

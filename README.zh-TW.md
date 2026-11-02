@@ -2,17 +2,19 @@
 
 <img src="docs/banner.png" width="100%" alt="FlowZ — 簡潔現代的跨平台代理用戶端，基於 sing-box，所見即所得" />
 
-[![release](https://img.shields.io/github/v/release/dododook/FlowZ?style=flat-square&color=0E98A4&label=release)](https://github.com/dododook/FlowZ/releases)
+[![release](https://img.shields.io/github/v/release/NecroSpider/FlowZ-RUS?include_prereleases&style=flat-square&color=0E98A4&label=release)](https://github.com/NecroSpider/FlowZ-RUS/releases)
 [![sing-box](https://img.shields.io/badge/sing--box-1.14-0E98A4?style=flat-square)](https://github.com/SagerNet/sing-box)
 [![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-0E98A4?style=flat-square)](#-安裝)
 [![license](https://img.shields.io/badge/license-MIT-0E98A4?style=flat-square)](LICENSE.txt)
-[![stars](https://img.shields.io/github/stars/dododook/FlowZ?style=flat-square&color=0E98A4)](https://github.com/dododook/FlowZ/stargazers)
+[![stars](https://img.shields.io/github/stars/NecroSpider/FlowZ-RUS?style=flat-square&color=0E98A4)](https://github.com/NecroSpider/FlowZ-RUS/stargazers)
 
 [简体中文](README.md) · [English](README.en.md) · **繁體中文** · [Русский](README.ru.md) · [فارسی](README.fa.md)
 
 </div>
 
 > 原作者開源網址：https://github.com/zhangjh/FlowZ
+
+> 本倉庫為 [dododook/FlowZ](https://github.com/dododook/FlowZ) 的分支 FlowZ-RUS，新增與公司 VPN 共存等功能，詳見 [English](README.en.md#-about-this-fork)。
 
 主打：**設定簡單 · 規則明確 · 切換不斷流 · 一次授權零提權**。
 
@@ -176,7 +178,7 @@
 
 ## 📥 安裝
 
-從 [Releases](https://github.com/dododook/FlowZ/releases) 下載最新版本。
+從 [Releases](https://github.com/NecroSpider/FlowZ-RUS/releases) 下載最新版本。
 
 | 平台 | 安裝 |
 |------|------|
@@ -204,8 +206,8 @@ xattr -cr /Applications/FlowZ.app
 ## 🛠 從原始碼建置
 
 ```bash
-git clone https://github.com/dododook/FlowZ.git
-cd FlowZ
+git clone https://github.com/NecroSpider/FlowZ-RUS.git
+cd FlowZ-RUS
 npm install
 
 npm run dev            # 開發（Vite + Electron 熱重載）
@@ -278,4 +280,4 @@ MIT License
 
 ## ⭐ Star 趨勢
 
-[![Star History Chart](https://star-history.dera.page/svg?repos=dododook/FlowZ&type=Date)](https://star-history.dera.page/#dododook/FlowZ&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=NecroSpider/FlowZ-RUS&type=Date)](https://star-history.dera.page/#NecroSpider/FlowZ-RUS&Date)
