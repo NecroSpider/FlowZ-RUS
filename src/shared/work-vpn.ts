@@ -796,6 +796,27 @@ export function applyWorkVpnToSingBoxConfig(
     }
   }
 
+  // ── Windows：关 strict_route ──
+  // sing-box 在 Windows 上的 strict_route 就是「防 DNS 泄漏」的 WFP 规则：拦下一切不经 TUN 的 :53。而 OpenVPN
+  // Connect 等客户端在推送了 DNS（没带域名）时也装自己的防泄漏——NRPT「.」把全部查询只发往 VPN DNS，或
+  // block-outside-dns 只放行 VPN 网卡的 :53。两道防泄漏叠加 = 任何 DNS 都发不出去，整机断网（真机实证：开 OpenVPN
+  // 即全挂、关掉即恢复；VPN DNS 10.175.0.249 落在 bypassLAN 的 10.0.0.0/8 里，经 VPN 网卡出、被 strict_route 拦）。
+  // 关掉后系统 DNS 按 VPN 的规定发往 VPN DNS——与 macOS 一致（那里 VPN 的 DNS 注入本就优先）：内网名原生可解析，
+  // 代理分流靠 sniff 出的域名照常生效。
+  if (
+    tun &&
+    input.tunMode &&
+    input.platform === 'win32' &&
+    primaryIface &&
+    tun.strict_route !== false
+  ) {
+    tun.strict_route = false;
+    result.logs.push({
+      level: 'info',
+      message: `工作 VPN（Windows）：${primaryIface.name} 带 DNS，已关闭 TUN strict_route，避免与 VPN 客户端的 DNS 防泄漏互相封死`,
+    });
+  }
+
   const fullTunnel = ifaces.filter((it) => it.fullTunnel).map((it) => it.name);
   if (fullTunnel.length > 0) {
     result.logs.push({

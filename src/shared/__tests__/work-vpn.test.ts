@@ -591,6 +591,53 @@ describe('Windows：parseWinNetSnapshot + detectWorkVpn', () => {
     );
   });
 
+  // 真机实证：Windows 开 OpenVPN（推送 DNS、无域名）即整机断网——VPN 客户端的 DNS 防泄漏与 strict_route 的 WFP
+  // 防泄漏叠加封死一切 :53。带 DNS 的工作 VPN 在 Windows 上必须关 strict_route。
+  const winInput = (over: Partial<Parameters<typeof applyWorkVpnToSingBoxConfig>[1]> = {}) => ({
+    snapshot: detectWin(),
+    serverIps: [],
+    serverHosts: [],
+    userDomains: [],
+    autoDetectDomains: false,
+    tunMode: true,
+    realResolverTag: 'dns-node-race',
+    ownLanCidrs: [],
+    fakeipRanges: ['198.18.0.0/15'],
+    platform: 'win32',
+    ...over,
+  });
+  const tunOf = (cfg: ReturnType<typeof baseConfig>) =>
+    cfg.inbounds.find((ib) => ib.type === 'tun') as Record<string, unknown>;
+
+  it('Windows + 带 DNS 的工作 VPN → 关 strict_route 并记日志', () => {
+    const cfg = baseConfig();
+    tunOf(cfg).strict_route = true;
+    const res = applyWorkVpnToSingBoxConfig(cfg, winInput());
+    expect(tunOf(cfg).strict_route).toBe(false);
+    expect(res.logs.some((l) => l.message.includes('strict_route'))).toBe(true);
+  });
+
+  it('macOS 同样的 VPN 不动 strict_route（没有 WFP 冲突）', () => {
+    const cfg = baseConfig();
+    tunOf(cfg).strict_route = true;
+    applyWorkVpnToSingBoxConfig(cfg, winInput({ platform: 'darwin', snapshot: detectLive() }));
+    expect(tunOf(cfg).strict_route).toBe(true);
+  });
+
+  it('Windows：VPN 没有 DNS / 非 TUN 模式 → 不动 strict_route', () => {
+    const snap = detectWin();
+    const noDns = { ...snap, interfaces: snap.interfaces.map((it) => ({ ...it, dnsServers: [] })) };
+    const a = baseConfig();
+    tunOf(a).strict_route = true;
+    applyWorkVpnToSingBoxConfig(a, winInput({ snapshot: noDns }));
+    expect(tunOf(a).strict_route).toBe(true);
+
+    const b = baseConfig();
+    tunOf(b).strict_route = true;
+    applyWorkVpnToSingBoxConfig(b, winInput({ tunMode: false }));
+    expect(tunOf(b).strict_route).toBe(true);
+  });
+
   it('macOS 不发 process_path_regex', () => {
     const cfg = baseConfig();
     applyWorkVpnToSingBoxConfig(cfg, {

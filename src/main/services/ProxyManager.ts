@@ -339,6 +339,21 @@ export function connectionMatchesSwitchedPairs(
   return pairs.some((p) => chainList.includes(p.selectorTag) && chainList.includes(p.oldMemberTag));
 }
 
+/** 网卡名 + IPv4 地址指纹（廉价，无子进程）：Windows 上判断「网卡变了、值得起 PowerShell 复查工作 VPN」。 */
+function winIfaceFingerprint(): string {
+  try {
+    return Object.entries(networkInterfaces())
+      .map(([name, addrs]) => {
+        const v4 = (addrs ?? []).filter((a) => a.family === 'IPv4').map((a) => a.address);
+        return `${name}=${v4.sort().join(',')}`;
+      })
+      .sort()
+      .join('|');
+  } catch {
+    return '';
+  }
+}
+
 export class ProxyManager extends EventEmitter implements IProxyManager {
   private singboxProcess: ChildProcess | null = null;
   private startTime: Date | null = null;
@@ -386,6 +401,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private workVpnOwnTunAddrs = new Set<string>(['172.19.0.1']);
   // 当前 TUN 的 route_exclude_address（识别 sing-tun 拆出来的 /32 补集路由）。
   private workVpnTunExcludes: string[] = [];
+  // Windows：运行中的 TUN 是否开着 strict_route，及起核时的网卡地址指纹（VPN 后连上时据此决定是否重生成）。
+  private winRunningStrictRoute = false;
+  private winIfaceFingerprint = '';
   // 本次生成是否发射了 evaluate 探测；内核拒绝时本会话关闭自动识别（回退为仅推送/手填域名）。
   private workVpnUsedEvaluate = false;
   private workVpnEvaluateRejected = false;
@@ -3919,6 +3937,32 @@ done
     }
     const tun = singboxConfig.inbounds.find((ib) => ib.type === 'tun');
     this.workVpnTunExcludes = tun?.route_exclude_address ?? [];
+    if (process.platform === 'win32') {
+      this.winRunningStrictRoute = !!tun && tun.strict_route !== false;
+      this.winIfaceFingerprint = winIfaceFingerprint();
+    }
+  }
+
+  /**
+   * Windows：起核时还没有带 DNS 的工作 VPN（strict_route 开着），之后 VPN 连上——VPN 客户端的 DNS 防泄漏与
+   * strict_route 互相封死、整机断网（见 shared/work-vpn 关 strict_route 处）。这时只能重生成配置，重启一次的十余秒
+   * 好过一直断网。watcher 是 30 s 指纹轮询、每轮都走到这里，而探测要起一次 PowerShell，故先比网卡地址指纹，
+   * 网卡没变就不探测。VPN 断开不重启：strict_route 关着无害，下次连接时恢复。
+   */
+  private async checkWinWorkVpnStrictRoute(): Promise<void> {
+    const config = this.currentConfig;
+    if (!config || config.proxyModeType !== 'tun' || !this.workVpnEnabled(config)) return;
+    if (!this.winRunningStrictRoute) return;
+    const fp = winIfaceFingerprint();
+    if (fp === this.winIfaceFingerprint) return;
+    this.winIfaceFingerprint = fp;
+    const snap = await this.detectWorkVpnNow(config);
+    if (!snap?.interfaces.some((it) => it.dnsServers.length > 0)) return;
+    this.logToManager(
+      'warn',
+      `工作 VPN 已连接（${describeWorkVpn(snap)}）：重新生成配置以关闭 strict_route，避免与 VPN 的 DNS 防泄漏互相封死`
+    );
+    this.scheduleDebouncedRestart();
   }
 
   /** 接口是否为 FlowZ 自家 TUN（按本会话用过的 TUN 地址认）。 */
@@ -3937,8 +3981,10 @@ done
    * TUN 上——发往内网 DNS/网段的流量会回灌自己，必须重生成。
    */
   private async checkWorkVpnChange(): Promise<void> {
-    // Windows：watcher 是 30 s 指纹轮询，每轮都会走到这里，而探测要起一次 PowerShell；那里网卡名也不会被 TUN 重排，
-    // 变化又从不触发重启——只在起核时探测。
+    if (process.platform === 'win32') {
+      await this.checkWinWorkVpnStrictRoute();
+      return;
+    }
     if (process.platform !== 'darwin') return;
     const config = this.currentConfig;
     if (!this.workVpnEnabled(config)) return;
