@@ -31,6 +31,10 @@ jest.mock('electron', () => ({
 import { ProxyManager } from '../ProxyManager';
 import type { ServerConfig, UserConfig } from '../../../shared/types';
 import { BUILTIN_GEO_RULESETS, getRuleSetRuntimeDir } from '../builtin-geo-rulesets';
+import { DEFAULT_REGION_ROUTING, REGION_LOCAL_GEO } from '../../../shared/region-routing';
+
+// 默认地区（本 fork 为 ru）的本地 geosite tag：INV-S0 断言按它取，不写死某个地区。
+const LOCAL_GEOSITE = REGION_LOCAL_GEO[DEFAULT_REGION_ROUTING.region].geosite[0];
 
 // 与生产一致：先 seed .srs 再生成 config（fail-closed 只在文件真缺失时触发）。
 // smart 模式三件套与 dns-resolver.test.ts 同口径，避免引入无关的 geosite-private 直连规则；
@@ -41,6 +45,8 @@ import { BUILTIN_GEO_RULESETS, getRuleSetRuntimeDir } from '../builtin-geo-rules
     'geosite-cn',
     'geosite-geolocation-!cn',
     'geoip-cn',
+    'geosite-category-ru',
+    'geoip-ru',
     'geosite-telegram',
     'geoip-telegram',
   ]);
@@ -355,7 +361,7 @@ describe('#347 INV-S0 — 影子规则的 geo 二分必须与 route 侧同门控
     const cfg = gen(baseConfig({ proxyMode: 'global' }));
     const bad = dnsRules(cfg).filter((r) => {
       const rs = Array.isArray(r.rule_set) ? r.rule_set : r.rule_set ? [r.rule_set] : [];
-      if (!rs.some((t: string) => t === 'geosite-cn')) return false;
+      if (!rs.some((t: string) => t === LOCAL_GEOSITE)) return false;
       return typeof r.server === 'string' && !isTunnelResolver(cfg, r.server);
     });
     expect(bad).toHaveLength(0);
@@ -365,7 +371,7 @@ describe('#347 INV-S0 — 影子规则的 geo 二分必须与 route 侧同门控
     const cfg = gen(baseConfig({ proxyMode: 'smart' }));
     const good = dnsRules(cfg).filter((r) => {
       const rs = Array.isArray(r.rule_set) ? r.rule_set : r.rule_set ? [r.rule_set] : [];
-      return rs.some((t: string) => t === 'geosite-cn');
+      return rs.some((t: string) => t === LOCAL_GEOSITE);
     });
     expect(good.length).toBeGreaterThan(0);
   });

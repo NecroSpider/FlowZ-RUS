@@ -1,16 +1,17 @@
 /**
  * 地区分流（4.1.0）单一真值：智能分流的 geo 基线场景。主进程 route/dns 生成 + 渲染端 UI 共用。
- * undefined（存量/新装未改）= 默认中国大陆正向 = 今日智能分流行为 → 零迁移、config-snapshot 默认零变。
+ * undefined（存量/新装未改）= 默认地区正向。本 fork 默认俄罗斯（上游默认中国大陆）：未改过地区的存量用户
+ * 随之从 cn 基线切到 ru 基线（俄罗斯站点直连、其余走代理）。
  */
 import type { RegionId, RegionRoutingConfig } from './types';
 
 export const DEFAULT_REGION_ROUTING: RegionRoutingConfig = {
   enabled: true,
-  region: 'cn',
+  region: 'ru',
   reverse: false,
 };
 
-/** 取生效的地区分流配置；缺省=默认中国大陆正向（=今日行为）。 */
+/** 取生效的地区分流配置；缺省=默认俄罗斯正向。 */
 export function effectiveRegionRouting(config: {
   regionRouting?: RegionRoutingConfig;
 }): RegionRoutingConfig {

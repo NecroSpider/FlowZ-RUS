@@ -119,7 +119,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -441,6 +441,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -668,18 +680,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -807,7 +814,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -1108,6 +1115,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -1320,18 +1339,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -1460,7 +1474,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -1754,6 +1768,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -1967,18 +1993,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -2107,7 +2128,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -2434,6 +2455,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -2646,18 +2679,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -2776,7 +2804,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -3065,6 +3093,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -3279,18 +3319,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -3370,7 +3405,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "my-ntp.example.com",
             ".my-ntp.example.com",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -3400,7 +3435,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -3690,6 +3725,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -3902,18 +3949,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -5141,7 +5183,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "server": "dns-local",
         },
         {
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -5422,6 +5464,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -5634,18 +5688,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -5764,7 +5813,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -6084,6 +6133,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -6296,18 +6357,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -6426,7 +6482,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -6735,6 +6791,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -6947,18 +7015,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -7087,7 +7150,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -7421,6 +7484,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -7633,18 +7708,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -7763,7 +7833,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -8069,6 +8139,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -8281,18 +8363,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -8411,7 +8488,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -8711,6 +8788,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -8958,29 +9047,14 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "outbound": "proxy-selector",
         },
         {
-          "action": "reject",
-          "network": [
-            "udp",
-          ],
-          "port": [
-            443,
-          ],
-          "rule_set": "geosite-geolocation-!cn",
-        },
-        {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
         {
           "action": "reject",
@@ -9113,7 +9187,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -9401,6 +9475,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
           "type": "local",
         },
       ],
@@ -9591,18 +9677,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -9721,7 +9802,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -10009,6 +10090,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
           "type": "local",
         },
       ],
@@ -10223,18 +10316,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -10635,6 +10723,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -10950,7 +11050,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -11245,6 +11345,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -11457,18 +11569,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -11590,7 +11697,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -11885,6 +11992,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -12099,18 +12218,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -12241,7 +12355,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -12551,6 +12665,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -12777,18 +12903,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -12907,7 +13028,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -13207,6 +13328,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -13426,18 +13559,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -13561,7 +13689,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -13861,6 +13989,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -14087,18 +14227,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -14222,7 +14357,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -14512,6 +14647,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -14736,18 +14883,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -14866,7 +15008,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -15165,6 +15307,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -15377,18 +15531,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -15507,7 +15656,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -15797,6 +15946,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -16009,18 +16170,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -16139,7 +16295,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -16457,6 +16613,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -16669,18 +16837,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -17214,7 +17377,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -17510,6 +17673,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -17729,18 +17904,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -17859,7 +18029,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -18193,6 +18363,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -18405,18 +18587,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -18536,7 +18713,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -18838,6 +19015,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -19064,18 +19253,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -19194,7 +19378,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -19496,6 +19680,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -19723,18 +19919,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -22360,7 +22551,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -22780,6 +22971,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -22992,18 +23195,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -23129,7 +23327,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -23432,6 +23630,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -23644,18 +23854,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },
@@ -23775,7 +23980,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
-          "rule_set": "geosite-cn",
+          "rule_set": "geosite-category-ru",
           "server": "dns-domestic",
         },
         {
@@ -24092,6 +24297,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ru.srs",
+          "tag": "geosite-category-ru",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-ru.srs",
+          "tag": "geoip-ru",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -24304,18 +24521,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
-          "outbound": "proxy-selector",
-          "rule_set": "geosite-geolocation-!cn",
+          "outbound": "direct",
+          "rule_set": "geosite-category-ru",
         },
         {
           "action": "route",
           "outbound": "direct",
-          "rule_set": "geosite-cn",
-        },
-        {
-          "action": "route",
-          "outbound": "direct",
-          "rule_set": "geoip-cn",
+          "rule_set": "geoip-ru",
         },
       ],
     },

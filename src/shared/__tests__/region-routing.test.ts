@@ -6,8 +6,8 @@ import {
 } from '../region-routing';
 
 describe('region-routing 单一真值', () => {
-  it('undefined → 默认中国大陆正向（=今日智能分流行为，零迁移）', () => {
-    expect(effectiveRegionRouting({})).toEqual({ enabled: true, region: 'cn', reverse: false });
+  it('undefined → 默认俄罗斯正向（本 fork；上游默认中国大陆）', () => {
+    expect(effectiveRegionRouting({})).toEqual({ enabled: true, region: 'ru', reverse: false });
     expect(effectiveRegionRouting({ regionRouting: undefined })).toEqual(DEFAULT_REGION_ROUTING);
   });
 

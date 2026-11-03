@@ -362,7 +362,7 @@ export interface CustomDnsUpstream {
 
 /** 地区 ID：选用哪套地区 geo（cn/ir/ru）。 */
 export type RegionId = 'cn' | 'ir' | 'ru';
-/** 地区分流配置。undefined（存量/新装未改）= 默认中国大陆正向 = 今日智能分流行为（零迁移，见 shared/region-routing）。 */
+/** 地区分流配置。undefined（存量/新装未改）= 默认地区正向（本 fork 为俄罗斯，见 shared/region-routing）。 */
 export interface RegionRoutingConfig {
   enabled: boolean; // 总开关：true=按地区自动分流(本地直连·海外代理)；false=只用自定义规则
   region: RegionId; // 选用哪套地区 geo

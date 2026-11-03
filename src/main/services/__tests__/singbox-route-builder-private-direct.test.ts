@@ -26,8 +26,8 @@ import type { ServerConfig, UserConfig } from '../../../shared/types';
 
 // 种运行时本地副本（写 SRS 魔数即过 isValidSrsFile）——模拟「文件确实存在」，使「修复后 direct 仍不发射」
 // 与「文件缺失才不发射」可区分（否则测试空过、证不出门控修复）。
-// 除 geosite-private 外补 CN 三件套：smart 模式默认地区分流(cn)引用 geosite-cn/!cn/geoip-cn 做国内直连，
-// 不种则它们在 smart 真 dangling、污染「smart 无告警」对照（与 dns-resolver.test 同样的 3 件套播种约定）。
+// 除 geosite-private 外补地区 geo：smart 模式默认地区分流（本 fork 默认 ru：geosite-category-ru/geoip-ru；
+// cn 三件套保留供显式 cn 用例）做本地直连，不种则它们在 smart 真 dangling、污染「smart 无告警」对照。
 {
   const dir = getRuleSetRuntimeDir();
   fs.mkdirSync(dir, { recursive: true });
@@ -36,6 +36,8 @@ import type { ServerConfig, UserConfig } from '../../../shared/types';
     'geosite-cn.srs',
     'geosite-geolocation-!cn.srs',
     'geoip-cn.srs',
+    'geosite-category-ru.srs',
+    'geoip-ru.srs',
   ]) {
     fs.writeFileSync(path.join(dir, f), Buffer.from('SRS'));
   }
