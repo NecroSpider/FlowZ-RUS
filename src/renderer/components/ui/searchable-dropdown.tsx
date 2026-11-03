@@ -72,13 +72,15 @@ export function SearchableDropdown({
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 关闭时清空查询（下次打开回全量）；打开且有搜索框时把焦点交给输入框（rAF 让 radix 默认聚焦首项先跑，再夺回）。
+  // preventScroll 必须：首帧面板尚未定位，裸 focus() 会把 overflow:hidden 的外壳滚走——整块界面上移、无滚动条
+  // 可拉回（用户反馈：在应用卡片里改选节点后「一块界面飞上去」，要切页才恢复）。
   useEffect(() => {
     if (!open) {
       onQueryChange('');
       return;
     }
     if (showSearch) {
-      const id = requestAnimationFrame(() => inputRef.current?.focus());
+      const id = requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
       return () => cancelAnimationFrame(id);
     }
     return undefined;

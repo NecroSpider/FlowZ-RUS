@@ -35,8 +35,28 @@ export function MainLayout({
     scrollRef.current?.scrollTo(0, 0);
   }, [currentView, settingsSection]);
 
+  // 外壳与文档本身永不该滚动（满视口 + overflow:hidden，没有滚动条可拉回）。focus()/scrollIntoView 会连带滚动
+  // overflow:hidden 的祖先，一旦发生整块界面上移卡住——兜底立刻复位（真正可滚的只有内容区 scrollRef）。
+  const shellRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const shell = shellRef.current;
+    const resetShell = () => {
+      if (shell && (shell.scrollTop || shell.scrollLeft)) shell.scrollTo(0, 0);
+    };
+    const resetDocument = () => {
+      const el = document.scrollingElement;
+      if (el && (el.scrollTop || el.scrollLeft)) el.scrollTo(0, 0);
+    };
+    shell?.addEventListener('scroll', resetShell, { passive: true });
+    window.addEventListener('scroll', resetDocument, { passive: true });
+    return () => {
+      shell?.removeEventListener('scroll', resetShell);
+      window.removeEventListener('scroll', resetDocument);
+    };
+  }, []);
+
   return (
-    <div className="flex h-screen w-full overflow-hidden app-shell relative">
+    <div ref={shellRef} className="flex h-screen w-full overflow-hidden app-shell relative">
       <Sidebar
         currentView={currentView}
         onViewChange={onViewChange}
