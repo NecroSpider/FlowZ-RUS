@@ -686,6 +686,17 @@ describe('collectNodeIdentifiers — 节点标识符提取 + 类型化占位（P
 });
 
 describe('redactIdentifiers — 文本统一打码 + 主机边界锚定（P0.6 / H1）', () => {
+  // 真机报告实证：rule1 / 节点直连规则的 domain_suffix 写成 ".exp.mobilitylabs.online"，旧锚定把前导点当主机字符
+  // 而整段漏打码，节点域名原样进报告。
+  it('domain_suffix 的前导点写法也打码（".a.com" → ".<domain-1>"），子域 cdn.a.com 仍不误伤', () => {
+    const ids = [{ value: 'node.example.net', placeholder: '<domain-1>' }];
+    const text =
+      '"domain_suffix": ["node.example.net", ".node.example.net", "cdn.node.example.net"]';
+    expect(redactIdentifiers(text, ids)).toBe(
+      '"domain_suffix": ["<domain-1>", ".<domain-1>", "cdn.node.example.net"]'
+    );
+  });
+
   const ids = [
     { value: 'a.example-argo.com', placeholder: '<domain-1>' },
     { value: '104.18.8.83', placeholder: '<ip-1>' },

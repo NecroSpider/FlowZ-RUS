@@ -239,6 +239,8 @@ export function collectNodeIdentifiers(
  * **主机边界锚定**（前后非 `[字母数字._-]`）：防节点标识符作为子串误替无关串
  * （节点 `a.com` 不碰 `cdn.a.com`；节点 IP `104.18.8.8` 不把 `104.18.8.83` 切成 `<ip-1>3`）。
  * 占位符为 `<...>` 不含原值，不会自我再匹配。
+ * 允许一个前导 `.`（sing-box `domain_suffix` 的 `".a.com"` 写法）：点本身仍须在主机边界上，`cdn.a.com` 不受影响，
+ * 替换为 `.<domain-N>`——否则节点域名经 rule1 / 直连规则的 domain_suffix 原样漏进报告。
  */
 export function redactIdentifiers(text: string, ids: readonly NodeIdentifier[]): string {
   if (!text || ids.length === 0) return text;
@@ -246,8 +248,8 @@ export function redactIdentifiers(text: string, ids: readonly NodeIdentifier[]):
   let out = text;
   for (const { value, placeholder } of sorted) {
     out = out.replace(
-      new RegExp(`(?<![\\w.-])${escapeRegExp(value)}(?![\\w.-])`, 'gi'),
-      placeholder
+      new RegExp(`(?<![\\w.-])(\\.?)${escapeRegExp(value)}(?![\\w.-])`, 'gi'),
+      (_m, dot: string) => dot + placeholder
     );
   }
   return out;
