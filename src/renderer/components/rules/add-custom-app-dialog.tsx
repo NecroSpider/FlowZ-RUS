@@ -126,7 +126,7 @@ export function AddCustomAppDialog({
       const r = await api.ruleResources.refreshCatalog();
       setGeoCatalog(r.items || []);
     } catch {
-      toast.error(t('rules.customApp.geoRefreshFailed', '刷新分类清单失败'));
+      toast.error(t('rules.customApp.geoRefreshFailed', 'Failed to refresh catalog'));
     } finally {
       setGeoCatalogRefreshing(false);
     }
@@ -185,9 +185,13 @@ export function AddCustomAppDialog({
     ];
     if (toDownload.length > 0) {
       toast.info(
-        t('rules.customApp.geoDownloading', '正在下载 {{n}} 个分类规则集到规则资源', {
-          n: toDownload.length,
-        })
+        t(
+          'rules.customApp.geoDownloading',
+          'Downloading {{n}} category rule-set(s) to Rule Resources',
+          {
+            n: toDownload.length,
+          }
+        )
       );
       void api.ruleResources
         .download(toDownload)
@@ -197,7 +201,7 @@ export function AddCustomAppDialog({
             toast.warning(
               t(
                 'rules.customApp.geoDownloadPartial',
-                '{{n}} 个分类下载失败，可在「规则资源」页重试（缺失时该分类不生效，进程名仍生效）',
+                "{{n}} categor(ies) failed to download; retry in Rule Resources (missing ones won't apply; process name still works)",
                 { n: fail }
               )
             );
@@ -205,7 +209,10 @@ export function AddCustomAppDialog({
         })
         .catch(() => {
           toast.error(
-            t('rules.customApp.geoDownloadFailed', '分类规则集下载失败，可在「规则资源」页重试')
+            t(
+              'rules.customApp.geoDownloadFailed',
+              'Failed to download category rule-sets; retry in Rule Resources'
+            )
           );
         });
     }
@@ -223,7 +230,7 @@ export function AddCustomAppDialog({
         <DialogDescription className="sr-only">{t('rules.customApp.addDesc')}</DialogDescription>
 
         <div className="apd-h">
-          <span className="apd-ico">＋</span>
+          <span className="apd-ico">+</span>
           <h3>{t('rules.customApp.addTitle')}</h3>
           <button
             type="button"
@@ -241,7 +248,10 @@ export function AddCustomAppDialog({
             <div className="field-lbl">
               {t('rules.customApp.iconLabel')}{' '}
               <small>
-                {t('rules.customApp.iconFieldHint', '远端图标 / emoji / URL，加载失败回退首字母')}
+                {t(
+                  'rules.customApp.iconFieldHint',
+                  'Remote icon / emoji / URL; falls back to the initial on load failure'
+                )}
               </small>
             </div>
             <IconGalleryPicker
@@ -262,7 +272,8 @@ export function AddCustomAppDialog({
 
           <div className="field">
             <div className="field-lbl">
-              {t('rules.customApp.nameLabel')} <small>{t('rules.customApp.nameReq', '必填')}</small>
+              {t('rules.customApp.nameLabel')}{' '}
+              <small>{t('rules.customApp.nameReq', 'Required')}</small>
             </div>
             <input
               className="apd-input"
@@ -275,16 +286,19 @@ export function AddCustomAppDialog({
             />
             {errors.name && (
               <p className="text-xs text-err">
-                {t('rules.customApp.nameRequired', '请填写应用名称')}
+                {t('rules.customApp.nameRequired', 'Please enter an app name')}
               </p>
             )}
           </div>
 
           <div className="field">
             <div className="field-lbl">
-              {t('rules.customApp.categoryLabel', '分类归属')}{' '}
+              {t('rules.customApp.categoryLabel', 'Category')}{' '}
               <small>
-                {t('rules.customApp.categoryFieldHint', '归入对应分类组，选「自定义…」新建分类组')}
+                {t(
+                  'rules.customApp.categoryFieldHint',
+                  'Group under a category; choose “Custom…” to create a new one'
+                )}
               </small>
             </div>
             <div className="apd-selwrap">
@@ -299,7 +313,7 @@ export function AddCustomAppDialog({
                   </option>
                 ))}
                 <option value={CUSTOM_CATEGORY}>
-                  {t('rules.customApp.categoryCustom', '自定义…')}
+                  {t('rules.customApp.categoryCustom', 'Custom…')}
                 </option>
               </select>
               <ChevronDown className="apd-selchev" />
@@ -311,13 +325,16 @@ export function AddCustomAppDialog({
                   type="text"
                   value={customCategory}
                   onChange={(e) => setCustomCategory(e.target.value)}
-                  placeholder={t('rules.customApp.categoryPlaceholder', '输入新分类名，如 办公')}
+                  placeholder={t(
+                    'rules.customApp.categoryPlaceholder',
+                    'New category name, e.g. Office'
+                  )}
                   aria-invalid={errors.category}
                   style={errors.category ? ERR_STYLE : undefined}
                 />
                 {errors.category && (
                   <p className="text-xs text-err">
-                    {t('rules.customApp.categoryRequired', '请输入分类名')}
+                    {t('rules.customApp.categoryRequired', 'Please enter a category name')}
                   </p>
                 )}
               </>
@@ -326,7 +343,8 @@ export function AddCustomAppDialog({
 
           <div className="field">
             <div className="field-lbl">
-              Geosite <small>{t('rules.customApp.geositeFieldHint', '域名匹配 · 多选')}</small>
+              Geosite{' '}
+              <small>{t('rules.customApp.geositeFieldHint', 'Domain match · multi-select')}</small>
             </div>
             <GeoTagPicker
               options={geositeOptions}
@@ -336,18 +354,25 @@ export function AddCustomAppDialog({
               loading={geoCatalogLoading}
               refreshing={geoCatalogRefreshing}
               onRefresh={refreshGeoCatalog}
-              placeholder={t('rules.customApp.geoSearchPlaceholder', '搜索分类，如 youtube')}
+              placeholder={t(
+                'rules.customApp.geoSearchPlaceholder',
+                'Search categories, e.g. youtube'
+              )}
             />
             {errors.geosite && (
               <p className="text-xs text-err">
-                {t('rules.customApp.geositeRequired', '请至少选择一个 Geosite 分类')}
+                {t(
+                  'rules.customApp.geositeRequired',
+                  'Please select at least one Geosite category'
+                )}
               </p>
             )}
           </div>
 
           <div className="field">
             <div className="field-lbl">
-              GeoIP <small>{t('rules.customApp.geoipFieldHint', 'IP 段匹配 · 多选')}</small>
+              GeoIP{' '}
+              <small>{t('rules.customApp.geoipFieldHint', 'IP-range match · multi-select')}</small>
             </div>
             <GeoTagPicker
               options={geoipOptions}
@@ -357,7 +382,10 @@ export function AddCustomAppDialog({
               loading={geoCatalogLoading}
               refreshing={geoCatalogRefreshing}
               onRefresh={refreshGeoCatalog}
-              placeholder={t('rules.customApp.geoSearchPlaceholder', '搜索分类，如 youtube')}
+              placeholder={t(
+                'rules.customApp.geoSearchPlaceholder',
+                'Search categories, e.g. youtube'
+              )}
             />
           </div>
 
@@ -377,14 +405,17 @@ export function AddCustomAppDialog({
               }
             }}
           >
-            {t('rules.customApp.goToResources', '规则集没有？前往「规则资源」下载更多')}
+            {t(
+              'rules.customApp.goToResources',
+              'No rule set? Go to Rule Resources to download more'
+            )}
             <ArrowRight />
           </a>
 
           <div className="field">
             <div className="field-lbl">
-              {t('rules.customApp.processLabel', '进程名')}{' '}
-              <small>{t('rules.customApp.processFieldHint', '可选 · 逗号分隔')}</small>
+              {t('rules.customApp.processLabel', 'Process')}{' '}
+              <small>{t('rules.customApp.processFieldHint', 'Optional · comma-separated')}</small>
             </div>
             <div className="flex gap-2">
               <input
@@ -401,13 +432,13 @@ export function AddCustomAppDialog({
                 onClick={() => setProcessPickerOpen(true)}
               >
                 <ListChecks className="h-4 w-4" />
-                {t('rules.pickProcess', '从进程选择')}
+                {t('rules.pickProcess', 'Pick process')}
               </button>
             </div>
             <p className="text-[10.5px] leading-relaxed text-fg-faint">
               {t(
                 'rules.customApp.processHint',
-                '可选 · 逗号分隔，比 geo 域名匹配更精准。区分大小写，建议用「从进程选择」获取准确名称。'
+                'Optional · comma-separated, more precise than geo domain matching. Case-sensitive — use "Pick process" to get the exact name.'
               )}
             </p>
           </div>
@@ -415,7 +446,7 @@ export function AddCustomAppDialog({
           <div className="apd-note">
             {t(
               'rules.customApp.geoAutoDownloadNote',
-              '选中的 geosite / geoip 规则集若本地缺失，添加时将自动下载（fail-closed：下载完成前该应用的 geo 匹配不生效，进程名匹配不受影响）。'
+              'Selected geosite / geoip rule sets that are missing locally will be downloaded on add (fail-closed: geo matching for this app is inactive until download completes; process-name matching is unaffected).'
             )}
           </div>
         </div>

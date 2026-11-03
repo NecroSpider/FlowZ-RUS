@@ -32,14 +32,14 @@ export function AppPolicyPage() {
         <h1>{t('rules.appRulesTitle')}</h1>
         <span className="pill exp">🧪 {t('rules.appRulesExperimental')}</span>
         <div className="ap-mh">
-          <span className="lbl">{t('rules.appRoutingToggle', '启用应用分流')}</span>
+          <span className="lbl">{t('rules.appRoutingToggle', 'Enable app routing')}</span>
           {/* 总开关：conduit `.swt`（+`on`）+ `.ap-master`（反应式 CSS 锚点）。切换需重启内核。 */}
           <button
             type="button"
             role="switch"
             aria-checked={enabled}
-            aria-label={t('rules.appRoutingToggle', '启用应用分流')}
-            title={t('rules.appRoutingToggle', '启用应用分流')}
+            aria-label={t('rules.appRoutingToggle', 'Enable app routing')}
+            title={t('rules.appRoutingToggle', 'Enable app routing')}
             disabled={!config}
             onClick={() => toggle(!enabled)}
             className={cn(

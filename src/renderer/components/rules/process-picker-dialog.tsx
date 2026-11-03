@@ -51,7 +51,7 @@ export function ProcessPickerDialog({
       const list = await api.system.listProcesses();
       setProcesses(list);
     } catch (e) {
-      toast.error(t('rules.processPicker.loadFailed', '获取进程列表失败'), {
+      toast.error(t('rules.processPicker.loadFailed', 'Failed to list processes'), {
         description: e instanceof Error ? e.message : undefined,
       });
     } finally {
@@ -99,9 +99,9 @@ export function ProcessPickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{t('rules.processPicker.title', '选择进程')}</DialogTitle>
+          <DialogTitle>{t('rules.processPicker.title', 'Pick Process')}</DialogTitle>
           <DialogDescription>
-            {t('rules.processPicker.desc', '从运行中的进程选择，快速加入进程规则')}
+            {t('rules.processPicker.desc', 'Pick from running processes to add a rule')}
           </DialogDescription>
         </DialogHeader>
 
@@ -112,7 +112,7 @@ export function ProcessPickerDialog({
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('rules.processPicker.search', '搜索进程名 / 路径')}
+                placeholder={t('rules.processPicker.search', 'Search process name / path')}
                 className="ps-8"
               />
             </div>
@@ -123,7 +123,7 @@ export function ProcessPickerDialog({
 
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">
-              {t('rules.processPicker.hideSystem', '隐藏系统进程')}
+              {t('rules.processPicker.hideSystem', 'Hide system processes')}
             </span>
             <Switch checked={hideSystem} onCheckedChange={setHideSystem} />
           </div>
@@ -132,11 +132,11 @@ export function ProcessPickerDialog({
             {loading ? (
               <div className="flex h-72 items-center justify-center text-muted-foreground">
                 <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                {t('common.loading', '加载中...')}
+                {t('common.loading', 'Loading...')}
               </div>
             ) : filtered.length === 0 ? (
               <div className="flex h-72 items-center justify-center text-sm text-muted-foreground">
-                {t('rules.processPicker.empty', '没有匹配的进程')}
+                {t('rules.processPicker.empty', 'No matching process')}
               </div>
             ) : (
               <div className="divide-y divide-border/60">
@@ -167,7 +167,7 @@ export function ProcessPickerDialog({
                         )}
                         {disabled && (
                           <div className="text-xs text-muted-foreground">
-                            {t('rules.processPicker.noPathDisabled', '无法获取路径')}
+                            {t('rules.processPicker.noPathDisabled', 'Path unavailable')}
                           </div>
                         )}
                       </div>
@@ -184,10 +184,10 @@ export function ProcessPickerDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('servers.cancel', '取消')}
+            {t('servers.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleAdd} disabled={selected.size === 0}>
-            {t('rules.processPicker.addSelected', '添加 {{count}} 项', { count: selected.size })}
+            {t('rules.processPicker.addSelected', 'Add {{count}}', { count: selected.size })}
           </Button>
         </DialogFooter>
       </DialogContent>

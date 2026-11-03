@@ -180,8 +180,8 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
         servers,
         subscriptions,
         latencyMap,
-        meshLabel: t('servers.meshNodes', '组网'),
-        manualLabel: t('servers.manualNodes', '自建节点'),
+        meshLabel: t('servers.meshNodes', 'Mesh'),
+        manualLabel: t('servers.manualNodes', 'Custom Nodes'),
         sentinel: { id: FOLLOW_GLOBAL_NODE_ID, name: t('rules.defaultNodeTip'), role: 'follow' },
       }),
     [servers, subscriptions, latencyMap, t]
@@ -342,7 +342,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
             {t('rules.meshOverlapHint', {
               values: `${meshOverlap.slice(0, 3).join(', ')}${meshOverlap.length > 3 ? ' …' : ''}`,
               defaultValue:
-                '网段 {{values}} 与组网(WG/Tailscale)路由段重叠：本规则优先级更高、将覆盖组网路由，该段可能不走组网节点。如非有意请调整。',
+                'CIDR {{values}} overlaps a mesh (WireGuard/Tailscale) route segment: this rule has higher priority and will override the mesh route, so that segment may not go through the mesh node. Adjust if unintended.',
             })}
           </div>
         )}
@@ -408,7 +408,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
             </label>
             {formErrors.remarksRequired && (
               <div className="rl-cc-hint" style={{ color: 'hsl(var(--err))' }}>
-                {t('rules.errorRemarksRequired', '请填写备注名')}
+                {t('rules.errorRemarksRequired', 'Please enter a remark')}
               </div>
             )}
           </div>
@@ -420,7 +420,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
                 <span className="rl-zone-cnt">
                   {t('rules.conditionCount', {
                     count: conditionTypes.length,
-                    defaultValue: '{{count}} 条',
+                    defaultValue: '{{count}}',
                   })}
                 </span>
               </div>
@@ -497,12 +497,18 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
                   {/* 提交后内联错误：空条件（非法值由 renderValueEditor 内实时红字，此处只兜底 ruleSet 等无实时校验的空/非法） */}
                   {formErrors.conditions[ct] === 'empty' && (
                     <div className="rl-cc-hint" style={{ color: 'hsl(var(--err))' }}>
-                      {t('rules.errorEmptyConditionInline', '请填写该条件的匹配值')}
+                      {t(
+                        'rules.errorEmptyConditionInline',
+                        'Please enter a match value for this condition'
+                      )}
                     </div>
                   )}
                   {formErrors.conditions[ct] === 'invalid' && ct === 'ruleSet' && (
                     <div className="rl-cc-hint" style={{ color: 'hsl(var(--err))' }}>
-                      {t('rules.errorInvalidConditionInline', '该条件含无效值，请检查')}
+                      {t(
+                        'rules.errorInvalidConditionInline',
+                        'This condition contains invalid values, please check'
+                      )}
                     </div>
                   )}
                 </div>
@@ -559,7 +565,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
                   value={targetServerId}
                   onSelect={setTargetServerId}
                   placeholder={t('rules.defaultNodeTip')}
-                  searchPlaceholder={t('common.search', '搜索')}
+                  searchPlaceholder={t('common.search', 'Search')}
                   ariaLabel={t('rules.targetNode')}
                 />
               </div>

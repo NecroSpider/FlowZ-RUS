@@ -365,9 +365,9 @@ export class ResourceManager {
           await fs.mkdir(seedDir, { recursive: true });
           await fs.copyFile(this.getBundledSingBoxPath(), path.join(seedDir, 'sing-box'));
           const r = await deps.installCore(seedDir);
-          if (!r.ok) this.log('warn', `随包内核重播种失败: ${r.error ?? ''}`);
+          if (!r.ok) this.log('warn', `Bundled core reseed failed: ${r.error ?? ''}`);
         } catch (e) {
-          this.log('warn', `随包内核刷新失败: ${(e as Error)?.message ?? e}`);
+          this.log('warn', `Bundled core refresh failed: ${(e as Error)?.message ?? e}`);
         }
       }
       return this.getSingBoxPath();
@@ -394,9 +394,9 @@ export class ResourceManager {
         await fs.chmod(seedBin, 0o755);
         await this.ensureCronetBeside(seedDir); // naive purego 同目录加载，libcronet.so 随核配套
         const r = await deps.installCore(seedDir);
-        if (!r.ok) this.log('warn', `受管核重播种失败: ${r.error ?? ''}`);
+        if (!r.ok) this.log('warn', `Managed core reseed failed: ${r.error ?? ''}`);
       } catch (e) {
-        this.log('warn', `受管核刷新失败: ${(e as Error)?.message ?? e}`);
+        this.log('warn', `Managed core refresh failed: ${(e as Error)?.message ?? e}`);
       } finally {
         if (seedDir) await fs.rm(seedDir, { recursive: true, force: true }).catch(() => {});
       }
@@ -522,13 +522,19 @@ export class ResourceManager {
       const need = await this.cronetNeedsRestore(src, dst, opts.strong === true);
       if (!need) return { action: 'ok' };
       await this.atomicCopy(src, dst);
-      this.log('info', `libcronet 自愈：restored（${opts.strong ? 'hash' : 'size'}）→ ${dst}`);
+      this.log(
+        'info',
+        `libcronet self-heal: restored (${opts.strong ? 'hash' : 'size'}) -> ${dst}`
+      );
       return { action: 'restored' };
     } catch (error) {
       // 复制失败不阻断启动（naive 不可用时 sing-box 会自报 cronet 错误），但必须告警而非静默吞掉：
       // 否则 dst 缺库会被 getCronetLibStatus 判为 'copy-failed'，需要这条日志定位 EACCES/磁盘满/AV 锁等真因。
       const msg = error instanceof Error ? error.message : String(error);
-      this.log('warn', `libcronet 自愈失败（naive 暂不可用）：${src} → ${dst}：${msg}`);
+      this.log(
+        'warn',
+        `libcronet self-heal failed (naive unavailable for now): ${src} -> ${dst}: ${msg}`
+      );
       return { action: 'failed', reason: msg };
     }
   }

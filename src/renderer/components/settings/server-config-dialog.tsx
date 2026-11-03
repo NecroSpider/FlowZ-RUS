@@ -80,8 +80,8 @@ function DetourPicker({
         servers,
         subscriptions,
         latencyMap,
-        meshLabel: t('servers.meshNodes', '组网'),
-        manualLabel: t('servers.manualNodes', '自建节点'),
+        meshLabel: t('servers.meshNodes', 'Mesh'),
+        manualLabel: t('servers.manualNodes', 'Custom Nodes'),
         sentinel: {
           id: DETOUR_DIRECT,
           name: t('servers.directConnection', 'Direct (No Chain)'),
@@ -101,7 +101,7 @@ function DetourPicker({
       value={value ?? DETOUR_DIRECT}
       onSelect={onSelect}
       placeholder={t('servers.directConnection', 'Direct (No Chain)')}
-      searchPlaceholder={t('common.search', '搜索')}
+      searchPlaceholder={t('common.search', 'Search')}
       ariaLabel={t('servers.detour', 'Proxy Chain (Detour)')}
     />
   );

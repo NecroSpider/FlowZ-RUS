@@ -85,7 +85,7 @@ export class CoreDownloader {
         } catch {
           /* ignore */
         }
-        finish(new Error('检查更新超时（GitHub 不可达或被网络拦截）'));
+        finish(new Error('Update check timed out (GitHub unreachable or blocked by the network)'));
       }, 15000);
 
       request.setHeader('User-Agent', APP_USER_AGENT);
@@ -106,7 +106,7 @@ export class CoreDownloader {
             } catch {
               /* ignore */
             }
-            finish(new Error('GitHub 响应过大（疑似被劫持/WAF 拦截）'));
+            finish(new Error('GitHub response too large (possibly hijacked or blocked by a WAF)'));
             return;
           }
         });
@@ -115,12 +115,14 @@ export class CoreDownloader {
             try {
               finish(null, JSON.parse(data));
             } catch {
-              finish(new Error('解析 GitHub 响应失败'));
+              finish(new Error('Failed to parse the GitHub response'));
             }
           } else if (res.statusCode === 403) {
-            finish(new Error('GitHub API 访问频率限制 (403)，请稍后再试或使用代理'));
+            finish(
+              new Error('GitHub API rate limit exceeded (403), try again later or use a proxy')
+            );
           } else {
-            finish(new Error(`GitHub API 错误: ${res.statusCode}`));
+            finish(new Error(`GitHub API error: ${res.statusCode}`));
           }
         });
         // 关键：response 阶段断连（ERR_CONNECTION_CLOSED 等）从 res emit 'error'，缺此 handler 会逃逸成
@@ -161,7 +163,11 @@ export class CoreDownloader {
         }
       }
     } catch (e) {
-      this.logManager.addLog('warn', `解析下载 URL 后缀失败: ${e}`, 'CoreDownloader');
+      this.logManager.addLog(
+        'warn',
+        `Failed to parse the download URL extension: ${e}`,
+        'CoreDownloader'
+      );
     }
 
     // Windows 且后缀不是 .zip → 强制使用 .zip（Sing-box Windows 构建通常是 zip）
@@ -198,7 +204,9 @@ export class CoreDownloader {
         } catch {
           /* ignore */
         }
-        handleError(new Error('下载停滞超时（30s 无数据，网络中断或被拦截）'));
+        handleError(
+          new Error('Download stalled (no data for 30s, network interrupted or blocked)')
+        );
       }, 30000);
 
       const handleError = (err: any) => {
@@ -223,7 +231,7 @@ export class CoreDownloader {
           if (mirrorUrl) {
             this.logManager.addLog(
               'warn',
-              `下载出错，尝试使用加速镜像: ${err.message}`,
+              `Download error, retrying via the mirror: ${err.message}`,
               'CoreDownloader'
             );
             this.downloadFile(mirrorUrl, true, expectedSha256).then(resolve).catch(reject);
@@ -265,7 +273,7 @@ export class CoreDownloader {
               // 截断的 GitHub 下载会经 handleError 自动换镜像重试一次
               handleError(
                 new Error(
-                  `下载不完整：收到 ${receivedBytes} 字节，期望 ${expectedBytes}（可能被截断）`
+                  `Download incomplete: received ${receivedBytes} bytes, expected ${expectedBytes} (possibly truncated)`
                 )
               );
               return;
@@ -279,13 +287,15 @@ export class CoreDownloader {
               try {
                 actual = createHash('sha256').update(fs.readFileSync(tempPath)).digest('hex');
               } catch (e) {
-                handleError(new Error(`校验下载内容失败：无法读取临时文件（${e}）`));
+                handleError(
+                  new Error(`Failed to verify the download: cannot read the temp file (${e})`)
+                );
                 return;
               }
               if (actual !== expectedSha256) {
                 handleError(
                   new Error(
-                    `内核完整性校验失败：sha256 期望 ${expectedSha256}，实得 ${actual}（下载被篡改或镜像返回了不同的文件）`
+                    `Core integrity verification failed: sha256 expected ${expectedSha256}, got ${actual} (the download was tampered with or the mirror returned a different file)`
                   )
                 );
                 return;
@@ -348,7 +358,7 @@ export class CoreDownloader {
 
       const corePath = findFile(extractDir);
       if (!corePath) {
-        throw new Error('无法在压缩包中找到 sing-box 可执行文件');
+        throw new Error('sing-box executable not found in the archive');
       }
 
       return { corePath, extractDir };
@@ -361,7 +371,7 @@ export class CoreDownloader {
       } catch {
         // Ignore cleanup errors during recovery
       }
-      throw new Error(`解压失败: ${(error as any).message}`);
+      throw new Error(`Extraction failed: ${(error as any).message}`);
     }
   }
 }

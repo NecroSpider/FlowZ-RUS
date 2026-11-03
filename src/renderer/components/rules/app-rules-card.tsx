@@ -93,8 +93,8 @@ export function AppRulesCard() {
         servers,
         subscriptions,
         latencyMap,
-        meshLabel: t('servers.meshNodes', '组网'),
-        manualLabel: t('servers.manualNodes', '自建节点'),
+        meshLabel: t('servers.meshNodes', 'Mesh'),
+        manualLabel: t('servers.manualNodes', 'Custom Nodes'),
         sentinel: { id: FOLLOW_GLOBAL_NODE_ID, name: t('rules.defaultNodeTip'), role: 'follow' },
       }),
     [servers, subscriptions, latencyMap, t]
@@ -216,21 +216,21 @@ export function AppRulesCard() {
           <Search />
           <input
             type="text"
-            placeholder={t('rules.searchAppsFull', '搜索应用 / geosite / 进程名…')}
+            placeholder={t('rules.searchAppsFull', 'Search apps / geosite / process…')}
             value={appSearchQuery}
             onChange={(e) => setAppSearchQuery(e.target.value)}
           />
         </label>
 
         <div className="ap-summary mono">
-          <b>{counts.total}</b> {t('rules.appCountUnit', '应用')}
+          <b>{counts.total}</b> {t('rules.appCountUnit', 'apps')}
           {' · '}
           <span className="s-proxy">
             {t('rules.proxy')} {counts.proxy}
           </span>
           {' · '}
           <span className="s-proxy">
-            {t('rules.appTile.nodeTitle', '指定')} {counts.node}
+            {t('rules.appTile.nodeTitle', 'Pick node')} {counts.node}
           </span>
           {' · '}
           <span className="s-direct">
@@ -245,7 +245,7 @@ export function AppRulesCard() {
         <div
           className="seg2 ap-viewseg"
           role="group"
-          aria-label={t('rules.viewDensity', '视图密度')}
+          aria-label={t('rules.viewDensity', 'View density')}
         >
           <button
             type="button"
@@ -277,14 +277,14 @@ export function AppRulesCard() {
         <div
           className="ap-catfilter"
           role="group"
-          aria-label={t('rules.categoryFilter', '分类筛选')}
+          aria-label={t('rules.categoryFilter', 'Category filter')}
         >
           <button
             type="button"
             className={cn('ap-cat-chip', effectiveCategory === 'all' && 'on')}
             onClick={() => setCategoryFilter('all')}
           >
-            {t('common.all', '全部')}
+            {t('common.all', 'All')}
           </button>
           {allCategories.map((c) => (
             <button
@@ -303,7 +303,7 @@ export function AppRulesCard() {
       <div className="ap-body" inert={!enabled}>
         {shownGroups.length === 0 ? (
           <div className="py-10 text-center text-[13px] text-fg-faint">
-            {t('rules.searchNoMatch', '无匹配规则')}
+            {t('rules.searchNoMatch', 'No matching rules')}
           </div>
         ) : (
           <div className="ap-groups">
@@ -354,7 +354,7 @@ export function AppRulesCard() {
         {!appSearchQuery && (
           <div className="ap-add-zone">
             <button type="button" className="add-card" onClick={() => setIsAddDialogOpen(true)}>
-              <span className="ic">＋</span>
+              <span className="ic">+</span>
               <span className="add-tx">
                 <span className="t">{t('rules.createCustom')}</span>
                 <small>{t('rules.customApp.addDesc')}</small>

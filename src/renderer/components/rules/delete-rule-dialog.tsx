@@ -28,8 +28,8 @@ export function DeleteRuleDialog({ open, onOpenChange, rule }: DeleteRuleDialogP
 
   const handleDelete = async () => {
     if (!rule.id) {
-      toast.error(t('rules.deleteFailed', '删除失败'), {
-        description: t('rules.invalidRuleId', '规则 ID 无效'),
+      toast.error(t('rules.deleteFailed', 'Delete failed'), {
+        description: t('rules.invalidRuleId', 'Invalid rule ID'),
       });
       return;
     }
@@ -37,13 +37,15 @@ export function DeleteRuleDialog({ open, onOpenChange, rule }: DeleteRuleDialogP
     setIsDeleting(true);
     try {
       await deleteCustomRule(rule.id);
-      toast.success(t('rules.ruleDeleted', '规则已删除'));
+      toast.success(t('rules.ruleDeleted', 'Rule deleted'));
       onOpenChange(false);
     } catch (error) {
       console.error('Failed to delete rule:', error);
-      toast.error(t('rules.deleteFailed', '删除失败'), {
+      toast.error(t('rules.deleteFailed', 'Delete failed'), {
         description:
-          error instanceof Error ? error.message : t('rules.deleteErrorDesc', '删除规则时发生错误'),
+          error instanceof Error
+            ? error.message
+            : t('rules.deleteErrorDesc', 'An error occurred while deleting the rule'),
       });
     } finally {
       setIsDeleting(false);
@@ -52,10 +54,10 @@ export function DeleteRuleDialog({ open, onOpenChange, rule }: DeleteRuleDialogP
 
   const actionLabel =
     rule.action === 'proxy'
-      ? t('rules.policyProxy', '代理')
+      ? t('rules.policyProxy', 'Proxy')
       : rule.action === 'direct'
-        ? t('rules.policyDirect', '直连')
-        : t('rules.policyBlock', '阻断');
+        ? t('rules.policyDirect', 'Direct')
+        : t('rules.policyBlock', 'Block');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -67,10 +69,10 @@ export function DeleteRuleDialog({ open, onOpenChange, rule }: DeleteRuleDialogP
               style={{ display: 'flex', alignItems: 'center', gap: 8 }}
             >
               <AlertTriangle size={18} style={{ color: 'hsl(var(--err))' }} />
-              {t('rules.deleteRule', '删除规则')}
+              {t('rules.deleteRule', 'Delete Rule')}
             </DialogTitle>
             <DialogDescription className="rl-dlg-desc">
-              {t('rules.deleteConfirm', '此操作无法撤销。确定要删除此规则吗？')}
+              {t('rules.deleteConfirm', 'This action cannot be undone. Delete this rule?')}
             </DialogDescription>
           </div>
         </div>
@@ -81,13 +83,13 @@ export function DeleteRuleDialog({ open, onOpenChange, rule }: DeleteRuleDialogP
               <div
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
               >
-                <span className="rl-hc-lbl">{t('rules.typeColumn', '类型')}</span>
+                <span className="rl-hc-lbl">{t('rules.typeColumn', 'Type')}</span>
                 <span className="pill rl-cond">
                   {t(`rules.types.${rule.type}.name`, RULE_TYPE_NAME[rule.type])}
                 </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span className="rl-hc-lbl">{t('rules.valueLabel', '匹配值')}</span>
+                <span className="rl-hc-lbl">{t('rules.valueLabel', 'Match values')}</span>
                 <div className="mono" style={{ maxHeight: 120, overflowY: 'auto', fontSize: 12 }}>
                   {rule.values.map((value, index) => (
                     <div key={index}>{value}</div>
@@ -97,7 +99,7 @@ export function DeleteRuleDialog({ open, onOpenChange, rule }: DeleteRuleDialogP
               <div
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
               >
-                <span className="rl-hc-lbl">{t('rules.policy', '策略')}</span>
+                <span className="rl-hc-lbl">{t('rules.policy', 'Policy')}</span>
                 <span className={`pill ${actionPillClass(rule.action)}`}>{actionLabel}</span>
               </div>
             </div>
@@ -111,11 +113,11 @@ export function DeleteRuleDialog({ open, onOpenChange, rule }: DeleteRuleDialogP
             onClick={() => onOpenChange(false)}
             disabled={isDeleting}
           >
-            {t('servers.cancel', '取消')}
+            {t('servers.cancel', 'Cancel')}
           </button>
           <button type="button" className="btn danger" onClick={handleDelete} disabled={isDeleting}>
             {isDeleting && <Loader2 className="animate-spin" size={15} />}
-            {t('rules.delete', '删除')}
+            {t('rules.delete', 'Delete')}
           </button>
         </div>
       </DialogContent>

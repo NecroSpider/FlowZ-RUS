@@ -53,8 +53,8 @@ message TailscaleEndpointStatus {
   repeated TailscaleUserGroup userGroups = 7;
   TailscalePeer exitNode = 8;
 }
-// 对端节点按归属用户(owner/sharee)分组。FlowZ 只需把各组 peers 摊平成一张表(flattenTailscalePeers)，
-// 分组元信息(userID/displayName 等)不展示。endpoint.f4=account / f5=tailnet 名(字符串)刻意不映射(proto-loader 跳过)。
+// Peers are grouped by owning user (owner/sharee). FlowZ only flattens the groups' peers (flattenTailscalePeers);
+// group metadata (userID/displayName) is not shown. endpoint.f4=account / f5=tailnet name are intentionally unmapped.
 message TailscaleUserGroup { repeated TailscalePeer peers = 5; }
 message TailscalePeer {
   string hostName = 1;
@@ -69,8 +69,8 @@ message TailscalePeer {
   bool expired = 13;
 }
 message TailscaleLogoutRequest { string endpointTag = 1; }
-// 热重设 TS 出口节点（不重启核）：按 stableID EditPrefs{ExitNodeID}，幂等。字段号逐字对齐上游
-// daemon/started_service.proto（endpointTag=1, stableID=2）。用于 re-advertise 后强制核重解析 exit_node。
+// Hot-reset the Tailscale exit node (no core restart): EditPrefs{ExitNodeID} by stableID, idempotent. Field numbers
+// match upstream daemon/started_service.proto (endpointTag=1, stableID=2). Forces exit_node re-resolution after re-advertise.
 message SetTailscaleExitNodeRequest {
   string endpointTag = 1;
   string stableID = 2;

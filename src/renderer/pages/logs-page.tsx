@@ -41,9 +41,9 @@ export function LogsPage() {
           >
             <path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span className="ld-title">{t('logs.settingsTitle', '日志与诊断')}</span>
+          <span className="ld-title">{t('logs.settingsTitle', 'Logs & Diagnostics')}</span>
           <span className="ld-head-meta">
-            <span className="ld-cur">{t('logs.currentLevel', '级别')}</span>
+            <span className="ld-cur">{t('logs.currentLevel', 'Level')}</span>
             {/* 级别 pill：形+色双编码经 CSS `.lvl-pill[data-lvl]`（warn/error/fatal 语义色，其余中性）。 */}
             <span className="pill lvl-pill" data-lvl={level}>
               {level}

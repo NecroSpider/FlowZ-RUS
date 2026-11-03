@@ -185,7 +185,7 @@ async function systemQuery(query: Uint8Array): Promise<Uint8Array> {
   const q = decodeDnsQuestion(query);
   if (!q) throw new Error('system: bad query');
   if (q.qtype !== TYPE_A) {
-    if (q.qtype === TYPE_AAAA) throw new Error('system: AAAA 二期'); // 让 Tier1 兜
+    if (q.qtype === TYPE_AAAA) throw new Error('system: AAAA not supported yet'); // 让 Tier1 兜
     throw new Error('system: unsupported qtype');
   }
   const dns = require('dns').promises;
@@ -327,7 +327,7 @@ export class NodeDnsRaceServer {
     this.listen(prevPort)
       .catch((e) => {
         this.port = 0; // re-listen 彻底失败 → 清端口，使 getPort()/isRunning() 状态一致（不留无 socket 的死端口）
-        this.log('error', `[dns-race] re-listen 失败: ${(e as Error).message}`);
+        this.log('error', `[dns-race] re-listen failed: ${(e as Error).message}`);
       })
       .finally(() => {
         this.relistening = false;
@@ -344,7 +344,7 @@ export class NodeDnsRaceServer {
       this.socket?.send(resp, rinfo.port, rinfo.address);
     } catch (e) {
       // 绝不崩；最坏不回（内核 query 自然超时重试）。raceForward 内部已对全 FAIL 返 SERVFAIL，此 catch 仅兜极端异常。
-      this.log('warn', `[dns-race] handle 异常: ${(e as Error).message}`);
+      this.log('warn', `[dns-race] handle error: ${(e as Error).message}`);
     }
   }
 

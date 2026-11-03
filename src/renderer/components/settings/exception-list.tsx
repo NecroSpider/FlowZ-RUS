@@ -58,7 +58,7 @@ export function ExceptionList({
           style={!isModified ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
           onClick={() => onChange?.([...defaults])}
         >
-          {t('common.restoreDefault', '恢复默认')}
+          {t('common.restoreDefault', 'Restore defaults')}
         </button>
       </div>
     </div>

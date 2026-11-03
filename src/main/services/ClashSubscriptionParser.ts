@@ -158,10 +158,12 @@ export function tryLoadClashDoc(trimmed: string): ClashDoc {
     doc = yamlLoad(trimmed, { json: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Clash YAML 解析失败: ${msg}`);
+    throw new Error(`Failed to parse Clash YAML: ${msg}`);
   }
   if (!doc || typeof doc !== 'object') {
-    throw new Error('检测到 Clash 订阅特征，但文档结构异常（非对象）');
+    throw new Error(
+      'Clash subscription detected, but the document structure is malformed (not an object)'
+    );
   }
   return doc as ClashDoc;
 }
@@ -230,7 +232,7 @@ function applyTransportAndTls(
   } else if (rawNet && rawNet !== 'tcp') {
     // xhttp/splithttp/kcp 等 sing-box 不支持的传输：静默落 tcp 会产出连不上的假节点，
     // 整节点拒绝（mapNode catch 计 fail、聚合告警；与分享链/sing-box JSON 路径统一口径，issue #263）。
-    throw new Error(`不支持的传输层类型: ${rawNet}`);
+    throw new Error(`Unsupported transport type: ${rawNet}`);
   }
   // 缺省/tcp 不写，等价 tcp。
 
@@ -240,7 +242,7 @@ function applyTransportAndTls(
   const hasReality = !!realityOpts && !!str(realityOpts['public-key']);
   if (realityOpts && !hasReality) {
     // 带 reality-opts 却缺 public-key：按普通 TLS 入库无法完成 Reality 握手（假节点），整节点拒绝。
-    throw new Error('reality-opts 缺少 public-key');
+    throw new Error('reality-opts missing public-key');
   }
 
   if (tlsEnabled || hasReality) {
@@ -364,12 +366,12 @@ function buildBase(
 
 function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOutcome {
   if (!rawProxy || typeof rawProxy !== 'object') {
-    return { kind: 'fail', reason: '节点非对象' };
+    return { kind: 'fail', reason: 'node is not an object' };
   }
   const p = rawProxy as Record<string, unknown>;
   const rawType = p['type'];
   const protocol = normalizeClashType(rawType);
-  const name = str(p['name']) || '(未命名)';
+  const name = str(p['name']) || '(unnamed)';
 
   if (!protocol) {
     return { kind: 'skip', reason: str(rawType)?.toLowerCase() || 'unknown' };
@@ -381,7 +383,7 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
   const server = str(p['server']);
   const port = num(p['port']);
   if (!server || !port) {
-    return { kind: 'fail', reason: `节点 "${name}" 缺 server/port` };
+    return { kind: 'fail', reason: `node "${name}" missing server/port` };
   }
 
   try {
@@ -389,7 +391,7 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
 
     if (protocol === 'vless') {
       const uuid = str(p['uuid']);
-      if (!uuid) return { kind: 'fail', reason: `vless 节点 "${name}" 缺 uuid` };
+      if (!uuid) return { kind: 'fail', reason: `vless node "${name}" missing uuid` };
       config.uuid = uuid;
       config.encryption = 'none';
       const flow = str(p['flow']);
@@ -399,7 +401,7 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       applyTransportAndTls(config, p, false);
     } else if (protocol === 'vmess') {
       const uuid = str(p['uuid']);
-      if (!uuid) return { kind: 'fail', reason: `vmess 节点 "${name}" 缺 uuid` };
+      if (!uuid) return { kind: 'fail', reason: `vmess node "${name}" missing uuid` };
       config.uuid = uuid;
       config.alterId = num(p['alterId']) ?? 0;
       config.vmessSecurity = str(p['cipher']) ?? 'auto';
@@ -408,13 +410,13 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       applyTransportAndTls(config, p, false);
     } else if (protocol === 'trojan') {
       const password = str(p['password']);
-      if (!password) return { kind: 'fail', reason: `trojan 节点 "${name}" 缺 password` };
+      if (!password) return { kind: 'fail', reason: `trojan node "${name}" missing password` };
       config.password = password;
       applyTransportAndTls(config, p, true); // trojan 恒 TLS（reality-opts 在则 reality）
     } else if (protocol === 'shadowsocks') {
       const password = str(p['password']);
       const cipher = str(p['cipher']);
-      if (!password) return { kind: 'fail', reason: `ss 节点 "${name}" 缺 password` };
+      if (!password) return { kind: 'fail', reason: `ss node "${name}" missing password` };
       const ss: NonNullable<ServerConfig['shadowsocksSettings']> = {
         method: cipher ?? 'aes-256-gcm',
         password, // 不写顶层 config.password
@@ -431,7 +433,7 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       applyTransportAndTls(config, p, false);
     } else if (protocol === 'hysteria2') {
       const password = str(p['password']);
-      if (!password) return { kind: 'fail', reason: `hy2 节点 "${name}" 缺 password` };
+      if (!password) return { kind: 'fail', reason: `hy2 node "${name}" missing password` };
       config.password = password;
       config.security = 'tls';
       const hy2: NonNullable<ServerConfig['hysteria2Settings']> = {};
@@ -472,7 +474,7 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       const uuid = str(p['uuid']);
       const password = str(p['password']);
       if (!uuid || !password)
-        return { kind: 'fail', reason: `tuic 节点 "${name}" 缺 uuid/password` };
+        return { kind: 'fail', reason: `tuic node "${name}" missing uuid/password` };
       config.uuid = uuid;
       config.password = password;
       config.security = 'tls';
@@ -497,7 +499,7 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       if (Object.keys(tls).length > 0) config.tlsSettings = tls;
     } else if (protocol === 'anytls') {
       const password = str(p['password']);
-      if (!password) return { kind: 'fail', reason: `anytls 节点 "${name}" 缺 password` };
+      if (!password) return { kind: 'fail', reason: `anytls node "${name}" missing password` };
       config.password = password;
       // anytls 会话保活三件套：与 parseAnyTls/AnyTlsForm 收敛面对齐（mihomo 连字符 key，兼容下划线）
       const at: NonNullable<ServerConfig['anyTlsSettings']> = {};
@@ -517,7 +519,7 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       // 按不支持跳过（skip 聚合告警），不产假节点。
       const psk = str(p['psk']);
       // trim 语义与 completeness 闸门对齐：空白 psk 穿闸入库会连累整份订阅保存（validateConfig throw）。
-      if (!psk?.trim()) return { kind: 'fail', reason: `snell 节点 "${name}" 缺 psk` };
+      if (!psk?.trim()) return { kind: 'fail', reason: `snell node "${name}" missing psk` };
       const rawVersion = p['version'];
       // 缺省 v1（mihomo 语义）；非数字 version 保留原始值进告警，不误标 snell-v1。
       const version = num(rawVersion) ?? (rawVersion === undefined ? 1 : undefined);
@@ -586,7 +588,7 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
     return { kind: 'server', server: config };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { kind: 'fail', reason: `节点 "${name}" 映射异常: ${msg}` };
+    return { kind: 'fail', reason: `node "${name}" mapping error: ${msg}` };
   }
 }
 
@@ -627,10 +629,10 @@ export function parseClashProxies(
 
   if (skipByReason.size > 0) {
     const detail = [...skipByReason.entries()].map(([r, c]) => `${r}(${c})`).join(', ');
-    warnings.push(`跳过 ${skipped} 个不支持/未知 plugin 节点: ${detail}`);
+    warnings.push(`Skipped ${skipped} unsupported/unknown-plugin node(s): ${detail}`);
   }
   if (failReasons.length > 0) {
-    warnings.push(`${failed} 个节点解析失败: ${failReasons.slice(0, 5).join('; ')}`);
+    warnings.push(`${failed} node(s) failed to parse: ${failReasons.slice(0, 5).join('; ')}`);
   }
 
   return { servers, skipped, failed, warnings };
@@ -684,7 +686,7 @@ export function applyProviderFilters(
       result = result.filter((p) => re.test(safeName(p)));
     } else {
       warn(
-        `provider [${providerName}] filter 非法或超长正则，已忽略该过滤: ${filter.slice(0, 80)}`
+        `provider [${providerName}] filter is an invalid or overly long regex, filter ignored: ${filter.slice(0, 80)}`
       );
     }
   }
@@ -695,7 +697,7 @@ export function applyProviderFilters(
       result = result.filter((p) => !re.test(safeName(p)));
     } else {
       warn(
-        `provider [${providerName}] exclude-filter 非法或超长正则，已忽略该过滤: ${excludeFilter.slice(0, 80)}`
+        `provider [${providerName}] exclude-filter is an invalid or overly long regex, filter ignored: ${excludeFilter.slice(0, 80)}`
       );
     }
   }
@@ -779,7 +781,9 @@ export async function resolveProxyProviders(
   const allEntries = Object.entries(providers as Record<string, unknown>);
   const entries = allEntries.slice(0, maxProviders);
   if (allEntries.length > maxProviders) {
-    warnings.push(`proxy-providers 数量 ${allEntries.length} 超上限 ${maxProviders}，已截断`);
+    warnings.push(
+      `proxy-providers count ${allEntries.length} exceeds limit ${maxProviders}, truncated`
+    );
   }
 
   // permanent=true：配置面问题（type:file/非 http/非对象/缺 url/0 节点）→ 仅 warn，不触发 partial
@@ -792,26 +796,31 @@ export async function resolveProxyProviders(
   const tasks = entries.map(async ([name, rawProvider]): Promise<Settled> => {
     try {
       if (!rawProvider || typeof rawProvider !== 'object') {
-        return { ok: false, name, reason: '配置非对象', permanent: true };
+        return { ok: false, name, reason: 'config is not an object', permanent: true };
       }
       const prov = rawProvider as Record<string, unknown>;
       const type = str(prov['type'])?.toLowerCase();
 
       if (type === 'file') {
-        return { ok: false, name, reason: 'type:file 不支持（安全面，忽略）', permanent: true };
+        return {
+          ok: false,
+          name,
+          reason: 'type:file is not supported (security, ignored)',
+          permanent: true,
+        };
       }
       if (type !== 'http') {
         return {
           ok: false,
           name,
-          reason: `不支持的 provider type: ${type ?? '(缺省)'}`,
+          reason: `unsupported provider type: ${type ?? '(none)'}`,
           permanent: true,
         };
       }
 
       const url = str(prov['url']);
       if (!url) {
-        return { ok: false, name, reason: '缺 url', permanent: true };
+        return { ok: false, name, reason: 'missing url', permanent: true };
       }
 
       // fetch（复用 SubscriptionService 路径 → 继承 SSRF guard + viaProxy + UA），单 fetch 超时。
@@ -848,7 +857,7 @@ export async function resolveProxyProviders(
 
       if (servers.length === 0) {
         // HTTP 成功但解析/过滤后 0 节点：内容本就空（或被 filter 滤尽），重试不会变好 → permanent，仅 warn。
-        return { ok: false, name, reason: '0 节点', permanent: true };
+        return { ok: false, name, reason: '0 nodes', permanent: true };
       }
 
       return { ok: true, name, servers, warnings: provWarnings };
@@ -888,14 +897,14 @@ export async function resolveProxyProviders(
       // 理论上 task 已自吞异常；兜底（视为 transient，但失败 provider 名未知 → 不入 failedProviders，
       // 调用方据「anyFailed 但 failedProviders 空」退回整订阅级保守保留）。
       anyFailed = true;
-      failureDetails.push(`未知(${String(r.reason)})`);
+      failureDetails.push(`unknown(${String(r.reason)})`);
     }
   }
 
   const attempted = entries.length;
   if (failureDetails.length > 0) {
     warnings.push(
-      `proxy-providers ${succeeded}/${attempted} 成功，失败: ${failureDetails.join(', ')}`
+      `proxy-providers ${succeeded}/${attempted} succeeded, failed: ${failureDetails.join(', ')}`
     );
   }
 

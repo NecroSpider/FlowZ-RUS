@@ -25,7 +25,7 @@ describe('issue-report', () => {
 
   describe('formatProxyMode', () => {
     it('maps known modes to Chinese labels', () => {
-      expect(formatProxyMode({ proxyModeType: 'systemProxy' })).toBe('系统代理');
+      expect(formatProxyMode({ proxyModeType: 'systemProxy' })).toBe('System proxy');
       expect(formatProxyMode({ proxyModeType: 'tun' })).toBe('TUN');
     });
     it('returns empty for missing and passes through unknown', () => {
@@ -44,20 +44,20 @@ describe('issue-report', () => {
         singBoxVersion: '1.10.0',
         proxyModeType: 'tun',
       });
-      expect(body).toContain('- FlowZ 版本：4.0.1');
-      expect(body).toContain('- 系统 + 架构：macOS arm64 (24.5.0)');
-      expect(body).toContain('- sing-box 内核版本：1.10.0');
-      expect(body).toContain('- 代理模式：TUN');
-      expect(body).toContain('## 问题描述');
-      expect(body).toContain('## 原始日志（最关键）');
-      expect(body).toContain('## 旁证（选填，但往往是定位关键）');
+      expect(body).toContain('- FlowZ version: 4.0.1');
+      expect(body).toContain('- OS + architecture: macOS arm64 (24.5.0)');
+      expect(body).toContain('- sing-box core version: 1.10.0');
+      expect(body).toContain('- Proxy mode: TUN');
+      expect(body).toContain('## What happened');
+      expect(body).toContain('## Raw logs (most important)');
+      expect(body).toContain('## Extra context (optional, often decisive)');
     });
 
     it('tolerates fully missing env (manual-fill placeholders)', () => {
       const body = buildBugReportBody({});
-      expect(body).toContain('- FlowZ 版本：');
-      expect(body).toContain('- 系统 + 架构：');
-      expect(body).toContain('- 代理模式：');
+      expect(body).toContain('- FlowZ version:');
+      expect(body).toContain('- OS + architecture:');
+      expect(body).toContain('- Proxy mode:');
     });
   });
 
@@ -70,7 +70,7 @@ describe('issue-report', () => {
       const qs = new URLSearchParams(url.split('?')[1]);
       expect(qs.get('title')).toBe('[Bug] ');
       expect(qs.get('labels')).toBe('bug');
-      expect(qs.get('body')).toContain('- FlowZ 版本：4.0.1');
+      expect(qs.get('body')).toContain('- FlowZ version: 4.0.1');
     });
   });
 });

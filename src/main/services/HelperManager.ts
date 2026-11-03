@@ -269,7 +269,10 @@ export class HelperManager implements IPrivilegedHelper {
           path.resolve(installedSingboxPath).toLowerCase() !== path.resolve(expected).toLowerCase();
         if (pathMismatch && !this.pathMismatchWarned) {
           this.pathMismatchWarned = true; // 状态高频刷新，仅首次记日志
-          this.log('warn', `helper 烧录路径不符: plist=${installedSingboxPath} 当前=${expected}`);
+          this.log(
+            'warn',
+            `Helper baked-in path mismatch: plist=${installedSingboxPath} current=${expected}`
+          );
         }
       }
     }
@@ -318,7 +321,7 @@ export class HelperManager implements IPrivilegedHelper {
       );
       const m = resp.match(/^OK (?:started|already) (\d+)/);
       if (m) return { ok: true, pid: parseInt(m[1], 10) };
-      return { ok: false, error: resp || 'helper 无响应' };
+      return { ok: false, error: resp || 'no response from helper' };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
@@ -398,7 +401,7 @@ export class HelperManager implements IPrivilegedHelper {
       if (resp.startsWith('OK free') || resp.startsWith('OK killed')) return { freed: true };
       const m = resp.match(/^OK foreign (.+)/);
       if (m) return { foreign: m[1].trim() };
-      return { error: resp || 'helper 无响应' };
+      return { error: resp || 'no response from helper' };
     } catch (e) {
       return { error: e instanceof Error ? e.message : String(e) };
     }
@@ -437,7 +440,7 @@ export class HelperManager implements IPrivilegedHelper {
       let buf = '';
       const timer = setTimeout(() => {
         sock.destroy();
-        reject(new Error('helper socket 超时'));
+        reject(new Error('helper socket timed out'));
       }, timeoutMs);
       sock.on('connect', () => {
         sock.end([this.token(), ...rest].join('\n') + '\n');
@@ -462,7 +465,7 @@ export class HelperManager implements IPrivilegedHelper {
     if (!this.supported) {
       return {
         success: false,
-        error: '仅 macOS 支持提权 helper',
+        error: 'The privileged helper is only supported on macOS',
         status: await this.computeStatus(),
       };
     }
@@ -471,10 +474,10 @@ export class HelperManager implements IPrivilegedHelper {
     try {
       const srcBinary = resourceManager.getMacHelperPath();
       if (!fs.existsSync(srcBinary)) {
-        this.log('error', `helper 二进制缺失: ${srcBinary}`);
+        this.log('error', `helper binary missing: ${srcBinary}`);
         return {
           success: false,
-          error: 'helper 二进制缺失（构建未包含）',
+          error: 'helper binary missing (not included in this build)',
           status: await this.computeStatus(),
         };
       }
@@ -488,7 +491,7 @@ export class HelperManager implements IPrivilegedHelper {
         } catch (e) {
           return {
             success: false,
-            error: `写入 token 失败: ${e instanceof Error ? e.message : String(e)}`,
+            error: `Failed to write token: ${e instanceof Error ? e.message : String(e)}`,
             status: await this.computeStatus(),
           };
         }
@@ -520,8 +523,8 @@ export class HelperManager implements IPrivilegedHelper {
         await new Promise((r) => setTimeout(r, 300));
         status = await this.computeStatus();
       }
-      if (status.ready) this.log('info', 'helper 安装并就绪');
-      else this.log('warn', 'helper 已安装但未在预期内就绪');
+      if (status.ready) this.log('info', 'helper installed and ready');
+      else this.log('warn', 'helper installed but did not become ready in time');
       // BTM 落盘延迟由 dispositionCache mtime-key 自动处理；UI 后续 getStatus（聚焦/轮询）会读准 backgroundDisabled，
       // 仍「后台被禁用」则引导去系统设置手动开启（不走 deepRepair 自动恢复）。
       this.lastStableStatus = status; // mutation 结束后的新稳定基准
@@ -537,7 +540,7 @@ export class HelperManager implements IPrivilegedHelper {
     if (!this.supported) {
       return {
         success: false,
-        error: '仅 macOS 支持提权 helper',
+        error: 'The privileged helper is only supported on macOS',
         status: await this.computeStatus(),
       };
     }
@@ -563,7 +566,7 @@ export class HelperManager implements IPrivilegedHelper {
       } catch {
         /* 不存在则忽略 */
       }
-      this.log('info', 'helper 已卸载');
+      this.log('info', 'helper uninstalled');
       const status = await this.computeStatus();
       this.lastStableStatus = status; // mutation 结束后的新稳定基准（已卸载态）
       return { success: true, status };
@@ -605,7 +608,7 @@ export class HelperManager implements IPrivilegedHelper {
             this.smLoggedValue = value;
             this.log(
               'info',
-              `[SM] statusForLegacyURL=${value}（0=未注册 1=已启用 2=需批准/「允许在后台」关 3=未找到）`
+              `[SM] statusForLegacyURL=${value} (0=not registered 1=enabled 2=requires approval / "Allow in the Background" off 3=not found)`
             );
           }
           resolve(value);
@@ -635,7 +638,7 @@ export class HelperManager implements IPrivilegedHelper {
         const fda = code === 'EPERM' || code === 'EACCES';
         this.log(
           'warn',
-          `[BTM] 读 .btm 目录失败 code=${code ?? '?'}${fda ? '（无完全磁盘访问/TCC，BTM 直读不可用，已改用 SMAppService 判后台开关）' : ''}`
+          `[BTM] Failed to read the .btm directory code=${code ?? '?'}${fda ? ' (no Full Disk Access/TCC, direct BTM read unavailable; using SMAppService for the background toggle)' : ''}`
         );
       }
       return null;
@@ -681,7 +684,7 @@ export class HelperManager implements IPrivilegedHelper {
               const k = (err as { code?: unknown })?.code;
               this.log(
                 'warn',
-                `[BTM] plutil 读 .btm 失败 code=${k ?? '?'}（生产 GUI 无 FDA 属预期，已改用 SMAppService 判后台开关）`
+                `[BTM] plutil failed to read .btm code=${k ?? '?'} (expected for the production GUI without FDA; using SMAppService for the background toggle)`
               );
             }
             resolve({ ok: false });
@@ -726,10 +729,10 @@ export class HelperManager implements IPrivilegedHelper {
             this.log(
               'info',
               hits.length > 1
-                ? `[BTM] 多记录 matched=${hits.length}: ${hits
+                ? `[BTM] multiple records matched=${hits.length}: ${hits
                     .map((h) => `gen${h.gen}=${h.disp}`)
-                    .join(',')} → 取 disp=${best.disp}`
-                : `[BTM] disposition=${best.disp}（0x1=enabled 0x2=allowed；&0x3===0x3 为开关开）`
+                    .join(',')} -> using disp=${best.disp}`
+                : `[BTM] disposition=${best.disp} (0x1=enabled 0x2=allowed; &0x3===0x3 means the toggle is on)`
             );
             resolve({ ok: true, disp: best.disp });
           } catch {
@@ -803,17 +806,18 @@ DEST=${shq(HELPER_DEST)}
 SUPPORT=${shq(SYSTEM_SUPPORT)}
 PLIST=${shq(PLIST_PATH)}
 mkdir -p /Library/PrivilegedHelperTools "$SUPPORT"
-# 关键：umask 077 会把新建目录设成 700 → 普通用户 app 无法穿越该目录连接 socket(EACCES)。
-# 目录必须 755 可穿越（socket 内部仍靠 token 鉴权 + token 文件 600 保护）。
+# Important: umask 077 would create these dirs as 700 -> a regular-user app could not traverse them to reach the socket (EACCES).
+# The dirs must be 755 so they can be traversed (the socket itself is still protected by token auth + a 600 token file).
 chmod 755 /Library/PrivilegedHelperTools "$SUPPORT"
 cp "$SRC" "$DEST"
 chown root:wheel "$DEST"; chmod 755 "$DEST"
 printf '%s' ${shq(token)} > "$SUPPORT/helper.token"
 chown root:wheel "$SUPPORT/helper.token"; chmod 600 "$SUPPORT/helper.token"
-# B 块 seed：把内置内核播种进受保护目录，作为 macOS 现役核「单一稳定真相」（root owner、755 → all 读/exec，
-# 仅 root 可写）。plist 的 --singbox 锁定 $COREDIR/sing-box，故 seed 后「写/读/执行」三处路径恒一致。
-# 守卫「仅当受保护目录尚无可执行 sing-box」→ 重装/修复 helper 不覆盖用户已更新的核；v4→v5 升级时目录为空、
-# 从 bundle 播种当前核。macOS cronet 静态编入 sing-box，无需额外 libcronet 文件。
+# Block B seed: seed the bundled core into the protected dir as the single stable source of truth for the active macOS core
+# (root owner, 755 -> everyone can read/exec, only root can write). The plist's --singbox is pinned to $COREDIR/sing-box,
+# so after seeding the write/read/exec paths always match. Guard "only if the protected dir has no executable sing-box yet"
+# -> reinstalling/repairing the helper never overwrites a core the user updated; on a v4->v5 upgrade the dir is empty and the
+# current core is seeded from the bundle. macOS cronet is statically linked into sing-box, so no extra libcronet file is needed.
 COREDIR=${shq(coreDir)}
 BUNDLED_SB=${shq(bundledSingbox)}
 mkdir -p "$COREDIR"
@@ -830,11 +834,12 @@ ${plist}
 FLOWZ_PLIST_EOF
 chown root:wheel "$PLIST"; chmod 644 "$PLIST"
 launchctl bootout system "$PLIST" 2>/dev/null || true
-# launchctl enable 清的是 launchd override 层（/var/db/com.apple.xpc.launchd/disabled.*.plist），
-# **不是** BTM 层（「登录项与扩展」开关，存 /var/db/com.apple.backgroundtaskmanagement/）。
-# 作用：与随后的 bootstrap 配合，即便 BTM disposition 为 disallowed 也能让本会话 spawn 成功、daemon 正常跑。
-# 但它**不会**恢复系统设置里的开关（开关仍显示关、重启后可能不自动加载）——程序无法翻动用户关掉的 BTM allowed 位
-# （Apple SMAppService 无此 API），须由用户去「系统设置 > 通用 > 登录项与扩展」手动重新开启。幂等、无副作用。
+# launchctl enable clears the launchd override layer (/var/db/com.apple.xpc.launchd/disabled.*.plist),
+# **not** the BTM layer (the "Login Items & Extensions" toggle, stored in /var/db/com.apple.backgroundtaskmanagement/).
+# Effect: together with the following bootstrap, this session can spawn and the daemon runs even if the BTM disposition is disallowed.
+# But it does **not** restore the toggle in System Settings (it still shows off and may not auto-load after a reboot) - the app
+# cannot flip a BTM allowed bit the user turned off (Apple SMAppService has no API for it); the user must re-enable it in
+# "System Settings > General > Login Items & Extensions". Idempotent, no side effects.
 launchctl enable system/${LABEL} 2>/dev/null || true
 launchctl bootstrap system "$PLIST"
 echo installed-ok
@@ -902,8 +907,8 @@ echo uninstalled-ok
         if (code === 0) resolve({ success: true });
         // 用户取消授权 → osascript 报 -128 / "User canceled"；其余非零为脚本/安装失败，透传 stderr。
         else if (/-128|User canceled/i.test(stderr))
-          resolve({ success: false, error: '已取消管理员授权' });
-        else resolve({ success: false, error: stderr.trim() || `osascript 退出码 ${code}` });
+          resolve({ success: false, error: 'Administrator authorization cancelled' });
+        else resolve({ success: false, error: stderr.trim() || `osascript exit code ${code}` });
       });
       proc.on('error', (err) => {
         resolve({ success: false, error: err.message });

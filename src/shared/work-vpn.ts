@@ -713,7 +713,7 @@ export function applyWorkVpnToSingBoxConfig(
         result.logs.push({
           level: 'warn',
           message:
-            '工作 VPN：DNS 规则含旧式地址过滤，不能与 evaluate 混用，已跳过内部域名自动识别（可手动填写内部域名）',
+            'Work VPN: DNS rules use legacy address filters, which cannot be combined with evaluate; skipped automatic internal domain detection (you can enter internal domains manually)',
         });
       } else {
         for (const it of probeIfaces) {
@@ -813,7 +813,7 @@ export function applyWorkVpnToSingBoxConfig(
     tun.strict_route = false;
     result.logs.push({
       level: 'info',
-      message: `工作 VPN（Windows）：${primaryIface.name} 带 DNS，已关闭 TUN strict_route，避免与 VPN 客户端的 DNS 防泄漏互相封死`,
+      message: `Work VPN (Windows): ${primaryIface.name} has DNS; disabled TUN strict_route so it does not deadlock with the VPN client's DNS leak protection`,
     });
   }
 
@@ -821,7 +821,7 @@ export function applyWorkVpnToSingBoxConfig(
   if (fullTunnel.length > 0) {
     result.logs.push({
       level: 'warn',
-      message: `工作 VPN ${fullTunnel.join(', ')} 为全隧道（接管默认路由），FlowZ 的出站会经它转发；建议在 VPN 客户端里关闭 redirect-gateway`,
+      message: `Work VPN ${fullTunnel.join(', ')} is a full tunnel (takes over the default route), so FlowZ's outbound traffic will go through it; consider disabling redirect-gateway in the VPN client`,
     });
   }
   return result;

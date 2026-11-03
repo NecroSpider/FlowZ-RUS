@@ -103,7 +103,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       let buf = '';
       const timer = setTimeout(() => {
         sock.destroy();
-        reject(new Error('helper pipe 超时'));
+        reject(new Error('helper pipe timed out'));
       }, timeoutMs);
       sock.on('connect', () => {
         sock.end([this.token(), ...rest].join('\n') + '\n');
@@ -220,7 +220,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       );
       const m = resp.match(/^OK (?:started|already) (\d+)/);
       if (m) return { ok: true, pid: parseInt(m[1], 10) };
-      return { ok: false, error: resp || 'helper 无响应' };
+      return { ok: false, error: resp || 'no response from helper' };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
@@ -279,7 +279,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       if (resp.startsWith('OK free') || resp.startsWith('OK killed')) return { freed: true };
       const m = resp.match(/^OK foreign (.+)/);
       if (m) return { foreign: m[1].trim() };
-      return { error: resp || 'helper 无响应' };
+      return { error: resp || 'no response from helper' };
     } catch (e) {
       return { error: e instanceof Error ? e.message : String(e) };
     }
@@ -305,7 +305,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     if (!this.supported) {
       return {
         success: false,
-        error: '仅 Windows 支持提权服务',
+        error: 'The privileged service is only supported on Windows',
         status: await this.computeStatus(),
       };
     }
@@ -313,10 +313,10 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     try {
       const exe = resourceManager.getWinHelperPath();
       if (!fs.existsSync(exe)) {
-        this.log('error', `helper 二进制缺失: ${exe}`);
+        this.log('error', `helper binary missing: ${exe}`);
         return {
           success: false,
-          error: 'helper 二进制缺失（构建未包含）',
+          error: 'helper binary missing (not included in this build)',
           status: await this.computeStatus(),
         };
       }
@@ -332,7 +332,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
         } catch (e) {
           return {
             success: false,
-            error: `写入 token 失败: ${e instanceof Error ? e.message : String(e)}`,
+            error: `Failed to write token: ${e instanceof Error ? e.message : String(e)}`,
             status: await this.computeStatus(),
           };
         }
@@ -350,8 +350,8 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
         await new Promise((r) => setTimeout(r, 300));
         status = await this.computeStatus();
       }
-      if (status.ready) this.log('info', 'helper 服务安装并就绪');
-      else this.log('warn', 'helper 服务已安装但未在预期内就绪');
+      if (status.ready) this.log('info', 'helper service installed and ready');
+      else this.log('warn', 'helper service installed but did not become ready in time');
       this.lastStableStatus = status;
       return { success: true, status };
     } finally {
@@ -369,7 +369,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     if (!this.supported) {
       return {
         success: false,
-        error: '仅 Windows 支持提权服务',
+        error: 'The privileged service is only supported on Windows',
         status: await this.computeStatus(),
       };
     }
@@ -409,7 +409,9 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       }
       this.log(
         'info',
-        done ? 'helper 服务经管道自卸载（零提权）' : 'helper 服务已卸载（提权兜底）'
+        done
+          ? 'helper service uninstalled itself via the pipe (no elevation)'
+          : 'helper service uninstalled (elevated fallback)'
       );
       const status = await this.computeStatus();
       this.lastStableStatus = status;
@@ -460,7 +462,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     // icacls 是外部命令：非零退出不受 $ErrorActionPreference=Stop 约束 → 显式查 $LASTEXITCODE 并 throw，
     // 否则授权失败被静默吞掉、直到后续 Set-Content 才以「拒绝访问」这种远离根因的报错暴露。
     const icaclsCheck = (what: string): string =>
-      `if ($LASTEXITCODE -ne 0) { throw "icacls ${what} 失败（退出码 $LASTEXITCODE）" }`;
+      `if ($LASTEXITCODE -ne 0) { throw "icacls ${what} failed (exit code $LASTEXITCODE)" }`;
     return [
       `$support = '${this.psq(SUPPORT_DIR)}'`,
       `$tokenFile = '${this.psq(tokenFile)}'`,
@@ -487,13 +489,13 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       'if ($grantCode -ne 0) {',
       "  $broken = $support + '.broken-' + (Get-Date -Format 'yyyyMMddHHmmss')",
       '  try { [System.IO.Directory]::Move($support, $broken) }',
-      '  catch { throw "icacls 授权 $support 失败（退出码 $grantCode），旧目录也无法挪开：$($_.Exception.Message)" }',
+      '  catch { throw "icacls grant on $support failed (exit code $grantCode), and the old directory could not be moved aside: $($_.Exception.Message)" }',
       '  New-Item -ItemType Directory -Force -Path $support | Out-Null',
       `  & '${icacls}' $support /grant:r "${SID_SYSTEM}:(OI)(CI)(F)" "${SID_ADMINISTRATORS}:(OI)(CI)(F)" | Out-Null`,
-      `  ${icaclsCheck('授权 $support')}`,
+      `  ${icaclsCheck('grant on $support')}`,
       '}',
       `& '${icacls}' $support /inheritance:r | Out-Null`,
-      icaclsCheck('去继承 $support'),
+      icaclsCheck('inheritance removal on $support'),
       // 先删任何残留旧 token 再写：重装/修复时旧 token 可能是「Admin 只读」（旧版 ACL）或部分失败安装的残留，
       // 而 Set-Content 覆盖一个 Admin 只读的现存文件会被拒（真机实测「对…helper.token 的访问被拒绝」的根因）。
       // 经目录 Admin 的 FILE_DELETE_CHILD 删旧文件**不受其自身只读 DACL 阻挡** → 随后 Set-Content 必成（自愈已损状态）。
@@ -526,13 +528,13 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       '  try { [System.IO.File]::Delete($helperDst); Copy-Item -LiteralPath $helperSrc -Destination $helperDst -Force; $copied = $true }',
       '  catch { $copyErr = $_; Start-Sleep -Milliseconds 300 }',
       '}',
-      'if (-not $copied) { throw "复制 helper.exe 到 ProgramData 失败（旧服务二进制可能仍被占用，请稍后重试或重启后再装）：$($copyErr.Exception.Message)" }',
+      'if (-not $copied) { throw "Failed to copy helper.exe to ProgramData (the old service binary may still be in use; try again later, or reboot and reinstall): $($copyErr.Exception.Message)" }',
       // 显式收紧外置副本 ACL（兜底）：目录已锁 SYSTEM/Admin 私有、本副本继承之即足够；这里再去继承 + 仅 SYSTEM/Admin
       // 完全控制，确保 Users 对这个**以 SYSTEM 运行**的二进制零访问（不可写/不可替换 → 杜绝本地提权）。
       `& '${icacls}' $helperDst /grant:r "${SID_SYSTEM}:(F)" "${SID_ADMINISTRATORS}:(F)" | Out-Null`,
-      icaclsCheck('授权 $helperDst'),
+      icaclsCheck('grant on $helperDst'),
       `& '${icacls}' $helperDst /inheritance:r | Out-Null`,
-      icaclsCheck('去继承 $helperDst'),
+      icaclsCheck('inheritance removal on $helperDst'),
       // New-Service 退避重试兜底（删除标记态 1072 窗口期）：BinaryPathName 单一字符串直达 CreateService；
       // 默认账户即 LocalSystem；-StartupType Automatic = 开机自启常驻（app 全程只发管道命令、不 start/stop 服务）。
       '$created = $false',
@@ -542,7 +544,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       '  catch { $lastErr = $_; Start-Sleep -Milliseconds 500 }',
       '}',
       // 失败抛**真实异常**（不用硬编码 1072 文案盖掉真因——非 1072 失败如路径非法/权限也要透出真原因）
-      `if (-not $created) { throw "New-Service 失败（重试 10 次；多为 sc delete 标记删除态 1072 竞态，若持续请重启）：$($lastErr.Exception.Message)" }`,
+      `if (-not $created) { throw "New-Service failed after 10 retries (usually the sc delete marked-for-deletion 1072 race; reboot if it persists): $($lastErr.Exception.Message)" }`,
       `& '${system32('sc.exe')}' start ${SERVICE_NAME} | Out-Null`,
     ].join('\n');
   }
@@ -604,7 +606,10 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
           'utf8'
         );
       } catch (e) {
-        return resolve({ success: false, error: `写入提权脚本失败: ${String(e)}` });
+        return resolve({
+          success: false,
+          error: `Failed to write the elevation script: ${String(e)}`,
+        });
       }
       // -File 路径加真双引号：PS5.1 Start-Process 把 ArgumentList 按空格拼接、不自动加引号 → 用户名含空格时
       // %TEMP% 路径被拆成多个参数，内层 PS 找不到脚本。
@@ -620,7 +625,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
           let success = false;
           let error: string | undefined;
           if (err) {
-            error = 'UAC 取消或提权失败';
+            error = 'UAC was cancelled or elevation failed';
           } else {
             let code = '';
             try {
@@ -639,7 +644,9 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
               }
               error =
                 detail ||
-                (code === '' ? '提权脚本未写回结果（可能被取消）' : `提权脚本失败（码 ${code}）`);
+                (code === ''
+                  ? 'The elevation script reported no result (possibly cancelled)'
+                  : `The elevation script failed (code ${code})`);
             }
           }
           for (const p of [scriptPath, flagPath, errPath]) {

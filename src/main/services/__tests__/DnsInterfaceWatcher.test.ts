@@ -230,7 +230,7 @@ describe('DnsInterfaceWatcher', () => {
     expect(() => watcher.start()).not.toThrow();
     expect(onWarn).toHaveBeenCalledWith(
       'warn',
-      expect.stringContaining('启动 DNS 接口 watcher 失败')
+      expect.stringContaining('Failed to start DNS interface watcher')
     );
     // spawn 失败仍订阅 resume（唤醒是独立补接管路径）。
     expect(fakePm.on).toHaveBeenCalledWith('resume', expect.any(Function));
@@ -240,7 +240,7 @@ describe('DnsInterfaceWatcher', () => {
     const { watcher, fakeChild, onWarn } = setup();
     watcher.start();
     expect(() => fakeChild.emitError(new Error('route monitor died'))).not.toThrow();
-    expect(onWarn).toHaveBeenCalledWith('warn', expect.stringContaining('子进程错误'));
+    expect(onWarn).toHaveBeenCalledWith('warn', expect.stringContaining('child process error'));
   });
 
   it('⑤ onTrigger reject → 仅 warn 不冒泡', async () => {
@@ -251,7 +251,10 @@ describe('DnsInterfaceWatcher', () => {
     jest.advanceTimersByTime(DEBOUNCE);
     await Promise.resolve(); // 放行 reject 的 .catch 微任务。
     await Promise.resolve();
-    expect(onWarn).toHaveBeenCalledWith('warn', expect.stringContaining('链路变化处理失败'));
+    expect(onWarn).toHaveBeenCalledWith(
+      'warn',
+      expect.stringContaining('Failed to handle link change')
+    );
   });
 
   // start 幂等：重复 start 不重复 spawn。
@@ -467,7 +470,10 @@ describe('DnsInterfaceWatcher — 事件源死亡自曝 + 降级轮询（issue #
     watcher.start();
 
     fakeChild.emitClose(1, null);
-    expect(onWarn).toHaveBeenCalledWith('warn', expect.stringContaining('链路事件源已退出'));
+    expect(onWarn).toHaveBeenCalledWith(
+      'warn',
+      expect.stringContaining('Link event source exited')
+    );
 
     // 降级腿真的在跑：轮询间隔 + 去抖窗口后触发一次。
     expect(onTrigger).not.toHaveBeenCalled();
@@ -489,7 +495,10 @@ describe('DnsInterfaceWatcher — 事件源死亡自曝 + 降级轮询（issue #
 
     fakeChild.emitError(new Error('spawn ip ENOENT'));
     fakeChild.emitClose(null, null); // 无 exit
-    expect(onWarn).toHaveBeenCalledWith('warn', expect.stringContaining('链路事件源已退出'));
+    expect(onWarn).toHaveBeenCalledWith(
+      'warn',
+      expect.stringContaining('Link event source exited')
+    );
     jest.advanceTimersByTime(FALLBACK + DEBOUNCE);
     expect(onTrigger).toHaveBeenCalledTimes(1);
   });
@@ -514,7 +523,10 @@ describe('DnsInterfaceWatcher — 事件源死亡自曝 + 降级轮询（issue #
     expect(onWarn).not.toHaveBeenCalled();
 
     second.emitClose(1, null); // 当前代真死 → 照常自曝
-    expect(onWarn).toHaveBeenCalledWith('warn', expect.stringContaining('链路事件源已退出'));
+    expect(onWarn).toHaveBeenCalledWith(
+      'warn',
+      expect.stringContaining('Link event source exited')
+    );
   });
 
   it('未配置 fallbackPollIntervalMs → 只 warn 不轮询（不擅自给没声明降级的平台加轮询）', () => {
@@ -522,7 +534,10 @@ describe('DnsInterfaceWatcher — 事件源死亡自曝 + 降级轮询（issue #
     watcher.start();
 
     fakeChild.emitClose(null, 'SIGKILL');
-    expect(onWarn).toHaveBeenCalledWith('warn', expect.stringContaining('链路事件源已退出'));
+    expect(onWarn).toHaveBeenCalledWith(
+      'warn',
+      expect.stringContaining('Link event source exited')
+    );
     jest.advanceTimersByTime(FALLBACK * 3 + DEBOUNCE);
     expect(onTrigger).not.toHaveBeenCalled();
   });
@@ -619,7 +634,10 @@ describe('DnsInterfaceWatcher — onResume 唤醒回调（复审 F2：豁免上�
     watcher.start();
 
     expect(() => fakePm.fireResume()).not.toThrow();
-    expect(onWarn).toHaveBeenCalledWith('warn', expect.stringContaining('处理系统唤醒事件失败'));
+    expect(onWarn).toHaveBeenCalledWith(
+      'warn',
+      expect.stringContaining('Failed to handle system resume event')
+    );
     jest.advanceTimersByTime(DEBOUNCE);
     expect(onTrigger).toHaveBeenCalledTimes(1);
   });

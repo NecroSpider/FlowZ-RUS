@@ -95,7 +95,7 @@ describe('buildRouteConfig — geosite-private 模式门控对称性', () => {
     expect(refsGeositePrivate(rc)).toBe(true);
     // 定义必须同时注入（否则会 dangling）。
     expect((rc.rule_set || []).some((rs: any) => rs.tag === 'geosite-private')).toBe(true);
-    expect(logs.some((m) => m.includes('缺少本地副本'))).toBe(false);
+    expect(logs.some((m) => m.includes('missing local copy'))).toBe(false);
   });
 
   it('direct 模式（文件存在）：不发射 geosite-private 规则 + 无「缺少本地副本」告警（修复点）', () => {
@@ -104,6 +104,6 @@ describe('buildRouteConfig — geosite-private 模式门控对称性', () => {
 
     // 引用与定义在 direct 模式同生共灭：都不存在 → 不会被末尾剪枝误报。
     expect(refsGeositePrivate(rc)).toBe(false);
-    expect(logs.some((m) => m.includes('缺少本地副本'))).toBe(false);
+    expect(logs.some((m) => m.includes('missing local copy'))).toBe(false);
   });
 });

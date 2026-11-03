@@ -124,7 +124,10 @@ export class WarpDeregisterQueue {
     } catch {
       // 文件存在但 JSON 损坏：极罕见（唯一 .tmp 后缀 + 原子 rename 已杜绝并发写坏正本）。warn 帮人工发现；
       // 返 [] 维持失败安全（不阻断删除/启动），坏文件将被下次原子写正常覆盖。
-      this.log('warn', 'WARP 待注销队列文件损坏（JSON 解析失败），按空队列处理');
+      this.log(
+        'warn',
+        'WARP deregistration queue file is corrupt (JSON parse failed); treating it as empty'
+      );
       return [];
     }
   }
@@ -167,7 +170,7 @@ export class WarpDeregisterQueue {
           const ageDays = Math.floor((this.now() - item.entry.enqueuedAt) / 86_400_000);
           this.log(
             'warn',
-            `WARP 设备 ${idPrefix}… 入队 ${ageDays} 天仍未注销，超阈值放弃（本地节点早已删、可忽略）`
+            `WARP device ${idPrefix}… still not deregistered after ${ageDays} days in the queue; giving up (the local node is long gone, safe to ignore)`
           );
           removeIds.add(item.entry.deviceId);
           stats.expired += 1;
@@ -181,11 +184,14 @@ export class WarpDeregisterQueue {
           result = 'retry';
         }
         if (result === 'done') {
-          this.log('info', `WARP 设备 ${idPrefix}… 已注销，出队`);
+          this.log('info', `WARP device ${idPrefix}… deregistered, removed from the queue`);
           removeIds.add(item.entry.deviceId);
           stats.done += 1;
         } else if (result === 'drop') {
-          this.log('info', `WARP 设备 ${idPrefix}… 凭据失效，放弃出队`);
+          this.log(
+            'info',
+            `WARP device ${idPrefix}… credentials no longer valid, dropped from the queue`
+          );
           removeIds.add(item.entry.deviceId);
           stats.dropped += 1;
         } else {
@@ -210,12 +216,15 @@ export class WarpDeregisterQueue {
       if (stats.done + stats.dropped + stats.expired > 0) {
         this.log(
           'info',
-          `WARP 待注销 drain：done=${stats.done} drop=${stats.dropped} expire=${stats.expired} retry=${stats.retried}（剩 ${keepLen}，本次至多 ${WARP_DEREGISTER_MAX_PER_DRAIN}）`
+          `WARP deregistration drain: done=${stats.done} drop=${stats.dropped} expire=${stats.expired} retry=${stats.retried} (remaining ${keepLen}, at most ${WARP_DEREGISTER_MAX_PER_DRAIN} per run)`
         );
       }
       return stats;
     } catch (e: any) {
-      this.log('warn', `WARP 待注销 drain 异常（忽略，下次重试）: ${e?.message ?? e}`);
+      this.log(
+        'warn',
+        `WARP deregistration drain error (ignored, will retry next time): ${e?.message ?? e}`
+      );
       return stats;
     } finally {
       this.draining = false;
@@ -242,12 +251,15 @@ export class WarpDeregisterQueue {
       const queue = await this.readQueueImpl();
       const { queue: next, dropped } = enqueuePendingDeregister(queue, entry);
       for (const d of dropped) {
-        this.log('warn', `WARP 待注销队列已满，丢弃最旧条目 ${d.deviceId.slice(0, 8)}…`);
+        this.log(
+          'warn',
+          `WARP deregistration queue is full, dropping the oldest entry ${d.deviceId.slice(0, 8)}…`
+        );
       }
       await this.writeQueueImpl(next);
       this.log(
         'info',
-        `WARP 设备 ${entry.deviceId.slice(0, 8)}… 入待注销队列（剩 ${next.length}）`
+        `WARP device ${entry.deviceId.slice(0, 8)}… queued for deregistration (queue size ${next.length})`
       );
     });
   }

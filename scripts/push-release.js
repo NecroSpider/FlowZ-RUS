@@ -52,20 +52,20 @@ async function main() {
 
   if (process.argv.includes('-h') || process.argv.includes('--help')) {
     console.log(`
-推送 Release Tag 脚本
+Push Release Tag script
 
-用法: node push-release.js [选项]
-      npm run release:tag -- [选项]
+Usage: node push-release.js [options]
+       npm run release:tag -- [options]
 
-选项:
-  -y, --yes      跳过确认
-  -u, --update   强制更新已存在的 tag
-  -h, --help     显示帮助
+Options:
+  -y, --yes      Skip confirmation
+  -u, --update   Force-update an existing tag
+  -h, --help     Show help
 
-示例:
-  npm run release:tag           # 创建并推送 tag
-  npm run release:tag -- -u     # 强制更新已存在的 tag
-  npm run release:tag -- -y -u  # 跳过确认并强制更新
+Examples:
+  npm run release:tag           # Create and push the tag
+  npm run release:tag -- -u     # Force-update an existing tag
+  npm run release:tag -- -y -u  # Skip confirmation and force-update
 `);
     process.exit(0);
   }
@@ -80,11 +80,11 @@ async function main() {
   // 检查未提交更改
   const status = execSilent('git status --porcelain');
   if (status) {
-    log('⚠️  存在未提交的更改:', colors.yellow);
+    log('⚠️  There are uncommitted changes:', colors.yellow);
     console.log(status);
-    const answer = await prompt('是否继续? (y/N): ');
+    const answer = await prompt('Continue anyway? (y/N): ');
     if (answer !== 'y') {
-      log('已取消', colors.yellow);
+      log('Cancelled', colors.yellow);
       process.exit(0);
     }
   }
@@ -93,23 +93,23 @@ async function main() {
   const localTagExists = execSilent(`git tag -l "${tag}"`) === tag;
   const remoteTagExists = !!execSilent(`git ls-remote --tags origin refs/tags/${tag}`);
 
-  log(`版本: ${version}`, colors.blue);
-  log(`Tag:  ${tag}`, colors.blue);
-  log(`本地: ${localTagExists ? '存在' : '不存在'}`, localTagExists ? colors.yellow : colors.green);
-  log(`远程: ${remoteTagExists ? '存在' : '不存在'}`, remoteTagExists ? colors.yellow : colors.green);
+  log(`Version: ${version}`, colors.blue);
+  log(`Tag:     ${tag}`, colors.blue);
+  log(`Local:   ${localTagExists ? 'exists' : 'not found'}`, localTagExists ? colors.yellow : colors.green);
+  log(`Remote:  ${remoteTagExists ? 'exists' : 'not found'}`, remoteTagExists ? colors.yellow : colors.green);
   console.log('');
 
   if (remoteTagExists && !forceUpdate) {
-    log(`❌ Tag ${tag} 已存在于远程`, colors.red);
-    log('使用 -u 强制更新，或修改 package.json 版本号', colors.yellow);
+    log(`❌ Tag ${tag} already exists on the remote`, colors.red);
+    log('Use -u to force-update it, or bump the version in package.json', colors.yellow);
     process.exit(1);
   }
 
   if (!skipConfirm) {
-    const action = remoteTagExists ? '强制更新' : '创建并推送';
+    const action = remoteTagExists ? 'Force-update' : 'Create and push';
     const answer = await prompt(`${action} tag ${tag}? (y/N): `);
     if (answer !== 'y') {
-      log('已取消', colors.yellow);
+      log('Cancelled', colors.yellow);
       process.exit(0);
     }
   }
@@ -119,27 +119,27 @@ async function main() {
   // 删除已存在的 tag
   if (forceUpdate) {
     if (remoteTagExists) {
-      log(`删除远程 tag ${tag}...`, colors.blue);
+      log(`Deleting remote tag ${tag}...`, colors.blue);
       exec(`git push origin :refs/tags/${tag}`);
     }
     if (localTagExists) {
-      log(`删除本地 tag ${tag}...`, colors.blue);
+      log(`Deleting local tag ${tag}...`, colors.blue);
       exec(`git tag -d ${tag}`, true);
     }
   }
 
   // 创建 tag
   if (!localTagExists || forceUpdate) {
-    log(`创建 tag ${tag}...`, colors.blue);
+    log(`Creating tag ${tag}...`, colors.blue);
     exec(`git tag -a ${tag} -m "Release ${version}"`, true);
   }
 
   // 推送 tag
-  log(`推送 tag ${tag}...`, colors.blue);
+  log(`Pushing tag ${tag}...`, colors.blue);
   exec(`git push origin ${tag}`);
 
   console.log('');
-  log('✅ Tag 推送成功，GitHub Actions 将自动构建', colors.green);
+  log('✅ Tag pushed successfully; GitHub Actions will build it automatically', colors.green);
   log(`🔗 https://github.com/NecroSpider/FlowZ-RUS/actions`, colors.blue);
 }
 

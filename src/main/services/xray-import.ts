@@ -224,7 +224,7 @@ function collectXrayOutbounds(
 function skipWarnings(skipped: number, skipBy: Map<string, number>): string[] {
   if (skipBy.size === 0) return [];
   const detail = [...skipBy.entries()].map(([p, c]) => `${p}(${c})`).join(', ');
-  return [`跳过 ${skipped} 个不支持的 Xray 协议: ${detail}`];
+  return [`Skipped ${skipped} unsupported Xray protocol(s): ${detail}`];
 }
 
 /** xray outbounds[] → ServerConfig[]，逐条 try/catch，聚合 skipped/failed/warnings。 */

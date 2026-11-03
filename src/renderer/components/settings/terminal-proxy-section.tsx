@@ -49,7 +49,7 @@ export function TerminalProxySection({ httpPort, socksPort }: TerminalProxySecti
             <div className="cmd-h">
               {g.label}
               <button type="button" className="btn ghost sm" onClick={() => copy(g.cmds)}>
-                {t('common.copy', '复制')}
+                {t('common.copy', 'Copy')}
               </button>
             </div>
             <pre className="cmd">{g.cmds.join('\n')}</pre>

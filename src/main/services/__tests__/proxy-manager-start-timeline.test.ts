@@ -53,7 +53,7 @@ function captureLogs(svc: any): string[] {
 }
 
 function timelineLine(lines: string[]): string | undefined {
-  return lines.find((l) => l.startsWith('起核阶段耗时 '));
+  return lines.find((l) => l.startsWith('Core start timings '));
 }
 
 describe('B0 埋点接线 — 三条出口都出汇总行', () => {
@@ -113,7 +113,7 @@ describe('B0 埋点接线 — 字段生命周期', () => {
     await svc.start(CFG);
 
     expect(svc.startTimeline).toBeNull();
-    expect(svc.getLastStartTimeline()).toContain('起核阶段耗时 ');
+    expect(svc.getLastStartTimeline()).toContain('Core start timings ');
   });
 
   it('被更新的 start 接管后，旧腿的收尾**不得**清掉接管方的收集器', async () => {

@@ -106,7 +106,7 @@ describe('B1 — 释放门首腿预热的一次性消费', () => {
       const sentinel = Promise.resolve();
       svc.pendingAdapterReleaseGate = sentinel;
 
-      await expect(svc.startSingBoxProcess(0)).rejects.toThrow(/找不到 sing-box/);
+      await expect(svc.startSingBoxProcess(0)).rejects.toThrow(/sing-box executable not found/);
 
       expect(svc.waitForOwnTunAdapterReleased).not.toHaveBeenCalled();
       expect(svc.pendingAdapterReleaseGate).toBe(sentinel);
@@ -121,7 +121,7 @@ describe('B1 — 释放门首腿预热的一次性消费', () => {
       const sentinel = Promise.resolve();
       svc.pendingAdapterReleaseGate = sentinel;
 
-      await expect(svc.startSingBoxProcess(0)).rejects.toThrow(/找不到 sing-box/);
+      await expect(svc.startSingBoxProcess(0)).rejects.toThrow(/sing-box executable not found/);
 
       expect(svc.waitForOwnTunAdapterReleased).not.toHaveBeenCalled();
       expect(svc.pendingAdapterReleaseGate).toBe(sentinel);

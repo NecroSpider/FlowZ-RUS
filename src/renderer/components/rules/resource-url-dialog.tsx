@@ -31,7 +31,7 @@ export function ResourceUrlDialog({ open, onOpenChange, onDownload }: ResourceUr
   const handleAdd = () => {
     const u = url.trim();
     if (!/^https:\/\/.+\.srs$/i.test(u)) {
-      setUrlError(t('ruleResources.urlInvalid', '请输入以 .srs 结尾的 https 链接'));
+      setUrlError(t('ruleResources.urlInvalid', 'Enter an https link ending in .srs'));
       return;
     }
     onDownload([{ url: u, name: name.trim() || undefined }]);
@@ -46,15 +46,15 @@ export function ResourceUrlDialog({ open, onOpenChange, onDownload }: ResourceUr
         <DialogDescription className="sr-only">
           {t(
             'ruleResources.urlHint',
-            '输入 .srs 规则集链接；raw.githubusercontent.com 链接会自动应用加速'
+            'Enter a .srs rule-set URL; github links auto-apply the accelerator'
           )}
         </DialogDescription>
 
         <div className="rsc-dialog-h">
-          <DialogTitle>{t('ruleResources.manualUrl', 'URL 下载')}</DialogTitle>
+          <DialogTitle>{t('ruleResources.manualUrl', 'URL Download')}</DialogTitle>
           <button
             className="rsc-x"
-            aria-label={t('servers.cancel', '取消')}
+            aria-label={t('servers.cancel', 'Cancel')}
             onClick={() => onOpenChange(false)}
           >
             ✕
@@ -64,8 +64,8 @@ export function ResourceUrlDialog({ open, onOpenChange, onDownload }: ResourceUr
         <div className="rsc-dialog-b">
           <div className="rsc-form-field">
             <label className="field-lbl">
-              {t('ruleResources.urlLabel', '链接')}{' '}
-              <small className="rsc-req">{t('ruleResources.urlRequired', '必填')}</small>
+              {t('ruleResources.urlLabel', 'URL')}{' '}
+              <small className="rsc-req">{t('ruleResources.urlRequired', 'Required')}</small>
             </label>
             <input
               className={cn('input mono', urlError && 'err')}
@@ -89,12 +89,14 @@ export function ResourceUrlDialog({ open, onOpenChange, onDownload }: ResourceUr
           </div>
 
           <div className="rsc-form-field">
-            <label className="field-lbl">{t('ruleResources.nameLabel', '名称 (可选)')}</label>
+            <label className="field-lbl">{t('ruleResources.nameLabel', 'Name (optional)')}</label>
             <input
               className="input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={derivedName || t('ruleResources.namePlaceholder', '留空自动命名')}
+              placeholder={
+                derivedName || t('ruleResources.namePlaceholder', 'Leave blank to auto-name')
+              }
             />
           </div>
 
@@ -102,17 +104,17 @@ export function ResourceUrlDialog({ open, onOpenChange, onDownload }: ResourceUr
             <span className="dot idle" />
             {t(
               'ruleResources.urlHint',
-              '输入 .srs 规则集链接；raw.githubusercontent.com 链接会自动应用加速'
+              'Enter a .srs rule-set URL; github links auto-apply the accelerator'
             )}
           </p>
         </div>
 
         <div className="rsc-dialog-f">
           <button className="btn ghost" onClick={() => onOpenChange(false)}>
-            {t('servers.cancel', '取消')}
+            {t('servers.cancel', 'Cancel')}
           </button>
           <button className="btn flow" onClick={handleAdd} disabled={!url.trim()}>
-            {t('ruleResources.download', '下载')}
+            {t('ruleResources.download', 'Download')}
           </button>
         </div>
       </DialogContent>

@@ -112,19 +112,19 @@ export async function safeRedirectFetch<R extends MinimalResponse>(
     if (hop >= maxRedirects) {
       throw new SafeFetchError(
         'too-many-redirects',
-        `重定向次数超过上限（${maxRedirects}），已拒绝`
+        `Too many redirects (limit ${maxRedirects}), rejected`
       );
     }
     let nextObj: URL;
     try {
       nextObj = new URL(loc, currentUrl); // 相对 Location 以当前 URL 为基准解析
     } catch {
-      throw new SafeFetchError('redirect-protocol', '重定向目标非法，已拒绝');
+      throw new SafeFetchError('redirect-protocol', 'Invalid redirect target, rejected');
     }
     if (nextObj.protocol !== 'http:' && nextObj.protocol !== 'https:') {
       throw new SafeFetchError(
         'redirect-protocol',
-        '重定向目标协议不支持（仅允许 http/https），已拒绝'
+        'Unsupported redirect target scheme (only http/https allowed), rejected'
       );
     }
     await guard(nextObj, lookup, opts.exemptFakeIp); // 重定向目标过同一 guard（含 DNS 解析）

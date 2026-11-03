@@ -83,7 +83,7 @@ export class CoreUpdateScheduler {
       this.coreUpdateService.tryApplyStaged('proxy-stopped').catch((e) => {
         this.logManager.addLog(
           'warn',
-          `代理停止后落位 staged 内核异常: ${e}`,
+          `Error applying the staged core after the proxy stopped: ${e}`,
           'CoreUpdateScheduler'
         );
       });
@@ -107,7 +107,11 @@ export class CoreUpdateScheduler {
 
       await this.coreUpdateService.runAutoUpdateCycle();
     } catch (e) {
-      this.logManager.addLog('warn', `内核自动更新周期检查异常: ${e}`, 'CoreUpdateScheduler');
+      this.logManager.addLog(
+        'warn',
+        `Core auto-update periodic check error: ${e}`,
+        'CoreUpdateScheduler'
+      );
     } finally {
       this.isRunning = false;
     }

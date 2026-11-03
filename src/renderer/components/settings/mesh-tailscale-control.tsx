@@ -236,27 +236,27 @@ export function MeshTailscaleControl({
     state === 'connected' ? (
       <span className="nd-mesh-joined-tag">
         {JOINED_CHECK}
-        {t('servers.meshJoinedTag', '已接入')}
+        {t('servers.meshJoinedTag', 'Joined')}
       </span>
     ) : state === 'key-ready' ? (
       <span className="nd-mesh-joined-tag">
         <KeyRound />
-        {t('servers.tsConnCardKeyReady', '已配置 Auth Key')}
+        {t('servers.tsConnCardKeyReady', 'Auth Key configured')}
       </span>
     ) : null;
   const sub = spinning
-    ? t('servers.tsConnCardLoggingIn', '连接中…')
+    ? t('servers.tsConnCardLoggingIn', 'Connecting…')
     : state === 'connected'
-      ? t('servers.meshTsManageSub', '设置 · 登出 / 切换账户')
+      ? t('servers.meshTsManageSub', 'Settings · Log out / Switch account')
       : state === 'key-ready'
-        ? t('servers.meshTsKeyReadySub', '设置 · 删除')
-        : t('servers.meshTsAddSub', '交互登录 / AuthKey');
+        ? t('servers.meshTsKeyReadySub', 'Settings · Delete')
+        : t('servers.meshTsAddSub', 'Interactive login / AuthKey');
 
   const trigger = (
     <button
       type="button"
       className={cn('nd-mesh-btn', isJoined && 'is-joined')}
-      title={t('servers.meshTsEntryTitle', 'Tailscale 组网接入与账户管理')}
+      title={t('servers.meshTsEntryTitle', 'Tailscale mesh access and account management')}
     >
       <span className="nd-mesh-ic">
         {spinning ? <Loader2 className="h-[17px] w-[17px] animate-spin" /> : TS_ICON}
@@ -278,7 +278,7 @@ export function MeshTailscaleControl({
       <>
         <DropdownMenuItem disabled={connecting} onClick={() => void handleConnect()}>
           <LinkIcon className="me-2 h-4 w-4" />
-          {t('servers.tsConnCardConnect', '连接 Tailscale')}
+          {t('servers.tsConnCardConnect', 'Connect Tailscale')}
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => {
@@ -287,7 +287,7 @@ export function MeshTailscaleControl({
           }}
         >
           <KeyRound className="me-2 h-4 w-4" />
-          {t('servers.tsConnCardUseAuthKey', '用 Auth Key')}
+          {t('servers.tsConnCardUseAuthKey', 'Use Auth Key')}
         </DropdownMenuItem>
       </>
     ) : state === 'logging-in' ? (
@@ -295,26 +295,26 @@ export function MeshTailscaleControl({
         {tsNode && (
           <DropdownMenuItem onClick={() => openTailscaleLogin(tsNode, authUrl)}>
             <LinkIcon className="me-2 h-4 w-4" />
-            {t('servers.tsConnCardOpenLogin', '打开登录页')}
+            {t('servers.tsConnCardOpenLogin', 'Open login page')}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onClick={() => void handleCancel()}>
-          {t('servers.tsConnCardCancel', '取消')}
+          {t('servers.tsConnCardCancel', 'Cancel')}
         </DropdownMenuItem>
       </>
     ) : state === 'connected' ? (
       <>
         <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
           <Settings className="me-2 h-4 w-4" />
-          {t('servers.tsConnCardSettings', '设置')}
+          {t('servers.tsConnCardSettings', 'Settings')}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleSwitchAccount}>
           <RefreshCw className="me-2 h-4 w-4" />
-          {t('servers.tsReauth', '重新登录 / 切换账号')}
+          {t('servers.tsReauth', 'Re-login · switch account')}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => void handleDisconnect()}>
           <Plug className="me-2 h-4 w-4" />
-          {t('servers.tsConnCardDisconnect', '断开')}
+          {t('servers.tsConnCardDisconnect', 'Disconnect')}
         </DropdownMenuItem>
       </>
     ) : (
@@ -322,14 +322,14 @@ export function MeshTailscaleControl({
       <>
         <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
           <Settings className="me-2 h-4 w-4" />
-          {t('servers.tsConnCardSettings', '设置')}
+          {t('servers.tsConnCardSettings', 'Settings')}
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => setDeleteOpen(true)}
           className="text-destructive focus:text-destructive"
         >
           <Trash2 className="me-2 h-4 w-4" />
-          {t('servers.tsConnCardDelete', '删除')}
+          {t('servers.tsConnCardDelete', 'Delete')}
         </DropdownMenuItem>
       </>
     );
@@ -351,12 +351,12 @@ export function MeshTailscaleControl({
         }}
         title={
           showKeyForm
-            ? t('servers.tsConnCardUseAuthKey', '用 Auth Key')
-            : t('servers.tsConnCardSettingsTitle', 'Tailscale 设置')
+            ? t('servers.tsConnCardUseAuthKey', 'Use Auth Key')
+            : t('servers.tsConnCardSettingsTitle', 'Tailscale Settings')
         }
         description={t(
           'servers.tsConnCardSettingsDesc',
-          '出口节点、子网路由与高级选项。代理运行中保存会自动重连以生效。'
+          'Exit node, subnet routing and advanced options. Saving while the proxy is running auto-reconnects to apply.'
         )}
         onSubmit={handleSaveSettings}
         submitLabel={t('common.save')}
@@ -378,12 +378,12 @@ export function MeshTailscaleControl({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('servers.tsConnCardDeleteTitle', '删除 Tailscale 连接？')}
+              {t('servers.tsConnCardDeleteTitle', 'Delete Tailscale connection?')}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t(
                 'servers.tsConnCardDeleteDesc',
-                '将退出登录并移除此 Tailscale 节点配置，可随时重新连接。'
+                'Logs out and removes this Tailscale node config. You can reconnect anytime.'
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>

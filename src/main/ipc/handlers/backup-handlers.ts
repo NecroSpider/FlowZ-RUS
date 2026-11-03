@@ -111,9 +111,9 @@ function buildBackupInfo(
 }
 
 const IMPORT_FILTERS = [
-  { name: 'FlowZ 备份文件', extensions: ['flowz-backup'] },
-  { name: 'JSON 文件', extensions: ['json'] },
-  { name: '所有文件', extensions: ['*'] },
+  { name: 'FlowZ backup files', extensions: ['flowz-backup'] },
+  { name: 'JSON files', extensions: ['json'] },
+  { name: 'All files', extensions: ['*'] },
 ];
 
 export function registerBackupHandlers(
@@ -139,11 +139,11 @@ export function registerBackupHandlers(
       };
 
       const result = await dialog.showSaveDialog({
-        title: '导出 FlowZ 配置备份',
+        title: 'Export FlowZ Config Backup',
         defaultPath: `flowz-backup-${new Date().toISOString().slice(0, 10)}.flowz-backup`,
         filters: [
-          { name: 'FlowZ 备份文件', extensions: ['flowz-backup'] },
-          { name: '所有文件', extensions: ['*'] },
+          { name: 'FlowZ backup files', extensions: ['flowz-backup'] },
+          { name: 'All files', extensions: ['*'] },
         ],
       });
 
@@ -172,7 +172,7 @@ export function registerBackupHandlers(
     }
   >(IPC_CHANNELS.BACKUP_IMPORT_PICK, async (_event: IpcMainInvokeEvent) => {
     const result = await dialog.showOpenDialog({
-      title: '导入 FlowZ 配置备份',
+      title: 'Import FlowZ Config Backup',
       filters: IMPORT_FILTERS,
       properties: ['openFile'],
     });
@@ -225,7 +225,7 @@ export function registerBackupHandlers(
         crossPlatformDisabledRules = sanitizeCrossPlatformRules(merged, parsed.platform);
         if (crossPlatformDisabledRules > 0) {
           console.log(
-            `[BackupHandlers] 跨平台导入（${parsed.platform}→${process.platform}）：禁用 ${crossPlatformDisabledRules} 条进程规则（保留供重映射）`
+            `[BackupHandlers] Cross-platform import (${parsed.platform} -> ${process.platform}): disabled ${crossPlatformDisabledRules} process rule(s) (kept for remapping)`
           );
         }
       }
@@ -246,12 +246,15 @@ export function registerBackupHandlers(
         .then((r) => {
           if (r.missing > 0) {
             console.log(
-              `[BackupHandlers] 恢复补缺规则资源：缺 ${r.missing}，成功 ${r.ok}，失败 ${r.failed}`
+              `[BackupHandlers] Restored missing rule resources: missing ${r.missing}, succeeded ${r.ok}, failed ${r.failed}`
             );
           }
         })
         .catch((e) =>
-          console.warn('[BackupHandlers] 恢复补缺规则资源失败（下次自动更新兜底）:', e)
+          console.warn(
+            '[BackupHandlers] Failed to restore missing rule resources (the next auto-update will retry):',
+            e
+          )
         );
 
       const info = buildBackupInfo(merged, crossPlatformDisabledRules);

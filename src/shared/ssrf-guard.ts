@@ -137,12 +137,16 @@ export async function assertHostAllowed(
 ): Promise<void> {
   const host = urlObj.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (host === 'localhost') {
-    throw new Error(`订阅地址指向本机/内网/link-local，已拒绝: ${urlObj.hostname}`);
+    throw new Error(
+      `Subscription URL points to a local/private/link-local address, rejected: ${urlObj.hostname}`
+    );
   }
   if (isIP(host)) {
     // 字面 IP 无「域名反查真实」语义——字面 FakeIP 也按内网拒（不豁免），防 https://[fc00::57] 直连内网绕过。
     if (isPrivateIp(host)) {
-      throw new Error(`订阅地址指向本机/内网/link-local，已拒绝: ${urlObj.hostname}`);
+      throw new Error(
+        `Subscription URL points to a local/private/link-local address, rejected: ${urlObj.hostname}`
+      );
     }
     return;
   }
@@ -152,18 +156,20 @@ export async function assertHostAllowed(
     resolved = await lookup(host);
   } catch (e: any) {
     throw new Error(
-      `订阅地址解析失败，已拒绝: ${urlObj.hostname}（${e?.code ?? e?.message ?? e}）`
+      `DNS lookup failed for subscription host, rejected: ${urlObj.hostname} (${e?.code ?? e?.message ?? e})`
     );
   }
   if (resolved.length === 0) {
-    throw new Error(`订阅地址无法解析到任何 IP，已拒绝: ${urlObj.hostname}`);
+    throw new Error(
+      `DNS returned no addresses for subscription host, rejected: ${urlObj.hostname}`
+    );
   }
   for (const r of resolved) {
     // 仅经代理时豁免 FakeIP（核按域名 socks5h 重解析真实，本机内网不可达）；直连不豁免（域名真实解析内网仍须拦）。
     if (exemptFakeIp && isFlowzFakeIp(r.address)) continue;
     if (isPrivateIp(r.address)) {
       throw new Error(
-        `订阅地址解析到本机/内网/link-local，已拒绝: ${urlObj.hostname} → ${r.address}`
+        `Subscription host resolves to a local/private/link-local address, rejected: ${urlObj.hostname} -> ${r.address}`
       );
     }
   }

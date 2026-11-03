@@ -175,7 +175,7 @@ describe('优先级重排 + mesh 重叠提醒', () => {
       ],
     } as unknown as UserConfig;
     buildRouteConfig(cfg, idMap, deps);
-    expect(logs.some(([lvl, msg]) => lvl === 'warn' && msg.includes('组网'))).toBe(true);
+    expect(logs.some(([lvl, msg]) => lvl === 'warn' && msg.includes('mesh'))).toBe(true);
   });
 
   it('mesh 不重叠（172.16 vs 组网 192.168.50）→ 不 warn', () => {
@@ -189,7 +189,7 @@ describe('优先级重排 + mesh 重叠提醒', () => {
       ],
     } as unknown as UserConfig;
     buildRouteConfig(cfg, idMap, deps);
-    expect(logs.some(([lvl, msg]) => lvl === 'warn' && msg.includes('组网'))).toBe(false);
+    expect(logs.some(([lvl, msg]) => lvl === 'warn' && msg.includes('mesh'))).toBe(false);
   });
 });
 

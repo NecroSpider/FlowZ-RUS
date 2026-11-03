@@ -113,12 +113,16 @@ export function HomeStatusBar() {
           </span>
         ) : exit.invalid ? (
           // TS 出口 API 直判无效（未广告出口设备 / exit peer 离线）→ 橘色 warn「出口无效」，不再空转「检测中」（本修复）。
-          <span className="text-[hsl(var(--warn))]">{t('home.exitInvalid', '出口无效')}</span>
+          <span className="text-[hsl(var(--warn))]">{t('home.exitInvalid', 'Exit invalid')}</span>
         ) : exit.detecting ? (
-          <span className="text-[hsl(var(--fg-faint))]">{t('home.exitDetecting', '检测中…')}</span>
+          <span className="text-[hsl(var(--fg-faint))]">
+            {t('home.exitDetecting', 'Detecting…')}
+          </span>
         ) : exit.failed ? (
           // 探测超时/失败（含 TS 选中出口广播失效、路由无效）→ 橘色 warn 可见警示，替代空白「—」（用户反馈）。
-          <span className="text-[hsl(var(--warn))]">{t('home.exitTimeout', '检测超时')}</span>
+          <span className="text-[hsl(var(--warn))]">
+            {t('home.exitTimeout', 'Detection timeout')}
+          </span>
         ) : (
           <span className="text-[hsl(var(--fg-faint))]">—</span>
         )}
@@ -134,8 +138,8 @@ export function HomeStatusBar() {
           type="button"
           onClick={handleReprobe}
           disabled={reprobing}
-          title={t('home.reprobeExit', '重新检测出口')}
-          aria-label={t('home.reprobeExit', '重新检测出口')}
+          title={t('home.reprobeExit', 'Re-check exit')}
+          aria-label={t('home.reprobeExit', 'Re-check exit')}
           className="inline-flex shrink-0 items-center text-[hsl(var(--fg-faint))] transition-colors hover:text-[hsl(var(--fg))] disabled:opacity-50 [-webkit-app-region:no-drag]"
         >
           <RefreshCw className={cn('h-3 w-3', reprobing && 'animate-spin')} />
@@ -157,7 +161,7 @@ export function HomeStatusBar() {
                 'opacity-50'
             )}
           >
-            {selectedLatency === -1 ? t('servers.timeout', '超时') : `${selectedLatency} ms`}
+            {selectedLatency === -1 ? t('servers.timeout', 'Timeout') : `${selectedLatency} ms`}
           </span>
         </>
       )}

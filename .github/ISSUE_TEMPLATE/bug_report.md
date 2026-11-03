@@ -1,46 +1,47 @@
 ---
-name: Bug 反馈
-about: 报告一个可复现的问题（连接失败 / DNS / 崩溃 / 更新安装等）
+name: Bug report
+about: Report a reproducible problem (connection failure / DNS / crash / update or install)
 title: "[Bug] "
 labels: bug
 assignees: ''
 ---
 
 <!--
-提交前请注意：
-1. 一个 issue 只描述一个问题；遇到新症状请另开 issue。
-2. 搭建 / 使用求助、功能建议请走 Discussions，不要发到这里。
-提示：在 FlowZ「设置 → 关于 → 报告问题」点一下，会自动带上版本/系统/内核/代理模式并打开本页，省去手填环境。
+Before you submit:
+1. One issue per problem; open a new issue for a new symptom.
+2. Setup help and feature requests go to Discussions, not here.
+Tip: in FlowZ, Settings → About → "Report a problem" opens this page with version / system / core / proxy mode already filled in.
+A diagnostic report (Settings → Logs and diagnostics → Diagnostics → Export) helps the most; secrets and node addresses are masked in it.
 -->
 
-## 环境（核心信息，务必填写）
-- FlowZ 版本（如 4.0.1）：
-- 系统 + 架构（如 Windows 11 x64 / macOS arm64）：
-- sing-box 内核版本：
-- 代理模式（系统代理 / TUN）：
+## Environment (required)
+- FlowZ version (e.g. 4.3.14):
+- OS + architecture (e.g. Windows 11 x64 / macOS arm64):
+- sing-box core version:
+- Proxy mode (system proxy / TUN):
 
-## 问题描述
-<!-- 简要说明遇到的问题 -->
+## What happened
+<!-- Short description of the problem -->
 
 
-## 复现步骤
+## Steps to reproduce
 1.
 2.
 3.
 
-## 预期行为 / 实际行为
-- 预期：
-- 实际：
+## Expected / actual
+- Expected:
+- Actual:
 
-## 原始日志（最关键）
+## Raw logs (most important)
 <!--
-错误提示末尾方括号 [...] 里是 sing-box 内核的原始日志，这段最能定位问题。
-打开 设置 → 日志（或实时日志），复制报错前后几行贴到下面代码块里。
+The part in square brackets [...] at the end of an error is the raw sing-box core log; it pinpoints the problem best.
+Open Settings → Logs (or the live log), copy a few lines around the error and paste them below.
 -->
 
 ```
-（在此粘贴日志）
+(paste logs here)
 ```
 
-## 旁证（选填，但往往是定位关键）
-<!-- 其他客户端（v2rayN / clash）是否正常？是否仅特定节点（如 Argo / CDN 优选）？地址形态（优选 IP / 优选域名）？是否启用订阅？ -->
+## Extra context (optional, often decisive)
+<!-- Does another client (v2rayN / Happ / Clash) work? Only specific nodes? IP or domain address? Subscription in use? Work VPN running? -->

@@ -164,7 +164,11 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
         await configManager.saveConfig(config);
         logManager.addLog('info', `Takeover mode changed from tray: ${modeType}`, 'Main');
         if (corrected) {
-          logManager.addLog('info', 'FakeIP 已随 TUN 自动启用（迁移冻结纠正）', 'Main');
+          logManager.addLog(
+            'info',
+            'FakeIP auto-enabled together with TUN (correcting the migration-frozen value)',
+            'Main'
+          );
           // 托盘切换常在窗口关闭时发生 → 桌面通知告知（notifyUser 内部尊重 desktopNotifications 开关）。
           notifyUser(mt('fakeIpTunAutoEnabledTitle'), mt('fakeIpTunAutoEnabledBody'));
         }

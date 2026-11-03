@@ -51,7 +51,12 @@ export function HelperManagementCard() {
   const prevBgDisabled = useRef<boolean | undefined>(undefined);
   useEffect(() => {
     if (prevBgDisabled.current === true && backgroundDisabled === false) {
-      toast.success(t('helper.backgroundRestored', '「允许在后台」已恢复，提权助手可用'));
+      toast.success(
+        t(
+          'helper.backgroundRestored',
+          '"Allow in the Background" restored — the privileged helper is available'
+        )
+      );
     }
     prevBgDisabled.current = backgroundDisabled;
   }, [backgroundDisabled, t]);
@@ -87,14 +92,14 @@ export function HelperManagementCard() {
         ? {
             ico: 'warn',
             pill: 'warn',
-            label: t('helper.statusBackgroundDisabled', '后台运行被禁用'),
+            label: t('helper.statusBackgroundDisabled', 'Background run disabled'),
             desc: t('helper.backgroundDisabledDesc'),
           }
         : helperStatus.pathMismatch
           ? {
               ico: 'warn',
               pill: 'warn',
-              label: t('helper.statusPathMismatch', '应用已移动，需修复'),
+              label: t('helper.statusPathMismatch', 'App moved, repair needed'),
               desc: t('helper.pathMismatchDesc'),
             }
           : helperStatus.needsRepair
@@ -108,7 +113,7 @@ export function HelperManagementCard() {
               ? {
                   ico: 'warn',
                   pill: 'warn',
-                  label: t('helper.statusUpgradeable', '可升级'),
+                  label: t('helper.statusUpgradeable', 'Upgradeable'),
                   desc: t('helper.upgradeableDesc'),
                 }
               : {
@@ -154,7 +159,7 @@ export function HelperManagementCard() {
               onClick={() => openExternal(LOGIN_ITEMS_SETTINGS_URL)}
               disabled={busy !== null}
             >
-              {t('helper.disabledOpenSettings', '打开系统设置')}
+              {t('helper.disabledOpenSettings', 'Open System Settings')}
             </button>
           )}
           {installed && needsRepair && !backgroundDisabled && (
@@ -176,7 +181,7 @@ export function HelperManagementCard() {
               disabled={busy !== null}
             >
               {busy === 'install' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {t('helper.upgrade', '升级')}
+              {t('helper.upgrade', 'Upgrade')}
             </button>
           )}
           {installed && (

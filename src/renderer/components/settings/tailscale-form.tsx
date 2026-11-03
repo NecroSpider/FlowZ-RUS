@@ -263,14 +263,14 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
                     onClick={() => void runTailscaleLogin(serverConfig)}
                   >
                     {loggingIn
-                      ? t('servers.tsLoggingIn', '登录中…')
+                      ? t('servers.tsLoggingIn', 'Logging in…')
                       : t('servers.tsLoginNow', 'Log in now')}
                   </Button>
                   <p className="text-xs text-muted-foreground">
                     {loggingIn
                       ? t(
                           'servers.tsLoggingInDesc',
-                          '已打开浏览器，请完成授权；登录成功后会自动更新（无需重开）。'
+                          'Browser opened — finish the authorization; status updates automatically on success.'
                         )
                       : t(
                           'servers.tsLoginNowDesc',

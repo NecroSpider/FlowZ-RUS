@@ -64,7 +64,7 @@ export function RulesPage() {
         !orderDraft.every((id) => customRules.some((r) => r.id === id)))
     ) {
       setOrderDraft(null);
-      toast.info(t('rules.orderConflict', '规则已在别处变更，已退出排序编辑'));
+      toast.info(t('rules.orderConflict', 'Rules changed elsewhere; exited order editing.'));
     }
   }, [customRules, orderDraft, t]);
 
@@ -218,9 +218,12 @@ export function RulesPage() {
         return (
           <span
             className="rl-badge warn"
-            title={t('rules.targetMissingTip', '指定节点已删除，运行时回退为跟随全局选中节点')}
+            title={t(
+              'rules.targetMissingTip',
+              'The selected node was deleted; at runtime it falls back to following the global selected node.'
+            )}
           >
-            {t('rules.targetMissing', '节点已失效')}
+            {t('rules.targetMissing', 'Node missing')}
           </span>
         );
       }
@@ -228,7 +231,7 @@ export function RulesPage() {
     }
     return (
       <>
-        → {selectedServer?.name || '—'} · {t('rules.followGlobal', '跟随全局')}
+        → {selectedServer?.name || '—'} · {t('rules.followGlobal', 'Follow global')}
       </>
     );
   };
@@ -237,10 +240,10 @@ export function RulesPage() {
   const chainSteps: { label: string; on?: boolean }[] = [
     { label: t('rules.customRules'), on: true },
     { label: t('rules.appRulesTitle') },
-    { label: t('servers.meshNodes', '组网') },
-    { label: t('rules.chainStepBypassLan', '绕过局域网') },
-    { label: t('rules.chainStepSmart', '智能分流') },
-    { label: t('rules.chainStepDefault', '默认出口') },
+    { label: t('servers.meshNodes', 'Mesh') },
+    { label: t('rules.chainStepBypassLan', 'Bypass LAN') },
+    { label: t('rules.chainStepSmart', 'Smart routing') },
+    { label: t('rules.chainStepDefault', 'Default egress') },
   ];
 
   const showSearchBox =
@@ -270,7 +273,9 @@ export function RulesPage() {
             <path d="M12 3l9 16H3z" strokeLinejoin="round" />
             <path d="M12 10v4M12 16.5h.01" strokeLinecap="round" />
           </svg>
-          <div>{t('rules.smartOnlyHint', '当前模式下不生效，仅「智能分流」模式生效。')}</div>
+          <div>
+            {t('rules.smartOnlyHint', 'Not active in the current mode — only Smart mode applies.')}
+          </div>
         </div>
       )}
 
@@ -289,8 +294,14 @@ export function RulesPage() {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder={t('rules.searchPlaceholder', '搜索规则（备注 / 值 / 类型 / 策略）')}
-                  aria-label={t('rules.searchPlaceholder', '搜索规则（备注 / 值 / 类型 / 策略）')}
+                  placeholder={t(
+                    'rules.searchPlaceholder',
+                    'Search rules (remarks / values / type / policy)'
+                  )}
+                  aria-label={t(
+                    'rules.searchPlaceholder',
+                    'Search rules (remarks / values / type / policy)'
+                  )}
                 />
               </label>
             )}
@@ -302,11 +313,13 @@ export function RulesPage() {
                 onClick={enterOrderEdit}
                 disabled={searchActive}
                 title={
-                  searchActive ? t('rules.editOrderHintSearch', '清除搜索后可编辑顺序') : undefined
+                  searchActive
+                    ? t('rules.editOrderHintSearch', 'Clear search to edit order')
+                    : undefined
                 }
               >
                 <ListOrdered size={15} />
-                {t('rules.editOrder', '编辑顺序')}
+                {t('rules.editOrder', 'Edit order')}
               </button>
             )}
           </div>
@@ -327,7 +340,7 @@ export function RulesPage() {
             className="px-4 py-10 text-center text-[13px]"
             style={{ color: 'hsl(var(--fg-faint))' }}
           >
-            {t('rules.searchNoMatch', '无匹配规则')}
+            {t('rules.searchNoMatch', 'No matching rules')}
           </div>
         ) : (
           <DndContext
@@ -359,7 +372,7 @@ export function RulesPage() {
                   <div className="rl-draftbar">
                     <span className="rl-draft-note">
                       <span className="dot warn" />
-                      {t('rules.orderDraftUnsaved', '未保存的排序草稿')}
+                      {t('rules.orderDraftUnsaved', 'Unsaved order draft')}
                     </span>
                     <div className="rl-draft-btns">
                       <button
@@ -368,7 +381,7 @@ export function RulesPage() {
                         onClick={cancelOrderEdit}
                         disabled={savingOrder}
                       >
-                        {t('common.cancel', '取消')}
+                        {t('common.cancel', 'Cancel')}
                       </button>
                       <button
                         type="button"
@@ -376,7 +389,7 @@ export function RulesPage() {
                         onClick={saveOrderEdit}
                         disabled={savingOrder}
                       >
-                        {t('rules.saveOrder', '保存顺序')}
+                        {t('rules.saveOrder', 'Save order')}
                       </button>
                     </div>
                   </div>
@@ -385,7 +398,7 @@ export function RulesPage() {
                 <div className="rl-table">
                   <div className="rl-thead">
                     <span>{t('rules.enable')}</span>
-                    <span>{t('rules.ruleColumn', '规则')}</span>
+                    <span>{t('rules.ruleColumn', 'Rule')}</span>
                     <span>{t('rules.policy')}</span>
                     <span className="rl-th-ops">{t('common.actions')}</span>
                   </div>

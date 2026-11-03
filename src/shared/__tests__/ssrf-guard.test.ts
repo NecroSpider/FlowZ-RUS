@@ -75,19 +75,19 @@ describe('assertHostAllowed — DNS rebinding 防护（注入 lookup）', () => 
   });
 
   it('字面内网 IP → 拒绝', async () => {
-    await expect(ok('127.0.0.1')).rejects.toThrow(/已拒绝/);
-    await expect(ok('10.0.0.1')).rejects.toThrow(/已拒绝/);
+    await expect(ok('127.0.0.1')).rejects.toThrow(/rejected/);
+    await expect(ok('10.0.0.1')).rejects.toThrow(/rejected/);
   });
 
   it('localhost → 拒绝（不经 lookup）', async () => {
-    await expect(ok('localhost')).rejects.toThrow(/已拒绝/);
+    await expect(ok('localhost')).rejects.toThrow(/rejected/);
   });
 
   it('域名解析到内网 → 拒绝（rebinding）', async () => {
     const lookup = async () => [{ address: '169.254.169.254' }];
     await expect(
       assertHostAllowed(new URL('https://evil.example.com/sub'), lookup)
-    ).rejects.toThrow(/已拒绝/);
+    ).rejects.toThrow(/rejected/);
   });
 
   it('域名解析到公网 → 放行', async () => {
@@ -102,18 +102,18 @@ describe('assertHostAllowed — DNS rebinding 防护（注入 lookup）', () => 
       throw Object.assign(new Error('boom'), { code: 'ENOTFOUND' });
     };
     await expect(assertHostAllowed(new URL('https://x.example.com/'), fail)).rejects.toThrow(
-      /解析失败/
+      /DNS lookup failed/
     );
     const empty = async () => [];
     await expect(assertHostAllowed(new URL('https://y.example.com/'), empty)).rejects.toThrow(
-      /无法解析/
+      /no addresses/
     );
   });
 
   it('多 IP 中任一内网 → 拒绝', async () => {
     const lookup = async () => [{ address: '93.184.216.34' }, { address: '10.0.0.5' }];
     await expect(assertHostAllowed(new URL('https://mixed.example.com/'), lookup)).rejects.toThrow(
-      /已拒绝/
+      /rejected/
     );
   });
 
@@ -132,27 +132,27 @@ describe('assertHostAllowed — DNS rebinding 防护（注入 lookup）', () => 
     const v6 = async () => [{ address: 'fc00::57' }];
     await expect(
       assertHostAllowed(new URL('https://subscribe.example.com/sub'), v6)
-    ).rejects.toThrow(/已拒绝/);
+    ).rejects.toThrow(/rejected/);
   });
 
   it('字面内网 IP（https://[fc00::57]）即便 exemptFakeIp=true → 拒（字面 IP 无域名反查，不豁免）', async () => {
     await expect(
       assertHostAllowed(new URL('https://[fc00::57]/sub'), neverCalled, true)
-    ).rejects.toThrow(/已拒绝/);
+    ).rejects.toThrow(/rejected/);
   });
 
   it('真实 ULA（fd00::/8）非 FakeIP + exemptFakeIp=true → 仍拒（豁免只覆盖 FakeIP 段）', async () => {
     const lookup = async () => [{ address: 'fd00::1' }];
     await expect(
       assertHostAllowed(new URL('https://evil.example.com/sub'), lookup, true)
-    ).rejects.toThrow(/已拒绝/);
+    ).rejects.toThrow(/rejected/);
   });
 
   it('FakeIP（2001:2）+ 真内网 混合 + exemptFakeIp=true → 拒（豁免假段但真内网仍命中）', async () => {
     const lookup = async () => [{ address: '2001:2::57' }, { address: '10.0.0.5' }];
     await expect(
       assertHostAllowed(new URL('https://mixed2.example.com/'), lookup, true)
-    ).rejects.toThrow(/已拒绝/);
+    ).rejects.toThrow(/rejected/);
   });
 });
 

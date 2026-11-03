@@ -67,14 +67,18 @@ export class AutoSwitchService extends EventEmitter {
     this.consecutiveSwitches = 0;
     this.breakerTrippedAt = 0;
     this.startHeartbeat();
-    this.logManager.addLog('info', '自动换节点已启用（应用层连通性检测）', 'AutoSwitch');
+    this.logManager.addLog(
+      'info',
+      'Auto node switching enabled (application-layer connectivity check)',
+      'AutoSwitch'
+    );
   }
 
   disable(): void {
     if (!this.enabled) return;
     this.enabled = false;
     this.stopHeartbeat();
-    this.logManager.addLog('info', '自动换节点已禁用', 'AutoSwitch');
+    this.logManager.addLog('info', 'Auto node switching disabled', 'AutoSwitch');
   }
 
   isEnabled(): boolean {
@@ -87,7 +91,7 @@ export class AutoSwitchService extends EventEmitter {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
       this.runHeartbeat().catch((e) => {
-        this.logManager.addLog('warn', `心跳检测异常: ${e}`, 'AutoSwitch');
+        this.logManager.addLog('warn', `Heartbeat check error: ${e}`, 'AutoSwitch');
       });
     }, HEARTBEAT_INTERVAL_MS);
   }
@@ -123,7 +127,7 @@ export class AutoSwitchService extends EventEmitter {
       if (this.consecutiveFailures > 0) {
         this.logManager.addLog(
           'info',
-          `连通性恢复正常（此前连续失败 ${this.consecutiveFailures} 次）`,
+          `Connectivity restored (after ${this.consecutiveFailures} consecutive failures)`,
           'AutoSwitch'
         );
       }
@@ -134,13 +138,13 @@ export class AutoSwitchService extends EventEmitter {
       this.consecutiveFailures++;
       this.logManager.addLog(
         'warn',
-        `连通性检测失败 [${this.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}]: 当前节点 ${server.name}`,
+        `Connectivity check failed [${this.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}]: current node ${server.name}`,
         'AutoSwitch'
       );
 
       if (this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         this.consecutiveFailures = 0;
-        await this.triggerSwitch('连通性检测');
+        await this.triggerSwitch('connectivity check');
       }
     }
   }
@@ -149,7 +153,7 @@ export class AutoSwitchService extends EventEmitter {
 
   private async triggerSwitch(reason: string): Promise<void> {
     if (this.isSwitching) {
-      this.logManager.addLog('info', '换节点操作已在进行中，跳过', 'AutoSwitch');
+      this.logManager.addLog('info', 'Node switch already in progress, skipping', 'AutoSwitch');
       return;
     }
 
@@ -159,8 +163,8 @@ export class AutoSwitchService extends EventEmitter {
       if (sinceTrip < BREAKER_COOLDOWN_MS) {
         this.logManager.addLog(
           'warn',
-          `自动切换已熔断（连续 ${this.consecutiveSwitches} 次切换未恢复连通），` +
-            `${Math.ceil((BREAKER_COOLDOWN_MS - sinceTrip) / 1000)}s 内暂停切换，请检查网络/订阅`,
+          `Auto switching circuit breaker tripped (${this.consecutiveSwitches} consecutive switches did not restore connectivity); ` +
+            `switching paused for ${Math.ceil((BREAKER_COOLDOWN_MS - sinceTrip) / 1000)}s, check your network/subscription`,
           'AutoSwitch'
         );
         return;
@@ -173,7 +177,11 @@ export class AutoSwitchService extends EventEmitter {
     const now = Date.now();
     if (now - this.lastSwitchTime < SWITCH_COOLDOWN_MS) {
       const remaining = Math.ceil((SWITCH_COOLDOWN_MS - (now - this.lastSwitchTime)) / 1000);
-      this.logManager.addLog('info', `自动换节点冷却中，${remaining}s 后可再次触发`, 'AutoSwitch');
+      this.logManager.addLog(
+        'info',
+        `Auto node switching cooling down, can trigger again in ${remaining}s`,
+        'AutoSwitch'
+      );
       return;
     }
 
@@ -187,13 +195,17 @@ export class AutoSwitchService extends EventEmitter {
       // 过滤出其他可用节点（排除当前节点）
       const candidates = config.servers.filter((s) => s.id !== currentId);
       if (candidates.length === 0) {
-        this.logManager.addLog('warn', '没有其他可用节点，无法自动切换', 'AutoSwitch');
+        this.logManager.addLog(
+          'warn',
+          'No other nodes available, cannot auto switch',
+          'AutoSwitch'
+        );
         return;
       }
 
       this.logManager.addLog(
         'info',
-        `[${reason}] 开始对 ${candidates.length} 个候选节点测速...`,
+        `[${reason}] Testing latency of ${candidates.length} candidate nodes...`,
         'AutoSwitch'
       );
 
@@ -211,14 +223,18 @@ export class AutoSwitchService extends EventEmitter {
         .sort((a, b) => (a.latency as number) - (b.latency as number));
 
       if (available.length === 0) {
-        this.logManager.addLog('warn', '所有候选节点均不可达，无法自动切换', 'AutoSwitch');
+        this.logManager.addLog(
+          'warn',
+          'All candidate nodes are unreachable, cannot auto switch',
+          'AutoSwitch'
+        );
         return;
       }
 
       const best = available[0];
       this.logManager.addLog(
         'info',
-        `选中最优节点: ${best.server.name} (${best.latency}ms)`,
+        `Selected best node: ${best.server.name} (${best.latency}ms)`,
         'AutoSwitch'
       );
 
@@ -235,7 +251,7 @@ export class AutoSwitchService extends EventEmitter {
         this.breakerTrippedAt = Date.now();
       }
 
-      this.logManager.addLog('info', `✅ 自动换节点成功: ${best.server.name}`, 'AutoSwitch');
+      this.logManager.addLog('info', `✅ Auto switched to node: ${best.server.name}`, 'AutoSwitch');
 
       // 通知渲染进程
       const mainWindow = this.getMainWindow();
@@ -250,9 +266,13 @@ export class AutoSwitchService extends EventEmitter {
       const msg = err instanceof Error ? err.message : String(err);
       // 内核替换窗口期 switchMode 被 core-swap 门控瞬态拒绝（CORE_UPDATE_IN_PROGRESS），非真实失败，降级避免日志噪音
       if ((err as any)?.code === ProxyErrorCode.CORE_UPDATE_IN_PROGRESS) {
-        this.logManager.addLog('debug', `自动换节点因内核更新中暂缓: ${msg}`, 'AutoSwitch');
+        this.logManager.addLog(
+          'debug',
+          `Auto node switch postponed while the core is updating: ${msg}`,
+          'AutoSwitch'
+        );
       } else {
-        this.logManager.addLog('error', `自动换节点失败: ${msg}`, 'AutoSwitch');
+        this.logManager.addLog('error', `Auto node switch failed: ${msg}`, 'AutoSwitch');
       }
     } finally {
       this.isSwitching = false;

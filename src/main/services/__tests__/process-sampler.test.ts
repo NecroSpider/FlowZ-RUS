@@ -233,7 +233,7 @@ describe('mapRendererHeapSample', () => {
 
   it('空样本 {}（preload 取数全失败）→ unavailable，不渲染空节', () => {
     const r = mapRendererHeapSample({});
-    expect(r.unavailable).toContain('渲染进程取数为空');
+    expect(r.unavailable).toContain('renderer returned no data');
     expect(r.usedHeapMb).toBeUndefined();
     expect(r.blinkResourceMb).toBeUndefined();
   });
@@ -249,7 +249,7 @@ describe('mapRendererHeapSample', () => {
 describe('collectRendererHeap', () => {
   it('introspect 缺失 → unavailable', async () => {
     const r = await collectRendererHeap(undefined);
-    expect(r.unavailable).toContain('无渲染窗口');
+    expect(r.unavailable).toContain('no renderer window');
   });
 
   it('introspect 返回 null（无窗口）→ unavailable', async () => {
@@ -274,6 +274,6 @@ describe('collectRendererHeap', () => {
 
   it('introspect 超时（never resolve）→ unavailable（超时兜底，绝不挂住）', async () => {
     const r = await collectRendererHeap(() => new Promise(() => {}), 20);
-    expect(r.unavailable).toContain('超时');
+    expect(r.unavailable).toContain('timed out');
   });
 });

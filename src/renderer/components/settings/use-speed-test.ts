@@ -27,18 +27,18 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
       t('servers.speedTestingNodes', {
         tested,
         total,
-        defaultValue: '测速中 · {{tested}}/{{total}} 节点',
+        defaultValue: 'Testing · {{tested}}/{{total}} nodes',
       }),
     done: t('servers.speedTestDone'),
     fail: t('servers.speedTestFail'),
-    interrupted: t('servers.speedTestInterrupted', { defaultValue: '测速中断' }),
+    interrupted: t('servers.speedTestInterrupted', { defaultValue: 'Speed test interrupted' }),
     skippedSummary: (n: number) =>
-      t('servers.speedTestSkippedSummary', { count: n, defaultValue: '{{count}} 个节点待入池（重启内核后可测）' }),
+      t('servers.speedTestSkippedSummary', { count: n, defaultValue: '{{count}} node(s) pending pool (restart core to test)' }),
     interruptedSummary: (tested: number, total: number) =>
       t('servers.speedTestInterruptedSummary', {
         tested,
         total,
-        defaultValue: '已完成 {{tested}}/{{total}} 节点，其余保留原值',
+        defaultValue: 'Completed {{tested}}/{{total}} nodes; the rest keep prior values',
       }),
   };
 

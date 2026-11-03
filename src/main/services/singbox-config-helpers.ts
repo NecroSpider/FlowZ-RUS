@@ -46,7 +46,7 @@ export function buildIdToTagMap(servers: ServerConfig[]): Map<string, string> {
   const idToTagMap = new Map<string, string>();
   const usedTags = new Set<string>(RESERVED_OUTBOUND_TAGS);
   for (const s of servers) {
-    const baseTag = s.name.trim() || '未命名节点';
+    const baseTag = s.name.trim() || 'Unnamed node';
     let tag = baseTag;
     let count = 1;
     while (usedTags.has(tag)) {

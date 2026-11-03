@@ -122,7 +122,7 @@ export function buildCustomRules(
               if (!isValidSrsFile(filePath)) {
                 deps.log(
                   'warn',
-                  `ruleSet 规则引用的内置资源文件缺失/损坏，已跳过: ${builtinMeta.fileName}`
+                  `ruleSet rule references a missing/corrupted built-in resource file, skipped: ${builtinMeta.fileName}`
                 );
                 continue;
               }
@@ -133,14 +133,20 @@ export function buildCustomRules(
             } else {
               const res = ruleResources.find((rr) => rr.id === resId);
               if (!res) {
-                deps.log('warn', `ruleSet 规则引用的资源不存在，已跳过: ${v}`);
+                deps.log(
+                  'warn',
+                  `ruleSet rule references a resource that does not exist, skipped: ${v}`
+                );
                 continue;
               }
               const filePath = path.join(getRuleResourcesPath(), res.fileName);
               // 与 builtin 分支对齐：用 isValidSrsFile（验 SRS 魔数）而非裸 existsSync——
               // 损坏/半写文件存在但非法时注入 local rule_set 会让 sing-box 加载 FATAL，须 fail-closed 跳过。
               if (!isValidSrsFile(filePath)) {
-                deps.log('warn', `ruleSet 规则引用的资源文件缺失/损坏，已跳过: ${res.fileName}`);
+                deps.log(
+                  'warn',
+                  `ruleSet rule references a missing/corrupted resource file, skipped: ${res.fileName}`
+                );
                 continue;
               }
               tag = `local-rs-${res.id}`;
@@ -153,7 +159,7 @@ export function buildCustomRules(
             // 旧配置 / 旁路写入的裸 URL 值 → 跳过（不再生成运行期远程下载），日志告知改用规则资源。
             deps.log(
               'warn',
-              `ruleSet 规则的远程 URL 已不再支持，请改用「规则资源」下载后引用，已跳过: ${v}`
+              `ruleSet rule remote URLs are no longer supported; download it via Rule Resources and reference that instead. Skipped: ${v}`
             );
             continue;
           }
@@ -277,7 +283,10 @@ export function buildCustomRules(
   // 远程能力已移除 → 仅日志告知，不再生成 remote rule_set / 路由规则。
   for (const ruleSet of customRuleSets) {
     if (!ruleSet.enabled || !ruleSet.url) continue;
-    deps.log('warn', `legacy 远程规则集已不再支持（请用「规则资源」），已跳过: ${ruleSet.url}`);
+    deps.log(
+      'warn',
+      `Legacy remote rule sets are no longer supported (use Rule Resources), skipped: ${ruleSet.url}`
+    );
   }
 
   return { rules, ruleSets };

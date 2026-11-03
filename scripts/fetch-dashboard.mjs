@@ -49,7 +49,7 @@ try {
   let uiRoot = top.find((p) => existsSync(join(p, 'index.html')));
   if (!uiRoot && existsSync(join(extractDir, 'index.html'))) uiRoot = extractDir;
   if (!uiRoot) {
-    throw new Error('解压产物中未找到 index.html（gh-pages 结构可能变化）');
+    throw new Error('index.html not found in the extracted archive (the gh-pages layout may have changed)');
   }
 
   // 原子替换：先拷到 DEST.tmp 再 rename 顶替，避免半写目录被打包/serve。

@@ -209,7 +209,11 @@ export function Sidebar({
       >
         <button
           onClick={toggleCollapsed}
-          title={collapsed ? t('sidebar.expand', '展开侧栏') : t('sidebar.collapse', '收起侧栏')}
+          title={
+            collapsed
+              ? t('sidebar.expand', 'Expand sidebar')
+              : t('sidebar.collapse', 'Collapse sidebar')
+          }
           className={`sidebar-toggle flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground ${
             collapsed ? (isMac ? 'h-[52px] w-[52px]' : 'h-[44px] w-[44px]') : 'h-7 w-7'
           }`}
@@ -238,7 +242,7 @@ export function Sidebar({
           <div className="pb-4 app-region-no-drag space-y-[6px]">
             <button
               onClick={() => onViewChange(settingsReturnView)}
-              title={collapsed ? t('settings.nav.back', '返回应用') : undefined}
+              title={collapsed ? t('settings.nav.back', 'Back to App') : undefined}
               className={`nav-item${collapsed ? ' collapsed' : ''}`}
               style={{ color: 'hsl(var(--muted-foreground))' }}
             >
@@ -248,7 +252,7 @@ export function Sidebar({
               />
               {!collapsed && (
                 <span style={{ color: 'hsl(var(--muted-foreground))' }}>
-                  {t('settings.nav.back', '返回应用')}
+                  {t('settings.nav.back', 'Back to App')}
                 </span>
               )}
             </button>

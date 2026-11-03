@@ -65,7 +65,7 @@ describe('tryLoadClashDoc', () => {
     expect((doc as any).dup).toBe(2);
   });
   it('解析失败上抛（不静默吞）', () => {
-    expect(() => tryLoadClashDoc('proxies:\n  - {a: : :}')).toThrow(/Clash YAML 解析失败/);
+    expect(() => tryLoadClashDoc('proxies:\n  - {a: : :}')).toThrow(/Failed to parse Clash YAML/);
   });
 });
 
@@ -428,7 +428,7 @@ describe('parseClashProxies — 协议映射', () => {
     );
     expect(r.servers).toHaveLength(1);
     expect(r.failed).toBe(1);
-    expect(r.warnings.some((w) => /解析失败/.test(w))).toBe(true);
+    expect(r.warnings.some((w) => /failed to parse/.test(w))).toBe(true);
   });
 });
 
@@ -590,7 +590,7 @@ describe('filter / exclude-filter / 非法正则', () => {
       name: string;
     }>;
     expect(res).toHaveLength(2); // 未过滤
-    expect(warns.some((w) => /非法或超长正则|非法正则/.test(w))).toBe(true);
+    expect(warns.some((w) => /invalid or overly long regex/.test(w))).toBe(true);
     expect(compileProviderFilter('[invalid(')).toBeNull();
   });
 });
@@ -953,7 +953,7 @@ describe('resolveProxyProviders — 编排', () => {
     expect(r.servers.map((s) => s.name)).toEqual(['fast']);
     expect(r.succeeded).toBe(1);
     expect(r.anyFailed).toBe(true);
-    expect(r.warnings.some((w) => /1\/2 成功/.test(w))).toBe(true);
+    expect(r.warnings.some((w) => /1\/2 succeeded/.test(w))).toBe(true);
   });
 
   it('单 provider HTTP 错误 → 其余正常 + partial', async () => {
@@ -1018,7 +1018,7 @@ describe('resolveProxyProviders — 编排', () => {
     deps.maxProviders = 8;
     const r = await resolveProxyProviders(providers, deps);
     expect(r.attempted).toBe(8);
-    expect(r.warnings.some((w) => /超上限 8/.test(w))).toBe(true);
+    expect(r.warnings.some((w) => /exceeds limit 8/.test(w))).toBe(true);
   });
 });
 
@@ -1163,7 +1163,7 @@ describe('M1 ReDoS 长度护栏', () => {
       'prov'
     ) as Array<{ name: string }>;
     expect(res).toHaveLength(2);
-    expect(warns.some((w) => /超长|非法/.test(w))).toBe(true);
+    expect(warns.some((w) => /overly long|invalid/.test(w))).toBe(true);
   });
   it('超长 name 截断后仍可被短 filter 命中（不冻结、可匹配前缀）', () => {
     const longName = 'HK' + 'z'.repeat(MAX_FILTER_NAME_LEN + 100);
@@ -1303,7 +1303,7 @@ describe('传输层白名单 + reality 完整性（issue #263 统一口径）', 
     );
     expect(r.servers).toHaveLength(0);
     expect(r.failed).toBe(1);
-    expect(r.warnings.join('\n')).toMatch(/不支持的传输层类型: xhttp/);
+    expect(r.warnings.join('\n')).toMatch(/Unsupported transport type: xhttp/);
   });
 
   it('network 缺省/tcp 正常入库（不受白名单影响）', () => {
@@ -1452,7 +1452,7 @@ describe('parseClashProxies — snell', () => {
     expect(w).toMatch(/snell-v1\(1\)/);
     expect(w).toMatch(/snell-v3\(1\)/);
     expect(w).toMatch(/snell-obfs:tls\(1\)/);
-    expect(w).toMatch(/缺 psk/);
+    expect(w).toMatch(/missing psk/);
   });
 });
 

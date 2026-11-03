@@ -10,15 +10,15 @@ func TestSelfUninstallCmdLine(t *testing.T) {
 	// 必须用**真双引号**包裹 rmdir 路径（非 EscapeArg 的 \"…\"）：cmd 不识别 \" 反转义，转义版会令 rmdir 收到
 	// 非法路径 \C:\…\ → 目录删不掉。断言出现真引号、且绝不出现反斜杠转义引号。
 	if !strings.Contains(cl, `rmdir /s /q "C:\ProgramData\FlowZ"`) {
-		t.Fatalf("rmdir 路径未用真双引号包裹: %q", cl)
+		t.Fatalf("rmdir path is not wrapped in real double quotes: %q", cl)
 	}
 	if strings.Contains(cl, `\"`) {
-		t.Fatalf("命令行含 \\\" 转义引号（cmd 不反转义→路径非法）: %q", cl)
+		t.Fatalf("command line contains \\\" escaped quotes (cmd does not unescape them → invalid path): %q", cl)
 	}
 
 	// 整行经 cmd /c 包裹（首尾真引号）：cmd strip 首尾各一引号后内层真引号原样存活。
 	if !strings.HasPrefix(cl, `cmd /c "`) || !strings.HasSuffix(cl, `"`) {
-		t.Fatalf("未用 cmd /c \"…\" 包裹: %q", cl)
+		t.Fatalf("not wrapped in cmd /c \"…\": %q", cl)
 	}
 
 	// 停服务在删服务前、删服务在 rmdir 前（sc delete 要服务先停；rmdir 要 exe 先随 helper 退出解锁）。
@@ -26,15 +26,15 @@ func TestSelfUninstallCmdLine(t *testing.T) {
 	iDel := strings.Index(cl, "sc delete FlowZHelper")
 	iRmdir := strings.Index(cl, "rmdir")
 	if iStop < 0 || iDel < 0 || iRmdir < 0 || !(iStop < iDel && iDel < iRmdir) {
-		t.Fatalf("命令顺序应为 stop→delete→rmdir: stop=%d del=%d rmdir=%d (%q)", iStop, iDel, iRmdir, cl)
+		t.Fatalf("command order should be stop→delete→rmdir: stop=%d del=%d rmdir=%d (%q)", iStop, iDel, iRmdir, cl)
 	}
 
 	// rmdir 出现两次（解锁竞态兜底）；删目录前有 ping 延迟（等 exe 解锁，DETACHED 下不能用 timeout）。
 	if strings.Count(cl, "rmdir /s /q") != 2 {
-		t.Fatalf("rmdir 应出现两次（兜底）: %q", cl)
+		t.Fatalf("rmdir should appear twice (fallback): %q", cl)
 	}
 	if !strings.Contains(cl, "ping 127.0.0.1") {
-		t.Fatalf("缺 ping 延迟: %q", cl)
+		t.Fatalf("missing ping delay: %q", cl)
 	}
 }
 
@@ -42,10 +42,10 @@ func TestSelfUninstallCmdLine(t *testing.T) {
 func TestSelfUninstallCmdLineSpacedPath(t *testing.T) {
 	cl := selfUninstallCmdLine("FlowZHelper", `C:\Program Data\FlowZ`)
 	if !strings.Contains(cl, `rmdir /s /q "C:\Program Data\FlowZ"`) {
-		t.Fatalf("含空格路径未用真双引号包裹: %q", cl)
+		t.Fatalf("path with spaces is not wrapped in real double quotes: %q", cl)
 	}
 	if strings.Contains(cl, `\"`) {
-		t.Fatalf("含空格路径出现转义引号: %q", cl)
+		t.Fatalf("path with spaces contains escaped quotes: %q", cl)
 	}
 }
 
@@ -54,10 +54,10 @@ func TestSelfUninstallCmdLineUnsafePath(t *testing.T) {
 	cl := selfUninstallCmdLine("FlowZHelper", `C:\evil & calc.exe`)
 	// 原恶意片段不得出现在最终命令行（防 & 触发 cmd 注入即提权）。
 	if strings.Contains(cl, `evil & calc`) {
-		t.Fatalf("恶意 supportDir 未被占位替换，注入面仍开: %q", cl)
+		t.Fatalf("malicious supportDir was not replaced with the placeholder, injection surface still open: %q", cl)
 	}
 	if !strings.Contains(cl, `safe-placeholder-nonexistent`) {
-		t.Fatalf("恶意路径应改用安全占位: %q", cl)
+		t.Fatalf("malicious path should be replaced with the safe placeholder: %q", cl)
 	}
 }
 

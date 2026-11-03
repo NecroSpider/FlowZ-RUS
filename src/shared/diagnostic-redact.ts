@@ -385,7 +385,7 @@ export interface DiagnosticReportInput {
  * 防内容（日志/节点名/订阅名，机场可控）含 ``` 提前闭合代码块、破坏报告结构。
  */
 function fence(lang: string, body: string): string {
-  const safe = body.length ? body : '(空)';
+  const safe = body.length ? body : '(empty)';
   let maxRun = 0;
   let cur = 0;
   for (let i = 0; i < safe.length; i++) {
@@ -421,48 +421,49 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
   const { app, runtime } = input;
   const lines: string[] = [];
 
-  lines.push('# FlowZ 诊断报告');
+  lines.push('# FlowZ Diagnostic Report');
   lines.push('');
   lines.push(
-    '> 本报告用于排障，可附到 GitHub issue。**密钥与节点身份已脱敏**（uuid/密码/私钥/订阅 token 已打码；' +
-      '节点域名/IP/SNI/节点名已替换为 `<domain-N>`/`<ip-N>`/`<node-N>` 占位符）。日志明细可能仍含访问过的**其它**域名/IP——介意可自行删减后再上传。'
+    '> This report is for troubleshooting and can be attached to a GitHub issue. **Secrets and node identities are redacted** (uuid/passwords/private keys/subscription tokens are masked; ' +
+      'node domains/IPs/SNI/node names are replaced with `<domain-N>`/`<ip-N>`/`<node-N>` placeholders). Log details may still contain **other** domains/IPs you visited - remove them before uploading if that concerns you.'
   );
   lines.push('');
   if (input.hint) {
-    lines.push(`> 提示：${input.hint}`);
+    lines.push(`> Hint: ${input.hint}`);
     lines.push('');
   }
 
-  lines.push('## 环境');
+  lines.push('## Environment');
   lines.push('');
-  lines.push(`- 生成时间：${input.generatedAt}`);
-  lines.push(`- FlowZ 版本：${app.flowzVersion}`);
-  lines.push(`- 内核版本：${app.coreVersion}`);
-  lines.push(`- 系统：${app.os}`);
-  if (app.electron) lines.push(`- Electron：${app.electron}`);
+  lines.push(`- Generated at: ${input.generatedAt}`);
+  lines.push(`- FlowZ version: ${app.flowzVersion}`);
+  lines.push(`- Core version: ${app.coreVersion}`);
+  lines.push(`- OS: ${app.os}`);
+  if (app.electron) lines.push(`- Electron: ${app.electron}`);
   lines.push('');
 
-  lines.push('## 运行态');
+  lines.push('## Runtime');
   lines.push('');
-  lines.push(`- 代理模式：${runtime.proxyMode} / ${runtime.proxyModeType}`);
-  lines.push(`- 代理运行中：${runtime.proxyRunning ? '是' : '否'}`);
+  lines.push(`- Proxy mode: ${runtime.proxyMode} / ${runtime.proxyModeType}`);
+  lines.push(`- Proxy running: ${runtime.proxyRunning ? 'yes' : 'no'}`);
   if (runtime.startedViaHelper !== undefined)
-    lines.push(`- 经提权 helper 启动：${runtime.startedViaHelper ? '是' : '否'}`);
-  if (runtime.helperStatus) lines.push(`- Helper 状态：${runtime.helperStatus}`);
-  if (runtime.systemProxy) lines.push(`- 系统代理实际值：${runtime.systemProxy}`);
-  if (runtime.effectiveDns) lines.push(`- 生效系统 DNS：${runtime.effectiveDns}`);
-  if (runtime.nodeDomainResolver) lines.push(`- 节点域名解析档位：${runtime.nodeDomainResolver}`);
-  lines.push(`- 日志级别：${runtime.logLevel}`);
-  lines.push(`- 诊断采集中：${runtime.captureActive ? '是' : '否'}`);
-  if (runtime.cronetLibStatus) lines.push(`- libcronet 状态：${runtime.cronetLibStatus}`);
+    lines.push(`- Started via privileged helper: ${runtime.startedViaHelper ? 'yes' : 'no'}`);
+  if (runtime.helperStatus) lines.push(`- Helper status: ${runtime.helperStatus}`);
+  if (runtime.systemProxy) lines.push(`- Effective system proxy: ${runtime.systemProxy}`);
+  if (runtime.effectiveDns) lines.push(`- Effective system DNS: ${runtime.effectiveDns}`);
+  if (runtime.nodeDomainResolver)
+    lines.push(`- Node domain resolver: ${runtime.nodeDomainResolver}`);
+  lines.push(`- Log level: ${runtime.logLevel}`);
+  lines.push(`- Diagnostic capture active: ${runtime.captureActive ? 'yes' : 'no'}`);
+  if (runtime.cronetLibStatus) lines.push(`- libcronet status: ${runtime.cronetLibStatus}`);
   if (runtime.cronetHealTriggered || runtime.cronetHealFailed) {
     lines.push(
-      `- libcronet 自愈：触发 ${runtime.cronetHealTriggered ?? 0} 次 / 失败 ${runtime.cronetHealFailed ?? 0} 次`
+      `- libcronet self-heal: ${runtime.cronetHealTriggered ?? 0} triggered / ${runtime.cronetHealFailed ?? 0} failed`
     );
   }
   if (runtime.lastStartReadyRetries) {
     lines.push(
-      `- 最近一次起核经 ${runtime.lastStartReadyRetries} 次就绪重试才成功（起核慢，多因 Windows 重启争用下 wintun 适配器未及时释放；非核崩溃）`
+      `- Last core start succeeded only after ${runtime.lastStartReadyRetries} readiness retries (slow start, usually because the wintun adapter was not released in time during a Windows restart race; not a core crash)`
     );
   }
   // issue #367：刷新是否真的发生过必须在报告里可读——它守着「系统解析器缓存了错误记录」这类故障的唯一出口
@@ -471,47 +472,51 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
     const f = runtime.lastDnsFlush;
     if (!f.ok) {
       lines.push(
-        `- 系统 DNS 缓存刷新：**失败**（${f.reason ?? 'unknown'}，${f.context}，${f.ageSec}s 前）：${f.detail}`
+        `- System DNS cache flush: **failed** (${f.reason ?? 'unknown'}, ${f.context}, ${f.ageSec}s ago): ${f.detail}`
       );
     } else if (f.skipped) {
-      lines.push(`- 系统 DNS 缓存刷新：本平台无对应机制，已跳过（${f.detail}）`);
+      lines.push(
+        `- System DNS cache flush: no such mechanism on this platform, skipped (${f.detail})`
+      );
     } else if (f.partial) {
       // macOS unicast DNS 缓存主体在 mDNSResponder：HUP 没打成意味着 issue #363 那类负缓存很可能**没被清掉**。
       // 与真成功共用「成功」headline 会让开发者扫报告时无法区分，正是本批要消灭的那类误读。
       lines.push(
-        `- 系统 DNS 缓存刷新：**部分成功**（${f.context}，${f.ageSec}s 前，${f.detail}）：${f.partial}`
+        `- System DNS cache flush: **partially succeeded** (${f.context}, ${f.ageSec}s ago, ${f.detail}): ${f.partial}`
       );
     } else {
-      lines.push(`- 系统 DNS 缓存刷新：成功（${f.context}，${f.ageSec}s 前，${f.detail}）`);
+      lines.push(
+        `- System DNS cache flush: succeeded (${f.context}, ${f.ageSec}s ago, ${f.detail})`
+      );
     }
   } else {
-    lines.push('- 系统 DNS 缓存刷新：本会话从未触发');
+    lines.push('- System DNS cache flush: never triggered this session');
   }
   if (runtime.lastStartTimeline) {
     lines.push(`- ${runtime.lastStartTimeline}`);
   }
   lines.push('');
 
-  lines.push('## 生成的 sing-box 配置（脱敏）');
+  lines.push('## Generated sing-box config (redacted)');
   lines.push('');
   lines.push(fence('json', JSON.stringify(input.redactedSingboxConfig, null, 2)));
   lines.push('');
 
-  lines.push('## 用户配置（脱敏）');
+  lines.push('## User config (redacted)');
   lines.push('');
   lines.push(fence('json', JSON.stringify(input.redactedUserConfig, null, 2)));
   lines.push('');
 
   if (input.speedTestDiagnostics) {
     const d = input.speedTestDiagnostics;
-    lines.push('## 最近一次测速诊断');
+    lines.push('## Last speed test diagnostics');
     lines.push('');
-    lines.push(`- 生成时间：${d.generatedAt}`);
-    lines.push(`- 测速目标：${formatSpeedTestTargetForReport(d.target)}`);
-    lines.push(`- 节点数：total=${d.total} / usable=${d.usable} / failed=${d.failures.length}`);
+    lines.push(`- Generated at: ${d.generatedAt}`);
+    lines.push(`- Speed test target: ${formatSpeedTestTargetForReport(d.target)}`);
+    lines.push(`- Nodes: total=${d.total} / usable=${d.usable} / failed=${d.failures.length}`);
     lines.push('');
     if (d.failures.length > 0) {
-      lines.push('| 节点 ID | 节点名 | 出站 tag | reason |');
+      lines.push('| Node ID | Node name | Outbound tag | reason |');
       lines.push('|---|---|---|---|');
       for (const f of d.failures) {
         lines.push(
@@ -521,10 +526,10 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
       lines.push('');
     }
     if (d.resolvedIpProbes && d.resolvedIpProbes.length > 0) {
-      lines.push('### 失败 endpoint 目标解析探测');
+      lines.push('### Target resolution probes for failed endpoints');
       lines.push('');
       lines.push(
-        '| 节点 ID | 节点名 | 出站 tag | 目标域名 | resolver path | resolved IPs | error |'
+        '| Node ID | Node name | Outbound tag | Target host | resolver path | resolved IPs | error |'
       );
       lines.push('|---|---|---|---|---|---|---|');
       for (const p of d.resolvedIpProbes) {
@@ -535,19 +540,19 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
       lines.push('');
     }
     if (d.redactedTempConfig !== undefined) {
-      lines.push('### 临时测速 sing-box 配置（脱敏）');
+      lines.push('### Temporary speed test sing-box config (redacted)');
       lines.push('');
       lines.push(fence('json', JSON.stringify(d.redactedTempConfig, null, 2)));
       lines.push('');
     }
   }
 
-  lines.push('## app.log（近期）');
+  lines.push('## app.log (recent)');
   lines.push('');
   lines.push(fence('text', input.appLogTail));
   lines.push('');
 
-  lines.push('## singbox.log（近期）');
+  lines.push('## singbox.log (recent)');
   lines.push('');
   lines.push(fence('text', input.singboxLogTail));
   lines.push('');
@@ -557,7 +562,7 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
   // 会话（sing-box 的 FATAL[0000] 是启动相对秒、非墙钟时间），故必须让读报告的人看见文件多大、何时最后写入。
   if (input.startupLogTail !== undefined) {
     const src = input.startupLogSource ? ` · ${input.startupLogSource}` : '';
-    lines.push(`## singbox_startup.log（近期${src}）`);
+    lines.push(`## singbox_startup.log (recent${src})`);
     lines.push('');
     lines.push(fence('text', input.startupLogTail));
     lines.push('');
@@ -565,7 +570,7 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
 
   // Windows UAC 看护脚本自述日志：回答「谁停的核」，与上面的 FATAL 文本互补（见 watchdogLogTail 注释）。
   if (input.watchdogLogTail !== undefined) {
-    lines.push('## flowz-win-watchdog.log（近期 · Windows UAC 看护脚本自述）');
+    lines.push('## flowz-win-watchdog.log (recent · Windows UAC watchdog script log)');
     lines.push('');
     lines.push(fence('text', input.watchdogLogTail));
     lines.push('');
@@ -581,10 +586,13 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
 
   if (input.processMetrics) {
     const pm = input.processMetrics;
-    tail.push('', '## 进程内存', '');
-    tail.push(`- 合计：${pm.totalMemoryMb} MB（${pm.rows.length} 个进程，按内存降序）`, '');
+    tail.push('', '## Process memory', '');
     tail.push(
-      '| 类型 | PID | 内存(MB) | 峰值(MB) | CPU(%) | 标识 | 创建时刻 |',
+      `- Total: ${pm.totalMemoryMb} MB (${pm.rows.length} processes, sorted by memory, descending)`,
+      ''
+    );
+    tail.push(
+      '| Type | PID | Memory (MB) | Peak (MB) | CPU (%) | Label | Created at |',
       '|---|---|---|---|---|---|---|'
     );
     for (const r of pm.rows) {
@@ -598,37 +606,38 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
 
   if (input.rendererHeap) {
     const rh = input.rendererHeap;
-    tail.push('', '## 渲染进程堆分层', '');
+    tail.push('', '## Renderer heap breakdown', '');
     if (rh.unavailable) {
       tail.push(`- ${rh.unavailable}`);
     } else {
-      if (rh.usedHeapMb !== undefined) tail.push(`- V8 usedHeap：${rh.usedHeapMb} MB`);
-      if (rh.totalHeapMb !== undefined) tail.push(`- V8 totalHeap：${rh.totalHeapMb} MB`);
-      if (rh.heapLimitMb !== undefined) tail.push(`- V8 heapLimit：${rh.heapLimitMb} MB`);
-      if (rh.residentSetMb !== undefined) tail.push(`- 进程 residentSet：${rh.residentSetMb} MB`);
+      if (rh.usedHeapMb !== undefined) tail.push(`- V8 usedHeap: ${rh.usedHeapMb} MB`);
+      if (rh.totalHeapMb !== undefined) tail.push(`- V8 totalHeap: ${rh.totalHeapMb} MB`);
+      if (rh.heapLimitMb !== undefined) tail.push(`- V8 heapLimit: ${rh.heapLimitMb} MB`);
+      if (rh.residentSetMb !== undefined)
+        tail.push(`- Process residentSet: ${rh.residentSetMb} MB`);
       if (rh.blinkResourceMb !== undefined)
-        tail.push(`- Blink 资源缓存(live)：${rh.blinkResourceMb} MB`);
+        tail.push(`- Blink resource cache (live): ${rh.blinkResourceMb} MB`);
     }
   }
 
   if (input.coreProcess) {
     const cp = input.coreProcess;
-    tail.push('', '## sing-box 核进程', '');
+    tail.push('', '## sing-box core process', '');
     if (cp.unavailable) tail.push(`- ${cp.unavailable}`);
-    else tail.push(`- PID ${cp.pid ?? ''}：RSS ${cp.rssMb ?? ''} MB，CPU ${cp.cpuPercent ?? ''}%`);
+    else tail.push(`- PID ${cp.pid ?? ''}: RSS ${cp.rssMb ?? ''} MB, CPU ${cp.cpuPercent ?? ''}%`);
   }
 
   if (input.memoryTimelineCsv) {
-    tail.push('', '## 内存时间线（每 5min 一帧，最多 24h）', '');
+    tail.push('', '## Memory timeline (one frame per 5 min, up to 24h)', '');
     tail.push(fence('csv', input.memoryTimelineCsv));
   }
 
   if (input.rendererWatchdog) {
     const rw = input.rendererWatchdog;
-    tail.push('', '## 渲染进程内存看护', '');
-    tail.push(`- 阈值：${rw.thresholdMb} MB`);
-    tail.push(`- 隐藏态回收（discard）：${rw.discardCount} 次`);
-    tail.push(`- 可见态告警（warn）：${rw.warnCount} 次`);
+    tail.push('', '## Renderer memory watchdog', '');
+    tail.push(`- Threshold: ${rw.thresholdMb} MB`);
+    tail.push(`- Reclaimed while hidden (discard): ${rw.discardCount}`);
+    tail.push(`- Warnings while visible (warn): ${rw.warnCount}`);
   }
 
   if (tail.length === 0) return redacted;

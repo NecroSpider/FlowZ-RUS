@@ -124,7 +124,7 @@ describe('safeRedirectFetch', () => {
     const lookup = jest.fn().mockResolvedValue(META); // 云元数据
     await expect(
       safeRedirectFetch<FakeResp>({ ...base, fetchImpl, url: 'https://meta.example.com/x', lookup })
-    ).rejects.toThrow(/本机\/内网/);
+    ).rejects.toThrow(/local\/private/);
   });
 
   it('30x 跳到内网 → SafeFetchError(ssrf)（逐跳复检 Location）', async () => {
@@ -208,7 +208,7 @@ describe('safeRedirectFetch', () => {
         url: 'https://loop.example.com/x',
         lookup,
       })
-    ).rejects.toThrow(/重定向次数超过上限/);
+    ).rejects.toThrow(/Too many redirects/);
   });
 
   it('重定向目标非 http(s) → SafeFetchError(redirect-protocol)', async () => {

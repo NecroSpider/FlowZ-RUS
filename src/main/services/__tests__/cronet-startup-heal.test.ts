@@ -94,23 +94,23 @@ describe('T2 诊断报告渲染 — cronet 状态 + 自愈计数', () => {
 
   it('cronetLibStatus 写入报告', () => {
     const md = buildDiagnosticReport(mkInput({ cronetLibStatus: 'copy-failed' }));
-    expect(md).toContain('libcronet 状态：copy-failed');
+    expect(md).toContain('libcronet status: copy-failed');
   });
 
   it('自愈触发/失败计数（>0 时）写入报告', () => {
     const md = buildDiagnosticReport(
       mkInput({ cronetLibStatus: 'available', cronetHealTriggered: 2, cronetHealFailed: 1 })
     );
-    expect(md).toContain('libcronet 自愈：触发 2 次 / 失败 1 次');
+    expect(md).toContain('libcronet self-heal: 2 triggered / 1 failed');
   });
 
   it('计数全 0 → 不渲染自愈行（保持报告精简）', () => {
     const md = buildDiagnosticReport(
       mkInput({ cronetLibStatus: 'available', cronetHealTriggered: 0, cronetHealFailed: 0 })
     );
-    expect(md).not.toContain('libcronet 自愈：');
+    expect(md).not.toContain('libcronet self-heal:');
     // 但状态行仍在
-    expect(md).toContain('libcronet 状态：available');
+    expect(md).toContain('libcronet status: available');
   });
 });
 

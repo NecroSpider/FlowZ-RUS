@@ -35,7 +35,7 @@ export function registerUpdateHandlers(): void {
     if (filePath) {
       return { success: true, filePath };
     }
-    return { success: false, error: '下载失败' };
+    return { success: false, error: 'Download failed' };
   });
 
   registerIpcHandler<{ filePath: string }, { success: boolean; error?: string }>(

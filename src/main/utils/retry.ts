@@ -76,7 +76,7 @@ export async function retry<T>(
       }
 
       console.log(
-        `操作失败，将在 ${currentDelay}ms 后进行第 ${attempt + 1} 次重试...`,
+        `Operation failed, retry ${attempt + 1} in ${currentDelay}ms...`,
         lastError.message
       );
 
@@ -85,7 +85,7 @@ export async function retry<T>(
   }
 
   // 理论上不会到达这里，但为了类型安全
-  throw lastError || new Error('重试失败');
+  throw lastError || new Error('Retry failed');
 }
 
 function sleep(ms: number): Promise<void> {

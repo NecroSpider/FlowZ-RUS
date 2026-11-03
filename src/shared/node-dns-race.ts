@@ -83,7 +83,10 @@ function raceTier(
           if (cls === 'HIT') {
             // R3（§14.4）first-clean-wins：HIT 但答案含 GFW decoy → POISONED，弃之、按 FAIL 递减（不抢跑，等干净上游）。
             if (isPoisonedResponse(resp)) {
-              log?.('warn', 'dns-race: 上游返回 decoy 答案，判 POISONED 丢弃（first-clean-wins）');
+              log?.(
+                'warn',
+                'dns-race: upstream returned a decoy answer, marked POISONED and dropped (first-clean-wins)'
+              );
               if (--pending === 0) finish({ empty });
               return;
             }

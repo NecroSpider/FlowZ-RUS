@@ -62,7 +62,7 @@ export function shouldEmitTlsEngine(
 function meshNonFullTunnelReason(): string {
   // 与 meshNodeCarriesFullTunnel 对齐:全隧道能力 = 允许外网,与接入模式正交(system 不再禁,出口路由托管)。
   // 故唯一不承载原因 = 关外网。
-  return '已关闭外网访问';
+  return 'internet access is off';
 }
 
 /** 节点是否可用：naive 需要 libcronet 核心库，缺库时不可用（会被跳过、分流/选中回退到 selector）。 */
@@ -105,14 +105,14 @@ export function buildWireGuardEndpoint(
 ): SingBoxEndpoint {
   const s = server.wireguardSettings;
   if (!s || !s.privateKey || !s.peerPublicKey || !s.localAddress?.length) {
-    throw new Error('WireGuard 配置缺少 privateKey/peerPublicKey/localAddress');
+    throw new Error('WireGuard config missing privateKey/peerPublicKey/localAddress');
   }
   // Layer A：allowInternet=on→specific ∪ {0/0,::/0}；off→specific；off/system+无具体段→null。
   // null 表示空 allowed_ips（FATAL），调用方应已用 isMeshNodeUnroutable 预拦不发射；此处兜底抛错（防直调，如测速）。
   const allowedIps = wireguardPeerAllowedIps(server);
   if (allowedIps === null) {
     throw new Error(
-      'WireGuard 节点无可路由网段（关外网 或 system 内核接口 且无具体段）：空 allowed_ips 会致 sing-box FATAL'
+      'WireGuard node has no routable subnets (internet access off, or system kernel interface with no specific subnets): empty allowed_ips would make sing-box FATAL'
     );
   }
   // 域名 server 才需 domain_resolver（IP 字面量直拨、无需解析）。endpoint 级显式优于仅靠
@@ -826,7 +826,10 @@ export function buildOutbounds(
       // 整个代理启动 FATAL（连非 naive 节点也用不了）。跳过后，路由层对该节点 tag 的死引用会在
       // generateSingBoxConfig 末尾被统一修正为 selector（见 H2 修复）。
       if (!isNodeUsable(server)) {
-        deps.log('warn', `跳过不可用节点「${server.name}」：NaiveProxy 缺少 libcronet 核心库`);
+        deps.log(
+          'warn',
+          `Skipped unavailable node "${server.name}": NaiveProxy is missing the libcronet core library`
+        );
         continue;
       }
       // 启动前配置校验 gate 已标记为非法的节点：跳过、不进 outbounds/selector（防 onRetry 重生成复活）。
@@ -843,7 +846,7 @@ export function buildOutbounds(
       if (downgradeMeshToGvisor) {
         deps.log(
           'info',
-          `组网节点「${server.name}」：当前非 TUN 模式，按 gVisor（用户态栈）发射（System 内核接口需 TUN + 提权 helper）`
+          `Mesh node "${server.name}": not in TUN mode, using gVisor (userspace stack) (the System kernel interface requires TUN + privileged helper)`
         );
       }
       // WireGuard：endpoint（非 outbound）。建进 pendingEndpoints，tag 仍入 nodeTags 参与选择器/路由。
@@ -853,7 +856,7 @@ export function buildOutbounds(
         if (isMeshNodeUnroutable(server)) {
           deps.log(
             'warn',
-            `跳过组网节点「${server.name}」：已关闭外网访问且无可路由网段（无外网访问权限）`
+            `Skipped mesh node "${server.name}": internet access is off and it has no routable subnets`
           );
           continue;
         }
@@ -882,13 +885,13 @@ export function buildOutbounds(
             const why = meshNonFullTunnelReason();
             deps.log(
               'warn',
-              `组网节点「${server.name}」${why}：仅路由其指定网段，不承载默认出网流量`
+              `Mesh node "${server.name}": ${why}; routes only its listed subnets, not default internet traffic`
             );
           }
         } catch (e: any) {
           deps.log(
             'warn',
-            `生成 WireGuard endpoint 失败，已跳过: ${server.name} (${e?.message ?? e})`
+            `Failed to build WireGuard endpoint, skipped: ${server.name} (${e?.message ?? e})`
           );
         }
         continue;
@@ -913,7 +916,7 @@ export function buildOutbounds(
         } catch (e: any) {
           deps.log(
             'warn',
-            `生成 Tailscale endpoint 失败，已跳过: ${server.name} (${e?.message ?? e})`
+            `Failed to build Tailscale endpoint, skipped: ${server.name} (${e?.message ?? e})`
           );
         }
         continue;
@@ -949,7 +952,7 @@ export function buildOutbounds(
             cur = config.servers.find((s) => s.id === cur)?.detour;
           }
           if (looped) {
-            deps.log('warn', `检测到代理链成环，已跳过 detour: ${server.name}`);
+            deps.log('warn', `Proxy chain loop detected, detour skipped: ${server.name}`);
           } else {
             const detourSrv = config.servers.find((s) => s.id === server.detour);
             if (detourSrv && isEndpointProtocol(detourSrv.protocol)) {
@@ -958,7 +961,7 @@ export function buildOutbounds(
               // endpoint 为 detour 候选（route 规则指向 endpoint 仍合法，仅 detour 不合法——两者语义不同）。
               deps.log(
                 'warn',
-                `endpoint 节点（WireGuard/Tailscale）不支持作为前置代理(detour)目标，已忽略「${server.name}」的代理链`
+                `Endpoint nodes (WireGuard/Tailscale) cannot be detour targets; ignored the proxy chain of "${server.name}"`
               );
             } else {
               ob.detour = idToTagMap.get(server.detour);
@@ -968,7 +971,10 @@ export function buildOutbounds(
         outbounds.push(ob);
         nodeTags.push(tag);
       } catch (e: any) {
-        deps.log('warn', `生成节点出站失败，已跳过: ${server.name} (${e?.message ?? e})`);
+        deps.log(
+          'warn',
+          `Failed to build node outbound, skipped: ${server.name} (${e?.message ?? e})`
+        );
       }
     }
 
@@ -994,7 +1000,7 @@ export function buildOutbounds(
     // 支持 clash_api 热切换「直连↔节点」不重启。proxifier 时即便 0 节点也不抛（纯直连合法）。
     const isDirect = isDirectSelection(config.selectedServerId);
     if (nodeTags.length === 0 && !isDirect) {
-      throw new Error('没有可用的代理节点出站（所有节点配置生成失败）');
+      throw new Error('No usable proxy node outbounds (all node configs failed to build)');
     }
     const selectedServerTag = resolveGlobalExitTag(config.selectedServerId, idToTagMap) || 'proxy';
     outbounds.push({
@@ -1128,7 +1134,7 @@ export function buildOutbounds(
       if (!dead) break;
       if (dead.tag === selectedTag) {
         throw new Error(
-          `选中节点「${dead.tag}」的代理链依赖的前置节点不存在，无法启动，请更换节点后重试`
+          `Selected node "${dead.tag}" chains through a detour node that does not exist; cannot start. Pick another node and try again`
         );
       }
       // 删该引用方 outbound + selector 成员；记录 gateInvalidNodes。
@@ -1154,11 +1160,14 @@ export function buildOutbounds(
           deps.gateInvalidNodes.set(sid, {
             id: sid,
             tag: removedTag,
-            reason: '代理链依赖的前置节点不存在（detour 引用无效）',
+            reason: 'Proxy chain detour node does not exist (invalid detour reference)',
           });
         }
       }
-      deps.log('warn', `启动前配置校验：节点「${removedTag}」的 detour 引用无效，已剔除`);
+      deps.log(
+        'warn',
+        `Pre-start config check: node "${removedTag}" has an invalid detour reference, removed`
+      );
       mutated = true;
     }
     if (
@@ -1167,7 +1176,7 @@ export function buildOutbounds(
       Array.isArray(selector.outbounds) &&
       selector.outbounds.length === 0
     ) {
-      throw new Error('没有可用的代理节点出站（节点代理链依赖无效）');
+      throw new Error('No usable proxy node outbounds (invalid proxy chain dependencies)');
     }
     // rule-sel 剔空（members 全被 detour 死引用剔除）：删该 selector outbound，对应 route 规则的
     // outbound（rule-sel-<id>）成死引用 → fixRouteDeadReferences 兜底改写为 proxy-selector，启动不 FATAL。

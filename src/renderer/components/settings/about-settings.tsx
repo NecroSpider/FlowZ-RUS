@@ -226,13 +226,13 @@ export function AboutSettings() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="about-name">{versionInfo?.appName || 'FlowZ'}</div>
             <div className="about-ver">
-              {t('settings.about.version', '版本')}{' '}
+              {t('settings.about.version', 'Version')}{' '}
               <span className="mono tnum">{versionInfo?.appVersion || '—'}</span>
               {availableAppUpdate && (
                 <>
                   {' · '}
                   <span className="pill warn" style={{ verticalAlign: 'middle' }}>
-                    {t('settings.about.updateAvailable', '可更新 {{version}}', {
+                    {t('settings.about.updateAvailable', 'Update {{version}} available', {
                       version: availableAppUpdate.version,
                     })}
                   </span>
@@ -281,7 +281,7 @@ export function AboutSettings() {
               <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" strokeLinejoin="round" />
               <path d="M12 8v5M12 16h.01" strokeLinecap="round" />
             </svg>
-            {t('settings.about.reportIssue', '报告问题')}
+            {t('settings.about.reportIssue', 'Report an issue')}
           </button>
           <button type="button" className="btn ghost sm" onClick={handleOpenGitHub}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -332,7 +332,7 @@ export function AboutSettings() {
                 strokeLinejoin="round"
               />
             </svg>
-            {t('settings.about.originalApp', '原版 FlowZ')}
+            {t('settings.about.originalApp', 'Original FlowZ')}
           </button>
         </div>
 

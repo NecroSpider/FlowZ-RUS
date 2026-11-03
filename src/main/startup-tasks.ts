@@ -48,7 +48,11 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
       try {
         await coreUpdateService.tryApplyStaged('startup');
       } catch (stagedErr) {
-        logManager.addLog('warn', `启动期落位 staged 内核异常: ${stagedErr}`, 'Main');
+        logManager.addLog(
+          'warn',
+          `Error applying the staged core at startup: ${stagedErr}`,
+          'Main'
+        );
       }
 
       // 启动期随包核对齐（用户反馈：部署/自更新新随包核后运行时受保护核不自愈、须连接才刷新）：helper 在位=静默 reseed；
@@ -59,7 +63,11 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
           await coreUpdateService.tryElevatedReseedProtectedCoreOnStartup(r.bundledVersion);
         }
       } catch (reseedErr) {
-        logManager.addLog('warn', `启动期随包核对齐异常: ${reseedErr}`, 'Main');
+        logManager.addLog(
+          'warn',
+          `Error aligning the bundled core at startup: ${reseedErr}`,
+          'Main'
+        );
       }
 
       // 启动期「内核版本变更」横幅已移除：基线对齐缺收口 → 每次启动重复弹扰民（基线 core-version.json 与实际核不一致
@@ -67,21 +75,25 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
       // 故启动期不再主动弹。
 
       if (config.autoConnect && config.selectedServerId) {
-        logManager.addLog('info', '启动时自动连接已启用，正在连接...', 'Main');
+        logManager.addLog('info', 'Auto-connect on startup is enabled, connecting...', 'Main');
 
         if (proxyManager) {
           // 系统代理 enable/clear 已收口于 start()（拆双轨），自动连接不再重复设置。
           await proxyManager.start(config);
 
-          logManager.addLog('info', '启动时自动连接成功', 'Main');
+          logManager.addLog('info', 'Auto-connect on startup succeeded', 'Main');
           updateTrayMenuState(true);
         }
       } else if (config.autoConnect && !config.selectedServerId) {
-        logManager.addLog('warn', '启动时自动连接已启用，但未选择服务器', 'Main');
+        logManager.addLog(
+          'warn',
+          'Auto-connect on startup is enabled, but no server is selected',
+          'Main'
+        );
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logManager.addLog('error', `启动时自动连接失败: ${errorMessage}`, 'Main');
+      logManager.addLog('error', `Auto-connect on startup failed: ${errorMessage}`, 'Main');
       updateTrayMenuState(false, true);
     }
   }, 2000);
@@ -91,10 +103,10 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
     try {
       const config = await configManager.loadConfig();
       if (config.autoCheckUpdate !== false) {
-        logManager.addLog('info', '正在自动检查更新...', 'Main');
+        logManager.addLog('info', 'Checking for updates automatically...', 'Main');
         const result = await updateService.checkForUpdate();
         if (result.hasUpdate && result.updateInfo) {
-          logManager.addLog('info', `发现新版本: ${result.updateInfo.version}`, 'Main');
+          logManager.addLog('info', `New version available: ${result.updateInfo.version}`, 'Main');
           const action = await updateService.showUpdateDialog(result.updateInfo);
           if (action === 'update') {
             const filePath = await updateService.downloadUpdateWithProgress(result.updateInfo);
@@ -105,13 +117,13 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
             updateService.skipVersion(result.updateInfo.version);
           }
         } else if (result.error) {
-          logManager.addLog('warn', `自动检查更新失败: ${result.error}`, 'Main');
+          logManager.addLog('warn', `Automatic update check failed: ${result.error}`, 'Main');
         } else {
-          logManager.addLog('info', '当前已经是最新版本', 'Main');
+          logManager.addLog('info', 'Already up to date', 'Main');
         }
       }
     } catch (error) {
-      logManager.addLog('error', `自动检查更新异常: ${error}`, 'Main');
+      logManager.addLog('error', `Automatic update check error: ${error}`, 'Main');
     }
   }, 5000);
 

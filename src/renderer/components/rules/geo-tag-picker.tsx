@@ -82,7 +82,7 @@ export function GeoTagPicker({
         <div className="max-h-40 overflow-y-auto">
           {loading ? (
             <div className="px-1 py-3 text-center text-xs text-fg-faint">
-              {t('rules.customApp.geoLoading', '加载分类…')}
+              {t('rules.customApp.geoLoading', 'Loading categories…')}
             </div>
           ) : matches.length > 0 ? (
             <div className="ms">
@@ -92,15 +92,15 @@ export function GeoTagPicker({
                   {o}
                   <span className="ms-1 text-[9.5px] text-fg-faint">
                     {localTags?.has(o)
-                      ? t('rules.customApp.geoLocalMark', '本地')
-                      : t('rules.customApp.geoRemoteMark', '未下载')}
+                      ? t('rules.customApp.geoLocalMark', 'local')
+                      : t('rules.customApp.geoRemoteMark', 'not downloaded')}
                   </span>
                 </label>
               ))}
             </div>
           ) : (
             <div className="px-1 py-3 text-center text-xs text-fg-faint">
-              {t('rules.customApp.geoNoMatch', '无匹配分类')}
+              {t('rules.customApp.geoNoMatch', 'No matching categories')}
             </div>
           )}
         </div>
@@ -109,7 +109,10 @@ export function GeoTagPicker({
       {/* 与路由生成本地优先联动 */}
       {value.some((tg) => !localTags?.has(tg)) && (
         <p className="text-[10px] leading-tight text-fg-faint">
-          {t('rules.customApp.geoUnsavedHint', '「未下载」的分类将在保存时下载到规则资源')}
+          {t(
+            'rules.customApp.geoUnsavedHint',
+            'Not-downloaded categories will be downloaded to Rule Resources on save'
+          )}
         </p>
       )}
 
@@ -122,8 +125,8 @@ export function GeoTagPicker({
         >
           <RotateCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
           {refreshing
-            ? t('rules.customApp.geoRefreshing', '加载中…')
-            : t('rules.customApp.geoLoadFull', '加载完整分类清单')}
+            ? t('rules.customApp.geoRefreshing', 'Loading…')
+            : t('rules.customApp.geoLoadFull', 'Load full catalog')}
         </button>
       )}
     </div>

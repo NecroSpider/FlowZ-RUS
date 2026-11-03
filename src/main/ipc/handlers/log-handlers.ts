@@ -48,7 +48,7 @@ export function registerLogHandlers(
     if (droppedWhileInactive > 0) {
       // 诚实记录暂存溢出丢弃（不进 logManager 避免再入 pending；落盘日志不受影响）。
       console.warn(
-        `[log-batch] UI 暂存溢出丢弃 ${droppedWhileInactive} 条日志（仅 UI live tail 截断，已落盘）`
+        `[log-batch] UI buffer overflow dropped ${droppedWhileInactive} log entries (only the UI live tail is truncated; already written to disk)`
       );
       droppedWhileInactive = 0;
     }

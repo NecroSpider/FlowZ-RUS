@@ -78,7 +78,7 @@ jobs:
           cache: 'npm'
 
       # 提权 helper 二进制不入库（.gitignore），现编现打；mac + win 均需 Go，否则该平台包缺 helper（issue #57）。
-      - name: Setup Go (提权 helper)
+      - name: Setup Go (privilege helper)
         uses: actions/setup-go@v5
         with:
           go-version-file: helper/go.mod

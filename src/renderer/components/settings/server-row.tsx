@@ -102,7 +102,7 @@ export function ServerRow({
       {loggingIn && (
         <span className="nd-login ing">
           <span className="nd-spin" />
-          {t('servers.tsLoggingIn', '登录中…')}
+          {t('servers.tsLoggingIn', 'Logging in…')}
         </span>
       )}
       {needsLogin && (
@@ -135,11 +135,11 @@ export function ServerRow({
           className="nd-badge warn"
           title={t(
             'servers.meshShadowedTip',
-            '以下网段已被列表中靠前的组网节点占有、不会经此节点：{{cidrs}}。可去重 / 调整节点顺序 / 用自定义规则覆盖。',
+            "These subnets are already claimed by an earlier mesh node and won't route via this one: {{cidrs}}. Dedupe / reorder nodes / override with a custom rule.",
             { cidrs: shadowedCidrs.get(server.id)!.join(', ') }
           )}
         >
-          {t('servers.meshShadowedBadge', '网段被覆盖')}
+          {t('servers.meshShadowedBadge', 'Overlapped')}
         </span>
       )}
       {server.shadowTlsSettings && <span className="nd-badge">+ST</span>}

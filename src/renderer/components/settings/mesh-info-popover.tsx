@@ -95,14 +95,14 @@ export function MeshInfoPopover({ server }: { server: ServerConfigWithId }) {
         </div>
         {exitNode && (
           <div className="nd-info-row">
-            <span className="nd-info-k">{t('servers.meshInfoExitNode', '出口节点')}</span>
+            <span className="nd-info-k">{t('servers.meshInfoExitNode', 'Exit node')}</span>
             <span className="nd-info-v mono break-all text-right">{exitNode}</span>
           </div>
         )}
         {ts?.acceptRoutes && (
           <div className="nd-info-row">
             <span className="nd-info-k">
-              {t('servers.meshInfoAcceptRoutesOn', '接受子网路由：已开启')}
+              {t('servers.meshInfoAcceptRoutesOn', 'Accept subnet routes: on')}
             </span>
           </div>
         )}

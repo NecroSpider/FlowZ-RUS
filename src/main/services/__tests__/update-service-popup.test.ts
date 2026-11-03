@@ -98,22 +98,28 @@ describe('UpdateService.localizeDownloadError 错误本地化映射（Low-5）',
   beforeAll(() => setMainLanguage('en-US'));
 
   it('网络/超时类 → updErrNetwork', () => {
-    expect(svc.localizeDownloadError('下载停滞超时（30s 无数据，网络中断或被拦截）')).toBe(
-      mt('updErrNetwork')
-    );
+    expect(
+      svc.localizeDownloadError(
+        'Download stalled (no data for 30s, network interrupted or blocked)'
+      )
+    ).toBe(mt('updErrNetwork'));
     expect(svc.localizeDownloadError('ETIMEDOUT')).toBe(mt('updErrNetwork'));
     expect(svc.localizeDownloadError('net::ERR_INTERNET_DISCONNECTED')).toBe(mt('updErrNetwork'));
   });
 
   it('不完整/截断 → updErrIncomplete', () => {
-    expect(svc.localizeDownloadError('下载不完整：收到 1 字节，期望 100（可能被截断）')).toBe(
-      mt('updErrIncomplete')
-    );
+    expect(
+      svc.localizeDownloadError(
+        'Download incomplete: received 1 bytes, expected 100 (possibly truncated)'
+      )
+    ).toBe(mt('updErrIncomplete'));
   });
 
   it('HTTP/服务器错误 → updErrServer', () => {
-    expect(svc.localizeDownloadError('下载失败: HTTP 404')).toBe(mt('updErrServer'));
-    expect(svc.localizeDownloadError('GitHub API 访问频率限制 (403)')).toBe(mt('updErrServer'));
+    expect(svc.localizeDownloadError('Download failed: HTTP 404')).toBe(mt('updErrServer'));
+    expect(svc.localizeDownloadError('GitHub API rate limit exceeded (403)')).toBe(
+      mt('updErrServer')
+    );
   });
 
   it('未知错误 → updErrGeneric 兜底', () => {

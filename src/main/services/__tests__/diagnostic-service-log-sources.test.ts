@@ -86,7 +86,7 @@ describe('DiagnosticService — 日志取数路径收口', () => {
     expect(seen[1]).toBe(getSingBoxLogPath());
     expect(seen[2]).toBe(getSingBoxStartupLogPath());
     // 顺序错位（把 singboxLogTail 与 startupLogTail 调换）会被下面两条钉住
-    expect(md).toMatch(/## singbox\.log（近期）[\s\S]*tail-of:singbox\.log/);
+    expect(md).toMatch(/## singbox\.log \(recent\)[\s\S]*tail-of:singbox\.log/);
     expect(md).toMatch(/## singbox_startup\.log[\s\S]*tail-of:singbox_startup\.log/);
   });
 
@@ -101,8 +101,8 @@ describe('DiagnosticService — 日志取数路径收口', () => {
       });
       return { seen, md: (await svc.buildReport()) as string };
     });
-    expect(md).toContain('写侧 UAC 看护脚本');
-    expect(md).toContain('核 stderr');
+    expect(md).toContain('Writer: UAC watchdog script');
+    expect(md).toContain('core stderr');
     // 看护自述日志是「谁停的核」的判据，与 FATAL 互补，Windows 上必须一并收
     expect(seen).toContain(getWindowsWatchdogLogPath());
     expect(md).toContain('## flowz-win-watchdog.log');
@@ -129,8 +129,8 @@ describe('DiagnosticService — 日志取数路径收口', () => {
       jest.spyOn(svc, 'readTail').mockResolvedValue('FATAL[0000] boom');
       return (await svc.buildReport()) as string;
     });
-    expect(md).toContain('核 stdout+stderr');
-    expect(md).toContain('只追加不截断');
+    expect(md).toContain('core stdout+stderr');
+    expect(md).toContain('append-only');
   });
 });
 
@@ -153,7 +153,7 @@ describe('DiagnosticService — lastDnsFlush 字段接线', () => {
       jest.spyOn(svc, 'readTail').mockResolvedValue('');
       return (await svc.buildReport()) as string;
     });
-    expect(md).toContain('部分成功');
+    expect(md).toContain('partially succeeded');
     expect(md).toContain('killall-hup exit status 1');
   });
 
@@ -187,7 +187,7 @@ describe('DiagnosticService — lastDnsFlush 字段接线', () => {
       jest.spyOn(svc, 'readTail').mockResolvedValue('');
       return (await svc.buildReport()) as string;
     });
-    expect(skippedMd).toContain('已跳过');
+    expect(skippedMd).toContain('no such mechanism on this platform, skipped');
   });
 });
 

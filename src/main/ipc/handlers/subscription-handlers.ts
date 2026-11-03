@@ -58,7 +58,7 @@ export function registerSubscriptionHandlers(
 
       const index = config.subscriptions.findIndex((s) => s.id === args.subscription.id);
       if (index === -1) {
-        throw new Error(`订阅不存在: ${args.subscription.id}`);
+        throw new Error(`Subscription not found: ${args.subscription.id}`);
       }
 
       config.subscriptions[index] = args.subscription;
@@ -74,7 +74,7 @@ export function registerSubscriptionHandlers(
 
       const index = config.subscriptions.findIndex((s) => s.id === args.subscriptionId);
       if (index === -1) {
-        throw new Error(`订阅不存在: ${args.subscriptionId}`);
+        throw new Error(`Subscription not found: ${args.subscriptionId}`);
       }
 
       config.subscriptions.splice(index, 1);
@@ -96,11 +96,11 @@ export function registerSubscriptionHandlers(
     IPC_CHANNELS.SUBSCRIPTION_UPDATE_SERVERS,
     async (_event: IpcMainInvokeEvent, args: { subscriptionId: string }) => {
       const config = await configManager.loadConfig();
-      if (!config.subscriptions) throw new Error('没有订阅配置');
+      if (!config.subscriptions) throw new Error('No subscriptions configured');
 
       const subscription = config.subscriptions.find((s) => s.id === args.subscriptionId);
       if (!subscription) {
-        throw new Error(`订阅不存在: ${args.subscriptionId}`);
+        throw new Error(`Subscription not found: ${args.subscriptionId}`);
       }
 
       try {

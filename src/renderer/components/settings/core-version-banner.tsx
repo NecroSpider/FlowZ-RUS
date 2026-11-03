@@ -194,11 +194,11 @@ export function CoreVersionBanner() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('settings.coreVersion.rollbackConfirmTitle', '回滚内核版本？')}
+              {t('settings.coreVersion.rollbackConfirmTitle', 'Roll back the core?')}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t('settings.coreVersion.rollbackConfirmDesc', {
-                defaultValue: '将回滚到 {{version}}，内核会重启。',
+                defaultValue: 'This rolls back to {{version}}; the core will restart.',
                 version: changeInfo.previousVersion,
               })}
             </AlertDialogDescription>

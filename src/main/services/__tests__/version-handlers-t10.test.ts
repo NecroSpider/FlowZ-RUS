@@ -125,7 +125,7 @@ describe('T10 内核版本回落 bundledCoreVersion', () => {
   });
 
   it('coreUpdateService.getCurrentVersion 返回 "未知" → 回落 bundledCoreVersion', async () => {
-    const svc = makeCoreUpdateService('未知');
+    const svc = makeCoreUpdateService('unknown');
     const getInfo = await registerInfoInvoker(svc);
     const result = await getInfo();
     expect(result.singBoxVersion).toBe((actualCoreManifest as any).bundledCoreVersion || 'Unknown');

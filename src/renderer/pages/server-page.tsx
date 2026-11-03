@@ -229,7 +229,8 @@ export function ServerPage() {
         <h1>{t('sidebar.server')}</h1>
         <span className="nd-count">
           {t('servers.nodeCountSummary', {
-            defaultValue: '共 {{total}} · 自建 {{manual}} · 组网 {{mesh}} · 订阅 {{sub}}',
+            defaultValue:
+              'Total {{total}} · Custom {{manual}} · Mesh {{mesh}} · Subscription {{sub}}',
             total: servers.length,
             manual: manualProxyServers.length,
             mesh: meshServersAll.length,
@@ -395,7 +396,7 @@ export function ServerPage() {
                       <span className="sb-sep">·</span>
                       <span>
                         {t('servers.expireAt', {
-                          defaultValue: '到期 {{date}}',
+                          defaultValue: 'Expires {{date}}',
                           date: new Date(ui.expire * 1000).toLocaleDateString(i18n.language),
                         })}
                       </span>

@@ -106,19 +106,19 @@ export function AppCard({
       kind: 'proxy',
       dot: 'proxy',
       title: t('rules.proxy'),
-      hint: t('rules.appTile.proxyHint', '跟随全局出口'),
+      hint: t('rules.appTile.proxyHint', 'Follow global outbound'),
     },
     {
       kind: 'direct',
       dot: 'direct',
       title: t('rules.direct'),
-      hint: t('rules.appTile.directHint', '不经代理'),
+      hint: t('rules.appTile.directHint', 'Bypass proxy'),
     },
     {
       kind: 'block',
       dot: 'block',
       title: t('rules.block'),
-      hint: t('rules.appTile.blockHint', '丢弃连接'),
+      hint: t('rules.appTile.blockHint', 'Drop connection'),
     },
   ];
 
@@ -140,7 +140,7 @@ export function AppCard({
             {missing && (
               <>
                 {' · '}
-                <span className="miss">⚠ {t('rules.appGeoMissingShort', '规则集缺失')}</span>
+                <span className="miss">⚠ {t('rules.appGeoMissingShort', 'Rule-set missing')}</span>
               </>
             )}
           </span>
@@ -154,8 +154,8 @@ export function AppCard({
 
       <div className="ac-body">
         <div className="ac-lbl">
-          {t('rules.appTile.policyLabel', '出站策略')}{' '}
-          <small>{t('rules.appTile.policyClickHint', '点击切换')}</small>
+          {t('rules.appTile.policyLabel', 'Outbound policy')}{' '}
+          <small>{t('rules.appTile.policyClickHint', 'Click to switch')}</small>
         </div>
         <div className="matrix">
           {tiles.map((tile) => (
@@ -185,17 +185,17 @@ export function AppCard({
             onSelect={(id) =>
               onPolicyChange(id === FOLLOW_GLOBAL_NODE_ID ? 'proxy-default' : `node-${id}`)
             }
-            placeholder={t('rules.appTile.nodePick', '选择出口')}
-            searchPlaceholder={t('common.search', '搜索')}
-            ariaLabel={t('rules.targetNode', '目标节点')}
+            placeholder={t('rules.appTile.nodePick', 'Choose outbound')}
+            searchPlaceholder={t('common.search', 'Search')}
+            ariaLabel={t('rules.targetNode', 'Target Node (Optional)')}
           />
         </div>
 
         {chips.length > 0 && (
           <>
             <div className="ac-lbl">
-              {t('rules.appTile.ruleSetLabel', '规则集')}{' '}
-              <small>{t('rules.appTile.ruleSetSub', 'geosite / geoip / 进程名')}</small>
+              {t('rules.appTile.ruleSetLabel', 'Rule sets')}{' '}
+              <small>{t('rules.appTile.ruleSetSub', 'geosite / geoip / process')}</small>
             </div>
             <div className="chips">
               {chips.map((c, i) => (
@@ -213,7 +213,7 @@ export function AppCard({
             <span>
               {t(
                 'rules.appGeoMissingTip',
-                '该应用引用的分流规则集缺失（已删除或文件丢失），仅按进程名生效；请到「规则资源」页下载恢复'
+                'This app references a routing rule-set that is missing (deleted or file lost); only process-name matching is active. Re-download it on the Rule Resources page to restore.'
               )}
             </span>
             <span
@@ -228,7 +228,7 @@ export function AppCard({
                 }
               }}
             >
-              {t('rules.appTile.download', '下载')}
+              {t('rules.appTile.download', 'Download')}
             </span>
           </div>
         )}
@@ -240,7 +240,7 @@ export function AppCard({
             className="inline-flex items-center gap-1.5 self-start text-[11px] font-medium text-err/80 hover:text-err"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            {t('rules.customApp.delete', '删除应用')}
+            {t('rules.customApp.delete', 'Delete app')}
           </button>
         )}
       </div>

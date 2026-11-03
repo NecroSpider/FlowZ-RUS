@@ -548,22 +548,22 @@ describe('#57 错误归因：translateErrorMessage / classifyCoreError 同序镜
 
   it('节点域名 SERVFAIL → node 级文案（含切换指引）+ DNS_RESOLVE_FAILED', () => {
     const msg = 'lookup b.trycloudflare.com: SERVFAIL';
-    expect(translate(msg)).toContain('节点域名解析失败');
+    expect(translate(msg)).toContain('Node domain resolution failed');
     expect(translate(msg)).toContain('DNSPod');
     expect(classify(msg)).toBe(ProxyErrorCode.DNS_RESOLVE_FAILED);
   });
 
   it('普通域名 no such host → generic DNS 文案 + DNS_RESOLVE_FAILED', () => {
     const msg = 'lookup not-a-node.example.org: no such host';
-    expect(translate(msg)).toContain('DNS 解析失败');
-    expect(translate(msg)).not.toContain('节点域名解析失败');
+    expect(translate(msg)).toContain('DNS resolution failed');
+    expect(translate(msg)).not.toContain('Node domain resolution failed');
     expect(classify(msg)).toBe(ProxyErrorCode.DNS_RESOLVE_FAILED);
   });
 
   it('lookup i/o timeout → 命中 DNS（先于通用 timeout，不归类为连接超时）', () => {
     const msg = 'lookup a.example-argo.com: i/o timeout';
     // 节点域名 → node 文案
-    expect(translate(msg)).toContain('节点域名解析失败');
+    expect(translate(msg)).toContain('Node domain resolution failed');
     expect(classify(msg)).toBe(ProxyErrorCode.DNS_RESOLVE_FAILED);
     expect(classify(msg)).not.toBe(ProxyErrorCode.CONNECTION_TIMEOUT);
   });

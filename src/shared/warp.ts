@@ -152,7 +152,9 @@ export function parseRegisterResponse(json: any): WarpRegisterResult {
   const v4 = config?.interface?.addresses?.v4;
   const v6 = config?.interface?.addresses?.v6;
   if (!peerPublicKey || !endpointHost || (!v4 && !v6)) {
-    throw new Error('WARP 注册响应缺少 peer 公钥 / 端点 / 分配地址');
+    throw new Error(
+      'WARP registration response is missing the peer public key / endpoint / assigned addresses'
+    );
   }
   const { host, port } = splitEndpoint(endpointHost);
   const localAddress: string[] = [];

@@ -89,13 +89,13 @@ export function ResourceCatalogDialog({
     try {
       const res = await api.ruleResources.refreshCatalog();
       setCatalog(res);
-      toast.success(t('ruleResources.refreshOk', '资源库已更新'));
+      toast.success(t('ruleResources.refreshOk', 'Library updated'));
     } catch (e) {
       const code = e instanceof Error ? e.message : '';
       toast.error(
         code === 'rate_limited'
-          ? t('ruleResources.rateLimited', 'GitHub 请求频繁，请稍后再试')
-          : t('ruleResources.refreshFailed', '刷新资源库失败')
+          ? t('ruleResources.rateLimited', 'GitHub rate-limited, try again later')
+          : t('ruleResources.refreshFailed', 'Failed to refresh library')
       );
     } finally {
       setRefreshing(false);
@@ -195,11 +195,11 @@ export function ResourceCatalogDialog({
       {d.present ? (
         <span className={cn('rsc-lib-badge', tab === 'builtin' ? 'bi' : 'have')}>
           {tab === 'builtin'
-            ? t('ruleResources.builtinMark', '已内置')
-            : t('ruleResources.downloaded', '已下载')}
+            ? t('ruleResources.builtinMark', 'Bundled')
+            : t('ruleResources.downloaded', 'Downloaded')}
         </span>
       ) : d.missing ? (
-        <span className="rsc-lib-badge miss">{t('ruleResources.missing', '文件缺失')}</span>
+        <span className="rsc-lib-badge miss">{t('ruleResources.missing', 'File missing')}</span>
       ) : null}
     </label>
   );
@@ -212,12 +212,12 @@ export function ResourceCatalogDialog({
         <DialogDescription className="sr-only">
           {t(
             'ruleResources.libraryDesc',
-            '内置=随包规则集（已内置，可直接引用）；外置=刷新拉取远程全量 + 粘贴自定义 URL，可多选下载。'
+            'Pick .srs rule-sets from meta-rules-dat to download (multi-select)'
           )}
         </DialogDescription>
 
         <div className="rsc-dialog-h">
-          <DialogTitle>{t('ruleResources.library', '资源库')}</DialogTitle>
+          <DialogTitle>{t('ruleResources.library', 'Library')}</DialogTitle>
           {/* 刷新仅外置 TAB 需要（内置=随包，无远程清单可刷） */}
           {tab === 'external' && (
             <button
@@ -226,12 +226,12 @@ export function ResourceCatalogDialog({
               disabled={refreshing}
             >
               <RotateCw className={refreshing ? 'animate-spin' : ''} />
-              {t('ruleResources.refreshCatalogBtn', '刷新清单')}
+              {t('ruleResources.refreshCatalogBtn', 'Refresh list')}
             </button>
           )}
           <button
             className="rsc-x"
-            aria-label={t('servers.cancel', '取消')}
+            aria-label={t('servers.cancel', 'Cancel')}
             onClick={() => onOpenChange(false)}
           >
             ✕
@@ -242,13 +242,13 @@ export function ResourceCatalogDialog({
         <div className="px-4 pt-3">
           <div className="tabs">
             <button className={cn(tab === 'builtin' && 'on')} onClick={() => switchTab('builtin')}>
-              {t('ruleResources.libTabBuiltin', '内置 · 随包')}
+              {t('ruleResources.libTabBuiltin', 'Builtin · Bundled')}
             </button>
             <button
               className={cn(tab === 'external' && 'on')}
               onClick={() => switchTab('external')}
             >
-              {t('ruleResources.libTabExternal', '外置 · 远程/URL')}
+              {t('ruleResources.libTabExternal', 'External · Remote/URL')}
             </button>
           </div>
         </div>
@@ -262,9 +262,9 @@ export function ResourceCatalogDialog({
                 onClick={() => setFilter(f)}
               >
                 {f === 'all'
-                  ? t('ruleResources.filterAll', '全部')
+                  ? t('ruleResources.filterAll', 'All')
                   : f === 'lite'
-                    ? t('ruleResources.filterLite', '精简')
+                    ? t('ruleResources.filterLite', 'Lite')
                     : t(`ruleResources.category.${f}`, f)}
               </button>
             ))}
@@ -275,7 +275,7 @@ export function ResourceCatalogDialog({
               className="input"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('ruleResources.searchCatalog', '搜索规则集')}
+              placeholder={t('ruleResources.searchCatalog', 'Search rule-sets')}
             />
           </div>
         </div>
@@ -290,10 +290,13 @@ export function ResourceCatalogDialog({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleAddUrl();
               }}
-              placeholder={t('ruleResources.urlPlaceholder', '粘贴 .srs 规则集 URL（自定义源）')}
+              placeholder={t(
+                'ruleResources.urlPlaceholder',
+                'Paste a .srs rule-set URL (custom source)'
+              )}
             />
             <button className="btn ghost sm" onClick={handleAddUrl} disabled={!url.trim()}>
-              {t('ruleResources.addUrl', '添加')}
+              {t('ruleResources.addUrl', 'Add')}
             </button>
           </div>
         )}
@@ -303,7 +306,7 @@ export function ResourceCatalogDialog({
             <Info />
             {t(
               'ruleResources.catalogTruncatedNote',
-              '清单较多，仅展示前 {{shown}} 项匹配（共 {{total}} 项）· 用搜索缩小范围',
+              'Long list — showing the first {{shown}} matches (of {{total}}) · narrow it with search',
               { shown: filtered.items.length, total: filtered.total }
             )}
           </div>
@@ -315,13 +318,16 @@ export function ResourceCatalogDialog({
           {loading ? (
             <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              {t('common.loading', '加载中...')}
+              {t('common.loading', 'Loading...')}
             </div>
           ) : filtered.items.length === 0 ? (
             <div className="flex h-[200px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
               {externalNeedsRefresh
-                ? t('ruleResources.externalNeedRefresh', '点击右上角刷新，拉取远程全量清单')
-                : t('ruleResources.noCatalog', '没有匹配的规则集')}
+                ? t(
+                    'ruleResources.externalNeedRefresh',
+                    'Click refresh (top-right) to fetch the full remote catalog'
+                  )
+                : t('ruleResources.noCatalog', 'No matching rule-sets')}
             </div>
           ) : (
             filtered.items.map(renderRow)
@@ -330,17 +336,17 @@ export function ResourceCatalogDialog({
 
         <div className="rsc-dialog-f">
           <span className="rsc-lib-sel">
-            {t('ruleResources.libSelected', '已选 {{n}} 项', { n: selected.size })}
+            {t('ruleResources.libSelected', '{{n}} selected', { n: selected.size })}
           </span>
           <button className="btn ghost" onClick={() => onOpenChange(false)}>
-            {t('servers.cancel', '取消')}
+            {t('servers.cancel', 'Cancel')}
           </button>
           <button
             className="btn flow rsc-lib-dl"
             onClick={handleDownload}
             disabled={selected.size === 0}
           >
-            {t('ruleResources.downloadNItems', '下载 {{count}} 项', { count: selected.size })}
+            {t('ruleResources.downloadNItems', 'Download {{count}}', { count: selected.size })}
           </button>
         </div>
       </DialogContent>

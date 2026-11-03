@@ -263,7 +263,7 @@ export function mapRendererHeapSample(raw: RendererHeapSample): RendererHeapRepo
     out.residentSetMb === undefined &&
     out.blinkResourceMb === undefined
   ) {
-    return { unavailable: 'unavailable（渲染进程取数为空）' };
+    return { unavailable: 'unavailable (renderer returned no data)' };
   }
   return out;
 }
@@ -276,21 +276,24 @@ export async function collectRendererHeap(
   introspect: (() => Promise<RendererHeapSample | null>) | undefined,
   timeoutMs = 2000
 ): Promise<RendererHeapReport> {
-  if (!introspect) return { unavailable: 'unavailable（无渲染窗口）' };
+  if (!introspect) return { unavailable: 'unavailable (no renderer window)' };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<RendererHeapReport>((resolve) => {
     timer = setTimeout(
-      () => resolve({ unavailable: `unavailable（渲染进程内省超时 >${timeoutMs}ms，疑窗口卡死）` }),
+      () =>
+        resolve({
+          unavailable: `unavailable (renderer introspection timed out after >${timeoutMs}ms, window may be hung)`,
+        }),
       timeoutMs
     );
   });
   const attempt = (async (): Promise<RendererHeapReport> => {
     try {
       const raw = await introspect();
-      if (!raw) return { unavailable: 'unavailable（窗口不存在或取数为空）' };
+      if (!raw) return { unavailable: 'unavailable (window missing or returned no data)' };
       return mapRendererHeapSample(raw);
     } catch (e) {
-      return { unavailable: `unavailable（内省失败: ${(e as Error)?.message ?? e}）` };
+      return { unavailable: `unavailable (introspection failed: ${(e as Error)?.message ?? e})` };
     }
   })();
   try {

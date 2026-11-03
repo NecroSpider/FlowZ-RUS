@@ -265,11 +265,15 @@ export class PlatformPrivilegeService {
       });
       proc.on('exit', (code) => {
         if (code === 0) resolve({ success: true });
-        else if (code === 126) resolve({ success: false, error: '授权被取消' });
+        else if (code === 126) resolve({ success: false, error: 'Authorization cancelled' });
         else if (code === 127)
-          resolve({ success: false, error: '授权失败或系统缺少 polkit 认证代理' });
-        else if (code === 3) resolve({ success: false, error: '系统缺少 setcap（libcap2-bin）' });
-        else resolve({ success: false, error: stderr.trim() || `pkexec 退出码 ${code}` });
+          resolve({
+            success: false,
+            error: 'Authorization failed or no polkit authentication agent is available',
+          });
+        else if (code === 3)
+          resolve({ success: false, error: 'setcap is not installed (libcap2-bin)' });
+        else resolve({ success: false, error: stderr.trim() || `pkexec exit code ${code}` });
       });
       proc.on('error', (err) => resolve({ success: false, error: err.message }));
     });
@@ -286,12 +290,12 @@ set -e
 CORE=${shq(corePath)}
 RULES=${shq(rulesFile)}
 SETCAP="$(command -v setcap || echo /usr/sbin/setcap)"
-# setcap 缺失（精简 Debian 无 libcap2-bin）→ 用退出码 3 区分于 pkexec 的 126/127（P3-1）
-[ -x "$SETCAP" ] || { echo "setcap 未安装(libcap)" >&2; exit 3; }
+# setcap missing (minimal Debian without libcap2-bin) -> exit code 3, distinct from pkexec's 126/127 (P3-1)
+[ -x "$SETCAP" ] || { echo "setcap is not installed (libcap)" >&2; exit 3; }
 "$SETCAP" 'cap_net_admin,cap_net_bind_service,cap_net_raw=+ep' "$CORE"
 mkdir -p /etc/polkit-1/rules.d
 cat > "$RULES" <<'EOF'
-// FlowZ: 允许指定用户改 systemd-resolved 链路 DNS（TUN auto_route 免逐条密码框）。手动删除本文件即恢复默认。
+// FlowZ: lets this user change systemd-resolved per-link DNS (TUN auto_route without a password prompt each time). Delete this file to restore the default.
 polkit.addRule(function(action, subject) {
   if (action.id.indexOf("org.freedesktop.resolve1.") === 0 &&
       subject.user === "${user}" && subject.local && subject.active) {
@@ -299,7 +303,7 @@ polkit.addRule(function(action, subject) {
   }
 });
 EOF
-# 0.105 .pkla 回退：只要 polkit localauthority 父目录在就建 50-local.d 并写（P3-2，放宽过严条件）
+# polkit 0.105 .pkla fallback: create and write 50-local.d whenever the localauthority parent dir exists (P3-2, relaxed an overly strict check)
 PKLA_DIR=/etc/polkit-1/localauthority/50-local.d
 if [ -d /etc/polkit-1/localauthority ]; then
   mkdir -p "$PKLA_DIR"
@@ -333,7 +337,7 @@ echo flowz-linux-tun-setup-ok
    */
   writeWrapperScript(): void {
     const script = `#!/bin/bash
-# FlowZ 看护脚本（osascript 以 root 执行）；勿手改。
+# FlowZ watchdog script (run as root via osascript); do not edit by hand.
 SB="$1"; CFG="$2"; LOG="$3"; PIDFILE="$4"; STOPFLAG="$5"; PARENT="$6"; FWD="$7"
 if [ "$FWD" = "1" ]; then sysctl -w net.inet.ip.forwarding=1 >/dev/null 2>&1; sysctl -w net.inet6.ip6.forwarding=1 >/dev/null 2>&1; fi
 "$SB" run -c "$CFG" > "$LOG" 2>&1 &
@@ -347,9 +351,10 @@ done
 kill -TERM "$SBPID" 2>/dev/null
 for i in $(seq 1 10); do kill -0 "$SBPID" 2>/dev/null || break; sleep 0.5; done
 kill -9 "$SBPID" 2>/dev/null
-# 归还运行时目录属主给登录用户（根治跨提权态属主冲突）：root 跑的 sing-box 把 tailscale state /
-# dashboard / ui 写成 root → 下次以登录用户跑读不了致 endpoint post-start FATAL。CONFDIR(=config 父目录)
-# 属主即登录用户；本看护脚本以 root 跑、有权 chown。与 helper daemon 路径(helper.go chownRuntimeDirs)同口径。
+# Give runtime dirs back to the login user (fixes ownership conflicts across privilege modes): sing-box running as
+# root writes tailscale state / dashboard / ui as root -> the next run as the login user cannot read them and the
+# endpoint hits a post-start FATAL. CONFDIR (= config parent dir) is owned by the login user; this watchdog runs as
+# root and may chown. Same approach as the helper daemon path (helper.go chownRuntimeDirs).
 CONFDIR=$(dirname "$CFG")
 OWNER=$(stat -f %u "$CONFDIR" 2>/dev/null)
 if [ -n "$OWNER" ] && [ "$OWNER" != "0" ]; then
@@ -410,7 +415,7 @@ rm -f "$STOPFLAG"
         if (fsSync.existsSync(filePath)) {
           const stats = fsSync.statSync(filePath);
           if (stats.uid === 0) {
-            this.ctx.log('info', `修复文件权限: ${filePath}`);
+            this.ctx.log('info', `Fixing file permissions: ${filePath}`);
             const currentUser = process.env.USER || process.env.LOGNAME;
             if (currentUser) {
               try {
@@ -420,11 +425,11 @@ rm -f "$STOPFLAG"
                 // 如果 chown 失败，尝试删除文件让 sing-box 重新创建
                 try {
                   fsSync.unlinkSync(filePath);
-                  this.ctx.log('info', `已删除需要重新创建的文件: ${filePath}`);
+                  this.ctx.log('info', `Deleted file so it can be recreated: ${filePath}`);
                 } catch {
                   this.ctx.log(
                     'warn',
-                    `无法修复文件权限: ${filePath}，请手动删除或运行: sudo chown ${currentUser} "${filePath}"`
+                    `Cannot fix file permissions: ${filePath}; delete it manually or run: sudo chown ${currentUser} "${filePath}"`
                   );
                 }
               }
@@ -525,7 +530,7 @@ rm -f "$STOPFLAG"
    * 用户取消授权 → 抛「已取消管理员授权」。补齐 copyFileElevated 的 macOS 腿（该方法注释「fallback 留后续平台扩展」）。
    */
   async installCoreElevatedMac(src: string, dest: string): Promise<void> {
-    if (process.platform !== 'darwin') throw new Error('installCoreElevatedMac 仅 macOS');
+    if (process.platform !== 'darwin') throw new Error('installCoreElevatedMac is macOS-only');
     const destDir = path.dirname(dest);
     // 受保护核目录恒 root:wheel、普通用户写不动 → 不试免提权 direct copy：①避免非 EPERM 错（ENOSPC/ENOENT）在弹窗前抛、
     // 致调用方 declinedVersion 已记却从未弹；②杜绝「万一目录松权时植入用户属主二进制」的 TOCTOU。mkdir 由
@@ -552,8 +557,9 @@ rm -f "$STOPFLAG"
         proc.stderr?.on('data', (d) => (stderr += d.toString()));
         proc.on('exit', (code) => {
           if (code === 0) resolve();
-          else if (/-128|User canceled/i.test(stderr)) reject(new Error('已取消管理员授权'));
-          else reject(new Error(stderr.trim() || `osascript 退出码 ${code}`));
+          else if (/-128|User canceled/i.test(stderr))
+            reject(new Error('Administrator authorization cancelled'));
+          else reject(new Error(stderr.trim() || `osascript exit code ${code}`));
         });
         proc.on('error', (err) => reject(err));
       });
@@ -604,7 +610,10 @@ rm -f "$STOPFLAG"
   ): Promise<{ stopped: boolean }> {
     // helper 路径：经 socket 让 root daemon 停 sing-box，零提权（PR-M2）。
     if (this.ctx.startedViaHelper() && this.helperManager) {
-      this.ctx.log('info', `正在经提权 helper 停止 sing-box (PID: ${pid})（免授权）...`);
+      this.ctx.log(
+        'info',
+        `Stopping sing-box (PID: ${pid}) via privileged helper (no auth prompt)...`
+      );
       if (this.ctx.isProcessAlive(pid)) {
         await this.helperManager.stopCore();
         // 8s（非退出）覆盖 helper terminateChild 的「TERM→等≤5s→KILL」完整窗口 + 收割余量：
@@ -614,44 +623,59 @@ rm -f "$STOPFLAG"
       if (this.ctx.isProcessAlive(pid)) {
         if (opts?.quitting) {
           // 退出语境零弹框：helper 未生效也不弹 osascript，交由 teardownForQuit 的 helper.cleanup() 兜底回收
-          this.ctx.log('warn', 'helper 停止未生效，退出语境跳过提权弹框（cleanup 兜底）');
+          this.ctx.log(
+            'warn',
+            'Helper stop did not take effect; skipping the elevation prompt while quitting (cleanup will handle it)'
+          );
         } else {
           // 极少触发：helper 未生效 → 退回 osascript 强杀（一次授权）。取消授权(进程仍活) → 不谎报已停止。
-          this.ctx.log('warn', 'helper 停止未生效，退回提权强制终止');
+          this.ctx.log(
+            'warn',
+            'Helper stop did not take effect, falling back to an elevated force kill'
+          );
           const ok = await this.forceKillElevated(pid);
           if (!ok) return { stopped: false };
         }
       } else {
-        this.ctx.log('info', 'sing-box 已由提权 helper 停止（免授权）');
+        this.ctx.log('info', 'sing-box stopped by privileged helper (no auth prompt)');
       }
       return { stopped: true };
     }
 
     // M1-a：进程已不在 → 直接返回（免一次提权授权框）。finishStop 由调用方统一做。
     if (!this.ctx.isProcessAlive(pid)) {
-      this.ctx.log('info', 'sing-box 进程已不在，跳过提权终止');
+      this.ctx.log('info', 'sing-box process already gone, skipping elevated kill');
       return { stopped: true };
     }
 
     // M1-b：写 stopflag，由 root 看护脚本自杀 sing-box —— 停止无需再次提权
-    this.ctx.log('info', `正在停止 sing-box (PID: ${pid})，通知看护脚本...`);
+    this.ctx.log('info', `Stopping sing-box (PID: ${pid}), notifying the watchdog script...`);
     try {
       require('fs').writeFileSync(this.ctx.stopFlagPath(), '');
     } catch (e) {
-      this.ctx.log('warn', `写 stopflag 失败: ${e instanceof Error ? e.message : String(e)}`);
+      this.ctx.log(
+        'warn',
+        `Failed to write stopflag: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
     if (await this.ctx.waitForProcessExit(pid, opts?.quitting ? 3000 : 8000)) {
-      this.ctx.log('info', 'sing-box 已由看护脚本停止（无需提权）');
+      this.ctx.log('info', 'sing-box stopped by the watchdog script (no elevation needed)');
       return { stopped: true };
     }
 
     // Fallback：看护脚本未在预期内收口（异常/旧式直起）→ 退回 osascript 提权终止
     if (opts?.quitting) {
       // 退出语境零弹框：跳过 osascript，残留 sing-box 由下次启动的 killOrphanedProcessesMac 清扫
-      this.ctx.log('warn', '看护脚本未及时停止，退出语境跳过提权弹框（下次启动清扫孤儿）');
+      this.ctx.log(
+        'warn',
+        'Watchdog script did not stop in time; skipping the elevation prompt while quitting (orphans are cleaned up on next launch)'
+      );
       return { stopped: true };
     }
-    this.ctx.log('warn', '看护脚本未及时停止 sing-box，退回提权终止');
+    this.ctx.log(
+      'warn',
+      'Watchdog script did not stop sing-box in time, falling back to an elevated kill'
+    );
     return new Promise((resolve) => {
       const killProcess = spawn('/usr/bin/osascript', [
         '-e',
@@ -662,22 +686,22 @@ rm -f "$STOPFLAG"
         if (code === 0) {
           await this.ctx.waitForProcessExit(pid, 3000);
           if (this.ctx.isProcessAlive(pid)) {
-            this.ctx.log('warn', '进程未响应 SIGTERM，尝试强制终止...');
+            this.ctx.log('warn', 'Process did not respond to SIGTERM, trying a force kill...');
             const ok = await this.forceKillElevated(pid);
             resolve({ stopped: ok });
           } else {
-            this.ctx.log('info', 'sing-box 进程已停止');
+            this.ctx.log('info', 'sing-box process stopped');
             resolve({ stopped: true });
           }
         } else {
-          this.ctx.log('warn', `停止 sing-box 进程可能失败，退出码: ${code}`);
+          this.ctx.log('warn', `Stopping the sing-box process may have failed, exit code: ${code}`);
           const ok = await this.forceKillElevated(pid);
           resolve({ stopped: ok }); // 取消授权(进程仍活) → 不谎报已停止（M3）
         }
       });
 
       killProcess.on('error', async (error) => {
-        this.ctx.log('error', `停止 sing-box 进程失败: ${error.message}`);
+        this.ctx.log('error', `Failed to stop the sing-box process: ${error.message}`);
         // spawn 失败（osascript 无法启动，非用户取消授权）：尽力强杀但不发 STOP_AUTH_CANCELLED（避免误报）。
         const ok = await this.forceKillElevated(pid, false);
         resolve({ stopped: ok });
@@ -698,20 +722,23 @@ rm -f "$STOPFLAG"
   ): Promise<{ stopped: boolean }> {
     // 进程已不在 → 直接返回，免一次 UAC（镜像 macOS M1-a）
     if (!this.ctx.isProcessAlive(pid)) {
-      this.ctx.log('info', 'sing-box 进程已不在，跳过提权终止');
+      this.ctx.log('info', 'sing-box process already gone, skipping elevated kill');
       return { stopped: true };
     }
 
     // 主路径：写 stopflag，由提权看护脚本收割 sing-box —— 停止无需再次 UAC
-    this.ctx.log('info', `正在停止 sing-box (PID: ${pid})，通知看护脚本...`);
+    this.ctx.log('info', `Stopping sing-box (PID: ${pid}), notifying the watchdog script...`);
     try {
       require('fs').writeFileSync(this.ctx.stopFlagPath(), '');
     } catch (e) {
-      this.ctx.log('warn', `写 stopflag 失败: ${e instanceof Error ? e.message : String(e)}`);
+      this.ctx.log(
+        'warn',
+        `Failed to write stopflag: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
     // 看护脚本 1s 轮询 + Stop-Process，5s 覆盖足够；退出语境压到 3s（cleanupResources 8s 预算内）
     if (await this.ctx.waitForProcessExit(pid, opts?.quitting ? 3000 : 5000)) {
-      this.ctx.log('info', 'sing-box 已由看护脚本停止（无需 UAC）');
+      this.ctx.log('info', 'sing-box stopped by the watchdog script (no UAC needed)');
       return { stopped: true };
     }
 
@@ -721,12 +748,15 @@ rm -f "$STOPFLAG"
       // 确无看护时残留交下次启动的提权清扫（watchdog 步骤 a）。stopflag 留给看护消费/下次启动清理。
       this.ctx.log(
         'warn',
-        `看护脚本未及时停止 sing-box（PID ${pid}），退出语境跳过 UAC 弹框（父死看护/下次启动清扫兜底）`
+        `Watchdog script did not stop sing-box (PID ${pid}) in time; skipping the UAC prompt while quitting (the watchdog exits with its parent / next launch cleans up)`
       );
       return { stopped: true };
     }
 
-    this.ctx.log('warn', '看护脚本未及时停止 sing-box，退回提权 taskkill（需要 UAC 授权）...');
+    this.ctx.log(
+      'warn',
+      'Watchdog script did not stop sing-box in time, falling back to an elevated taskkill (requires UAC)...'
+    );
     return new Promise((resolve) => {
       // RunAs taskkill 兜底：覆盖旧版直起（无看护）与看护异常两种情形，一次 UAC（与旧版语义一致）。
       // /FI "IMAGENAME eq sing-box.exe" 防 PID 复用误杀（值含空格→ -ArgumentList 元素须内嵌双引号；VM 实测通过）。
@@ -749,10 +779,10 @@ rm -f "$STOPFLAG"
 
       killProcess.on('exit', (code) => {
         if (code === 0) {
-          this.ctx.log('info', 'sing-box 进程已停止');
+          this.ctx.log('info', 'sing-box process stopped');
         } else {
           // 非零退出码可能是进程已退出或用户取消 UAC
-          this.ctx.log('warn', `停止进程结果: code=${code}`);
+          this.ctx.log('warn', `Stop process result: code=${code}`);
         }
 
         // 兜底路径无看护脚本消费 stopflag → 主动清掉，防下次会话看护误触发
@@ -771,7 +801,7 @@ rm -f "$STOPFLAG"
       });
 
       killProcess.on('error', (error) => {
-        this.ctx.log('error', `停止 sing-box 进程失败: ${error.message}`);
+        this.ctx.log('error', `Failed to stop the sing-box process: ${error.message}`);
         // spawn 失败：尽力复核，仍以存活为准
         const stopped = !this.ctx.isProcessAlive(pid);
         resolve({ stopped });
@@ -885,7 +915,7 @@ rm -f "$STOPFLAG"
 
     // 核心不存在 → 直接报「找不到」（命中 nonRetryableErrors），不白弹密码框（P2-3）
     if (!fs.existsSync(corePath)) {
-      throw new Error(`找不到 sing-box 可执行文件: ${corePath}`);
+      throw new Error(`sing-box executable not found: ${corePath}`);
     }
 
     // 定位 getcap（普通用户 PATH 常不含 /usr/sbin）；绝对路径都不在则退回裸名走 PATH（P2-1）
@@ -926,15 +956,19 @@ rm -f "$STOPFLAG"
       /* fallthrough */
     }
     if (!user) {
-      throw new Error('TUN 模式需要管理员权限：无法确定当前用户名，请手动配置 setcap');
+      throw new Error(
+        'TUN mode requires administrator permission: cannot determine the current user name, configure setcap manually'
+      );
     }
     if (!/^[a-z_][a-z0-9_.@-]*$/i.test(user)) {
-      throw new Error(`TUN 模式需要管理员权限：用户名 "${user}" 含不支持的字符，请手动配置 setcap`);
+      throw new Error(
+        `TUN mode requires administrator permission: user name "${user}" contains unsupported characters, configure setcap manually`
+      );
     }
 
     this.ctx.log(
       'info',
-      'Linux TUN 首次配置：请求一次管理员授权（赋核心网络权限 + 安装 DNS polkit 规则）...'
+      'Linux TUN first-time setup: requesting administrator authorization once (grant core network capabilities + install the DNS polkit rule)...'
     );
 
     const scriptPath = path.join(getUserDataPath(), 'flowz-linux-tun-setup.sh');
@@ -944,7 +978,7 @@ rm -f "$STOPFLAG"
       });
     } catch (e) {
       throw new Error(
-        `TUN 模式需要管理员权限：无法写入提权脚本 (${e instanceof Error ? e.message : String(e)})`
+        `TUN mode requires administrator permission: cannot write the elevation script (${e instanceof Error ? e.message : String(e)})`
       );
     }
 
@@ -960,11 +994,14 @@ rm -f "$STOPFLAG"
     const post = await probeCaps();
     if (post === false || (post === null && !result.success)) {
       throw new Error(
-        `TUN 模式需要管理员权限：${result.error || '授权被取消或系统缺少 polkit 认证代理'}。` +
-          `可手动执行: sudo setcap 'cap_net_admin,cap_net_bind_service,cap_net_raw=+ep' "${corePath}"`
+        `TUN mode requires administrator permission: ${result.error || 'authorization cancelled or no polkit authentication agent is available'}. ` +
+          `You can run it manually: sudo setcap 'cap_net_admin,cap_net_bind_service,cap_net_raw=+ep' "${corePath}"`
       );
     }
-    this.ctx.log('info', 'Linux TUN 提权配置完成（核心已赋权，DNS polkit 规则已安装）');
+    this.ctx.log(
+      'info',
+      'Linux TUN elevation setup complete (core capabilities granted, DNS polkit rule installed)'
+    );
   }
 
   /**
@@ -1148,7 +1185,7 @@ rm -f "$STOPFLAG"
 
         this.ctx.log(
           'warn',
-          `发现 ${pidList.length} 个残留的 sing-box 进程，正在清理: ${pidList.join(', ')}`
+          `Found ${pidList.length} leftover sing-box process(es), cleaning up: ${pidList.join(', ')}`
         );
         for (const p of pidList) {
           try {
@@ -1232,7 +1269,7 @@ rm -f "$STOPFLAG"
 
         this.ctx.log(
           'warn',
-          `发现 ${pidList.length} 个残留的 sing-box 进程，正在清理: ${pidList.join(', ')}`
+          `Found ${pidList.length} leftover sing-box process(es), cleaning up: ${pidList.join(', ')}`
         );
 
         // TUN 模式下 sing-box 以 root 权限运行，必须用 osascript 请求管理员权限终止
@@ -1244,9 +1281,12 @@ rm -f "$STOPFLAG"
 
         killProcess.on('close', async (code) => {
           if (code === 0) {
-            this.ctx.log('info', '残留进程已清理');
+            this.ctx.log('info', 'Leftover processes cleaned up');
           } else {
-            this.ctx.log('warn', `清理残留进程可能失败，退出码: ${code}`);
+            this.ctx.log(
+              'warn',
+              `Cleaning up leftover processes may have failed, exit code: ${code}`
+            );
           }
           // 等待系统完全清理 TUN 接口和路由表
           await this.ctx.waitForNetworkCleanup();
@@ -1254,7 +1294,7 @@ rm -f "$STOPFLAG"
         });
 
         killProcess.on('error', async (error) => {
-          this.ctx.log('warn', `清理残留进程失败: ${error.message}`);
+          this.ctx.log('warn', `Failed to clean up leftover processes: ${error.message}`);
           await this.ctx.waitForNetworkCleanup();
           resolve();
         });
@@ -1289,7 +1329,7 @@ rm -f "$STOPFLAG"
 
         this.ctx.log(
           'warn',
-          `发现 ${pidList.length} 个残留的 sing-box 进程，尝试零提权清理: ${pidList.join(', ')}`
+          `Found ${pidList.length} leftover sing-box process(es), trying cleanup without elevation: ${pidList.join(', ')}`
         );
         const epermPids = new Set<number>();
         for (const p of pidList) {
@@ -1312,12 +1352,15 @@ rm -f "$STOPFLAG"
           const survivors = pidList.filter((p) => epermPids.has(p) && this.ctx.isProcessAlive(p));
           const killed = pidList.filter((p) => !survivors.includes(p));
           if (killed.length) {
-            this.ctx.log('info', `已清理 ${killed.length} 个用户态残留: ${killed.join(', ')}`);
+            this.ctx.log(
+              'info',
+              `Cleaned up ${killed.length} user-level leftover(s): ${killed.join(', ')}`
+            );
           }
           if (survivors.length) {
             this.ctx.log(
               'warn',
-              `${survivors.length} 个 root 残留用户态杀不动(EPERM): ${survivors.join(', ')}，需提权清理`
+              `${survivors.length} root orphan(s) cannot be killed without elevation (EPERM): ${survivors.join(', ')}; elevated cleanup needed`
             );
           }
           resolve(survivors);
@@ -1346,7 +1389,7 @@ rm -f "$STOPFLAG"
     };
     if (!this.ctx.isInteractive()) {
       throw blocked(
-        `残留 root sing-box (${pids.join(', ')}) 占用端口，自动重启无法提权清理，请手动停止后重试`
+        `Root orphan sing-box (${pids.join(', ')}) is holding the port and auto-restart cannot elevate to clean it up; stop it manually and retry`
       );
     }
     // 每个 kill 容错 + 整体兜 true：某 PID 已自然退出会让 kill 返回非零 → 原实现据 osascript 退出码误判
@@ -1354,7 +1397,7 @@ rm -f "$STOPFLAG"
     // kill 结果用「复核仍存活」判定。
     this.ctx.log(
       'warn',
-      `[孤儿] 即将弹提权框清理 root 残留 ${pids.join(', ')}（osascript）—— 若长时间无响应可能是授权框被遮挡`
+      `[orphan] About to show an elevation prompt to clean up root orphans ${pids.join(', ')} (osascript) - if nothing happens for a while, the auth dialog may be hidden behind other windows`
     );
     const killCmd = pids.map((p) => `kill -9 ${p} 2>/dev/null`).join('; ') + '; true';
     await new Promise<void>((resolve, reject) => {
@@ -1365,19 +1408,28 @@ rm -f "$STOPFLAG"
       proc.on('close', (code) => {
         if (code !== 0) {
           // osascript 非零 = 用户取消授权（-128）等 → 端口可能仍被占 → 终态（避免裸启动撞占用进风暴）
-          reject(blocked('提权清理 root 残留被取消，端口可能仍被占用'));
+          reject(
+            blocked('Elevated cleanup of root orphans was cancelled; the port may still be in use')
+          );
           return;
         }
         // 复核：仍存活才算失败（PID 已自然退出 → kill 非零但已无残留，不应误报终态）
         const survivors = pids.filter((p) => this.ctx.isProcessAlive(p));
         if (survivors.length === 0) {
-          this.ctx.log('info', `已提权清理 ${pids.length} 个 root 残留: ${pids.join(', ')}`);
+          this.ctx.log(
+            'info',
+            `Cleaned up ${pids.length} root orphan(s) with elevation: ${pids.join(', ')}`
+          );
           resolve();
         } else {
-          reject(blocked(`提权清理后仍有 root 残留存活: ${survivors.join(', ')}`));
+          reject(
+            blocked(`Root orphans still alive after elevated cleanup: ${survivors.join(', ')}`)
+          );
         }
       });
-      proc.on('error', (e) => reject(blocked(`提权清理 root 残留失败: ${e.message}`)));
+      proc.on('error', (e) =>
+        reject(blocked(`Elevated cleanup of root orphans failed: ${e.message}`))
+      );
     });
   }
 
@@ -1420,7 +1472,7 @@ rm -f "$STOPFLAG"
 
         this.ctx.log(
           'warn',
-          `发现 ${pidList.length} 个残留的 sing-box 进程，正在清理: ${pidList.join(', ')}`
+          `Found ${pidList.length} leftover sing-box process(es), cleaning up: ${pidList.join(', ')}`
         );
 
         // 逐个终止（非提权 taskkill：同权限孤儿有效；提权孤儿 Access denied 记入 failed）
@@ -1440,10 +1492,10 @@ rm -f "$STOPFLAG"
           // 不静默：大概率是提权孤儿，交由启动期提权看护脚本在同次 UAC 内清扫
           this.ctx.log(
             'warn',
-            `非提权清理失败: ${failed.join(', ')}（疑似提权孤儿，交启动期提权看护脚本清扫）`
+            `Non-elevated cleanup failed: ${failed.join(', ')} (likely elevated orphans; the elevated watchdog script will clean them up at startup)`
           );
         } else {
-          this.ctx.log('info', '残留进程已清理');
+          this.ctx.log('info', 'Leftover processes cleaned up');
         }
 
         // 等待一小段时间让系统清理
@@ -1452,7 +1504,7 @@ rm -f "$STOPFLAG"
         // tasklist 本身失败（被策略禁用等）→ log 不静默，放行启动（提权看护脚本步骤 a 仍兜底）
         this.ctx.log(
           'warn',
-          `枚举残留 sing-box 进程失败: ${e instanceof Error ? e.message : String(e)}`
+          `Failed to enumerate leftover sing-box processes: ${e instanceof Error ? e.message : String(e)}`
         );
         resolve();
       }

@@ -576,7 +576,7 @@ export class SubscriptionService {
           if (ob.version !== 4 && ob.version !== 6) {
             this.logManager.addLog(
               'warn',
-              `跳过 snell outbound "${ob.tag}"：版本 ${ob.version ?? '(缺失)'} 不受支持（sing-box 仅支持 4/6）`,
+              `Skipped snell outbound "${ob.tag}": version ${ob.version ?? '(missing)'} is not supported (sing-box supports only 4/6)`,
               'Subscription'
             );
             continue;
@@ -585,7 +585,7 @@ export class SubscriptionService {
             // trim 语义与 protocolRequirementError 的 password?.trim() 对齐：空白 psk 穿闸入库会连累整份订阅保存。
             this.logManager.addLog(
               'warn',
-              `跳过 snell outbound "${ob.tag}"：缺 psk`,
+              `Skipped snell outbound "${ob.tag}": missing psk`,
               'Subscription'
             );
             continue;
@@ -612,23 +612,31 @@ export class SubscriptionService {
       } catch (e: any) {
         this.logManager.addLog(
           'warn',
-          `解析 sing-box outbound "${ob.tag}" 失败: ${e.message}`,
+          `Failed to parse sing-box outbound "${ob.tag}": ${e.message}`,
           'Subscription'
         );
       }
     }
     if (skipByType.size > 0) {
       const detail = [...skipByType.entries()].map(([t, c]) => `${t}(${c})`).join(', ');
-      this.logManager.addLog('warn', `跳过不支持的 outbound 类型: ${detail}`, 'Subscription');
+      this.logManager.addLog(
+        'warn',
+        `Skipped unsupported outbound types: ${detail}`,
+        'Subscription'
+      );
     }
     if (skipByTransport.size > 0) {
       const detail = [...skipByTransport.entries()].map(([t, c]) => `${t}(${c})`).join(', ');
-      this.logManager.addLog('warn', `跳过不支持的传输层类型: ${detail}`, 'Subscription');
+      this.logManager.addLog(
+        'warn',
+        `Skipped unsupported transport types: ${detail}`,
+        'Subscription'
+      );
     }
     if (missingFields > 0) {
       this.logManager.addLog(
         'warn',
-        `跳过 ${missingFields} 个缺 server/port 的 outbound`,
+        `Skipped ${missingFields} outbound(s) missing server/port`,
         'Subscription'
       );
     }
@@ -693,7 +701,7 @@ export class SubscriptionService {
       }
       if (!urlObj || (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:')) {
         throw new Error(
-          `订阅地址协议不支持（仅允许 http/https）: ${SubscriptionService.redactUrl(u)}`
+          `Unsupported subscription URL scheme (only http/https allowed): ${SubscriptionService.redactUrl(u)}`
         );
       }
       return urlObj;
@@ -767,7 +775,7 @@ export class SubscriptionService {
           // ignore
         }
         throw new Error(
-          `订阅响应体积 ${n} 字节超过上限 ${SubscriptionService.MAX_BODY_BYTES}，已拒绝`
+          `Subscription response too large (${n} bytes, limit ${SubscriptionService.MAX_BODY_BYTES}), rejected`
         );
       }
     }
@@ -788,15 +796,15 @@ export class SubscriptionService {
       this.logManager.addLog(
         'warn',
         sentHwid
-          ? '订阅面板仍认为未传设备 ID（x-hwid-not-supported）'
-          : '订阅要求设备 ID（HWID）：请在该订阅设置里开启「发送设备 ID」',
+          ? 'Subscription panel still reports that no device ID was sent (x-hwid-not-supported)'
+          : 'Subscription requires a device ID (HWID): enable "Send device ID" in the settings of this subscription',
         'Subscription'
       );
     }
     if (headers.get('x-hwid-max-devices-reached') === 'true') {
       this.logManager.addLog(
         'warn',
-        '订阅已达设备数上限：在服务商的机器人/面板里删除不用的设备后再更新',
+        'Subscription device limit reached: remove unused devices in the provider bot/panel, then update again',
         'Subscription'
       );
     }
@@ -824,7 +832,7 @@ export class SubscriptionService {
     if (!body) {
       const t = await response.text();
       if (Buffer.byteLength(t, 'utf-8') > max) {
-        throw new Error(`订阅响应体积超过上限 ${max}，已拒绝`);
+        throw new Error(`Subscription response too large (limit ${max} bytes), rejected`);
       }
       return t;
     }
@@ -843,7 +851,7 @@ export class SubscriptionService {
             } catch {
               // ignore
             }
-            throw new Error(`订阅响应体积超过上限 ${max}，已拒绝`);
+            throw new Error(`Subscription response too large (limit ${max} bytes), rejected`);
           }
           chunks.push(value);
         }
@@ -895,19 +903,19 @@ export class SubscriptionService {
     if (isJson && isXrayConfigArray(json)) {
       this.logManager.addLog(
         'info',
-        '检测到 Xray JSON 配置数组格式，解析 outbounds...',
+        'Xray JSON config array detected, parsing outbounds...',
         'Subscription'
       );
       const r = parseXrayConfigArray(json, new Date().toISOString());
       for (const w of r.warnings) this.logManager.addLog('warn', w, 'Subscription');
       const servers = r.servers.map((s) => ({ ...s, subscriptionId }));
       if (servers.length === 0) {
-        if (throwOnEmpty) throw new Error('Xray JSON 订阅解析得到 0 个可用节点');
+        if (throwOnEmpty) throw new Error('Xray JSON subscription yielded 0 usable nodes');
         return { servers: [] };
       }
       this.logManager.addLog(
         'info',
-        `成功从 Xray JSON 订阅解析了 ${servers.length} 个节点`,
+        `Parsed ${servers.length} nodes from Xray JSON subscription`,
         'Subscription'
       );
       return { servers };
@@ -917,18 +925,18 @@ export class SubscriptionService {
       if (Array.isArray(obj.outbounds)) {
         this.logManager.addLog(
           'info',
-          '检测到 sing-box JSON 格式，解析 outbounds...',
+          'sing-box JSON detected, parsing outbounds...',
           'Subscription'
         );
         const servers = this.parseSingboxOutbounds(obj.outbounds, subscriptionId);
         // 0 节点必须 throw（与 Clash 分支对齐），不返回空集 → 防 reconcile 删光存量 + 清 selectedServerId。
         if (servers.length === 0) {
-          if (throwOnEmpty) throw new Error('sing-box 订阅解析得到 0 个可用节点');
+          if (throwOnEmpty) throw new Error('sing-box subscription yielded 0 usable nodes');
           return { servers: [] };
         }
         this.logManager.addLog(
           'info',
-          `成功从 sing-box 订阅解析了 ${servers.length} 个节点`,
+          `Parsed ${servers.length} nodes from sing-box subscription`,
           'Subscription'
         );
         return { servers };
@@ -939,7 +947,7 @@ export class SubscriptionService {
       ) {
         this.logManager.addLog(
           'info',
-          '检测到 JSON 编码的 Clash 配置，解析 proxies...',
+          'JSON-encoded Clash config detected, parsing proxies...',
           'Subscription'
         );
         // handleClashDoc 的 0 节点 throw 在此正常上抛（不再被 catch 吞）。
@@ -949,12 +957,14 @@ export class SubscriptionService {
 
     // ── 2. Clash YAML（命中 proxies: 或 proxy-providers:）─────────────
     if (CLASH_PROBE_RE.test(trimmed)) {
-      this.logManager.addLog('info', '检测到 Clash YAML 格式，解析 proxies...', 'Subscription');
+      this.logManager.addLog('info', 'Clash YAML detected, parsing proxies...', 'Subscription');
       const doc = tryLoadClashDoc(trimmed); // 解析失败上抛，不静默落 Base64
       const hasProxies = Array.isArray(doc.proxies);
       const hasProviders = !!doc['proxy-providers'] && typeof doc['proxy-providers'] === 'object';
       if (!hasProxies && !hasProviders) {
-        throw new Error('检测到 Clash 订阅特征，但 proxies/proxy-providers 结构异常');
+        throw new Error(
+          'Clash subscription detected, but the proxies/proxy-providers structure is malformed'
+        );
       }
       return await this.handleClashDoc(doc, subscriptionId, ctx);
     }
@@ -965,7 +975,11 @@ export class SubscriptionService {
       try {
         decodedContent = Buffer.from(decodedContent, 'base64').toString('utf-8');
       } catch {
-        this.logManager.addLog('warn', '尝试 Base64 解码失败，可能原本就是明文', 'Subscription');
+        this.logManager.addLog(
+          'warn',
+          'Base64 decoding failed; content may already be plain text',
+          'Subscription'
+        );
       }
     }
 
@@ -993,23 +1007,31 @@ export class SubscriptionService {
           servers.push(server);
         } catch (e: any) {
           failedLines++;
-          const transport = /不支持的传输层类型: (\S+)/.exec(e?.message ?? '')?.[1];
+          const transport = /Unsupported transport type: (\S+)/.exec(e?.message ?? '')?.[1];
           if (transport) {
             unsupportedTransports.set(transport, (unsupportedTransports.get(transport) ?? 0) + 1);
           }
-          this.logManager.addLog('warn', `解析订阅中的节点失败: ${e.message}`, 'Subscription');
+          this.logManager.addLog(
+            'warn',
+            `Failed to parse subscription node: ${e.message}`,
+            'Subscription'
+          );
         }
       } else if (line.includes('://')) {
         // 只取形如 scheme:// 的合法前缀；否则（如整段 JSON/配置文本里恰含 https://）归为「非链接行」——
         // 绝不把 '://' 前的原文当 scheme 写进日志：那会把节点地址/密钥带进诊断报告（脱敏只认已解析的节点）。
         const m = /^([a-z][a-z0-9+.-]{0,31}):\/\//i.exec(line);
-        const scheme = m ? m[1].toLowerCase() : '非链接行';
+        const scheme = m ? m[1].toLowerCase() : 'non-link line';
         unsupportedSchemes.set(scheme, (unsupportedSchemes.get(scheme) ?? 0) + 1);
       }
     }
     if (unsupportedSchemes.size > 0) {
       const detail = [...unsupportedSchemes.entries()].map(([s, c]) => `${s}(${c})`).join(', ');
-      this.logManager.addLog('warn', `跳过不支持的协议链接: ${detail}`, 'Subscription');
+      this.logManager.addLog(
+        'warn',
+        `Skipped unsupported protocol links: ${detail}`,
+        'Subscription'
+      );
     }
 
     if (servers.length === 0) {
@@ -1019,14 +1041,14 @@ export class SubscriptionService {
       const transportFails = [...unsupportedTransports.values()].reduce((a, b) => a + b, 0);
       if (throwOnEmpty && transportFails > 0 && transportFails === failedLines) {
         throw new Error(
-          `订阅中的节点都使用内核不支持的传输层（${[...unsupportedTransports.keys()].join(', ')}），解析得到 0 个可用节点`
+          `All subscription nodes use an unsupported transport (${[...unsupportedTransports.keys()].join(', ')}); 0 usable nodes`
         );
       }
       if (throwOnEmpty) {
         throw new Error(
           hadUrlLines
-            ? '订阅中的节点 URL 均无法解析（协议不支持或格式错误），解析得到 0 个可用节点'
-            : '无法识别订阅格式：既非 sing-box JSON，也未发现可解析的节点 URL（可能 Base64 解码失败或格式不受支持）'
+            ? 'None of the node URLs in the subscription could be parsed (unsupported protocol or malformed); 0 usable nodes'
+            : 'Unrecognized subscription format: not sing-box JSON and no parsable node URLs found (Base64 decoding may have failed or the format is unsupported)'
         );
       }
       return { servers: [] };
@@ -1034,7 +1056,7 @@ export class SubscriptionService {
     const skippedTotal = failedLines + [...unsupportedSchemes.values()].reduce((a, b) => a + b, 0);
     this.logManager.addLog(
       'info',
-      `成功从订阅解析了 ${servers.length} 个节点${skippedTotal > 0 ? `（另有 ${skippedTotal} 条被跳过/失败，详见上方告警）` : ''}`,
+      `Parsed ${servers.length} nodes from subscription${skippedTotal > 0 ? ` (plus ${skippedTotal} skipped/failed, see warnings above)` : ''}`,
       'Subscription'
     );
     return { servers };
@@ -1071,7 +1093,7 @@ export class SubscriptionService {
         // 深度硬封顶 2 层：provider 内容再含 proxy-providers → 只取内联 + warn。
         this.logManager.addLog(
           'warn',
-          'provider 内容再嵌套 proxy-providers，已忽略（不递归，深度封顶 2 层）',
+          'Nested proxy-providers inside provider content ignored (no recursion, max depth 2)',
           'Subscription'
         );
       } else {
@@ -1118,7 +1140,7 @@ export class SubscriptionService {
       // throwOnEmpty=false（provider 复用路径）时返回空集，交由 resolveProxyProviders 按 permanent 0-node 处理。
       if (ctx.throwOnEmpty !== false) {
         throw new Error(
-          `Clash 订阅解析得到 0 个可用节点（跳过 ${inline.skipped}、失败 ${inline.failed}）`
+          `Clash subscription yielded 0 usable nodes (skipped ${inline.skipped}, failed ${inline.failed})`
         );
       }
       return {
@@ -1130,7 +1152,7 @@ export class SubscriptionService {
 
     this.logManager.addLog(
       'info',
-      `Clash 订阅解析完成：内联 ${inline.servers.length} + provider ${providerServers.length} → 去重后 ${merged.length} 个节点${partial ? '（部分 provider 失败，本次将 merge-only 防穿仓）' : ''}`,
+      `Clash subscription parsed: inline ${inline.servers.length} + provider ${providerServers.length} -> ${merged.length} nodes after dedup${partial ? ' (some providers failed; this update is merge-only to avoid wiping nodes)' : ''}`,
       'Subscription'
     );
     return {
@@ -1174,7 +1196,7 @@ export class SubscriptionService {
       // url 常含 ?token=，日志脱敏（去 query）防 token 落 app.log。
       this.logManager.addLog(
         'info',
-        `正在拉取订阅: ${SubscriptionService.redactUrl(url)}（${viaProxy ? '经代理' : '直连'}）`,
+        `Fetching subscription: ${SubscriptionService.redactUrl(url)} (${viaProxy ? 'via proxy' : 'direct'})`,
         'Subscription'
       );
 
@@ -1192,11 +1214,15 @@ export class SubscriptionService {
       );
       // §16.3.4：304 → 内容无变化，短路 parse/reconcile（零节点扰动）。
       if (notModified) {
-        this.logManager.addLog('info', '订阅无变化（304），跳过解析', 'Subscription');
+        this.logManager.addLog(
+          'info',
+          'Subscription unchanged (304), skipping parse',
+          'Subscription'
+        );
         return { servers: [], notModified: true, etag, lastModified };
       }
       if (userInfo) {
-        this.logManager.addLog('info', '订阅流量信息已获取', 'Subscription');
+        this.logManager.addLog('info', 'Subscription traffic info received', 'Subscription');
       }
 
       const trimmed = text.trim();
@@ -1221,7 +1247,7 @@ export class SubscriptionService {
       // 失败日志同样脱敏 url。
       this.logManager.addLog(
         'error',
-        `拉取订阅失败 (${SubscriptionService.redactUrl(url)}): ${error.message}`,
+        `Failed to fetch subscription (${SubscriptionService.redactUrl(url)}): ${error.message}`,
         'Subscription'
       );
       throw error;
@@ -1294,7 +1320,7 @@ export class SubscriptionService {
     const trimmed = (text || '').trim();
     // 体积闸（与网络订阅 MAX_BODY_BYTES 同口径）：防超大文件 / YAML 锚点炸弹经 IPC 进主进程 OOM。
     if (trimmed.length > SubscriptionService.MAX_BODY_BYTES) {
-      throw new Error('导入内容过大');
+      throw new Error('Import content too large');
     }
     const now = new Date().toISOString();
     const candidates: ServerConfig[] = [];
@@ -1426,7 +1452,7 @@ export class SubscriptionService {
     }
 
     if (format === 'unknown') {
-      throw new Error('无法识别文件格式');
+      throw new Error('Unrecognized file format');
     }
 
     // 最终 gate：仅保留 saveConfig.validateConfig 不会 throw 的节点（与渲染侧 isServerComplete 同口径）。

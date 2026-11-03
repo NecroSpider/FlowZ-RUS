@@ -153,11 +153,13 @@ export function sanitizeDetail(raw: string): string {
 function actionHint(reason: OsDnsFlushFailureReason, platform: NodeJS.Platform): string {
   if (reason === 'permission-denied') {
     return platform === 'linux'
-      ? '（授权规则可能未安装：重新启动一次 TUN 模式会重装 polkit 规则）'
-      : '（可尝试重新授权 FlowZ 的系统权限）';
+      ? ' (the authorization rule may be missing: restarting TUN mode once reinstalls the polkit rule)'
+      : ' (try granting FlowZ its system permissions again)';
   }
   if (reason === 'command-missing') {
-    return platform === 'linux' ? '（本机无 systemd-resolved，属结构性不支持）' : '';
+    return platform === 'linux'
+      ? ' (systemd-resolved is not available on this system, so this is not supported)'
+      : '';
   }
   return '';
 }
@@ -263,36 +265,43 @@ export async function flushOsDnsCache(deps: OsDnsFlushDeps = {}): Promise<OsDnsF
           if (r.partial) {
             // partial：dscacheutil 已成功、仅 HUP mDNSResponder 失败——不降级（用户级同样无权 HUP，重复无益），
             // 降格 warn 留痕便于诊断。
-            const detail = `helper root（dscacheutil 已成功，HUP mDNSResponder 失败）`;
-            log('warn', `已刷新系统 DNS 缓存（${detail}）：${sanitizeDetail(r.partial)}`);
+            const detail = `helper root (dscacheutil succeeded, HUP mDNSResponder failed)`;
+            log('warn', `System DNS cache flushed (${detail}): ${sanitizeDetail(r.partial)}`);
             return { ok: true, detail, partial: sanitizeDetail(r.partial) };
           }
-          const detail = 'helper root：dscacheutil + HUP mDNSResponder';
-          log('info', `已刷新系统 DNS 缓存（${detail}）`);
+          const detail = 'helper root: dscacheutil + HUP mDNSResponder';
+          log('info', `System DNS cache flushed (${detail})`);
           return { ok: true, detail };
         }
-        log('warn', `helper flush-dns 不可用（${r.error ?? '未知'}），降级用户级 dscacheutil`);
+        log(
+          'warn',
+          `helper flush-dns unavailable (${r.error ?? 'unknown'}), falling back to user-level dscacheutil`
+        );
       }
       // 用户级降级：无权 HUP mDNSResponder → 对其 unicast cache 无保证，仅尽力。
       await exec('/usr/bin/dscacheutil', ['-flushcache'], EXEC_TIMEOUT_MS);
-      const detail = '用户级 dscacheutil，对 mDNSResponder unicast cache 无保证';
-      log('info', `已刷新系统 DNS 缓存（${detail}）`);
+      const detail = 'user-level dscacheutil, no guarantee for the mDNSResponder unicast cache';
+      log('info', `System DNS cache flushed (${detail})`);
       return { ok: true, detail };
     }
     if (platform === 'win32') {
       await exec('ipconfig', ['/flushdns'], EXEC_TIMEOUT_MS);
       const detail = 'ipconfig /flushdns';
-      log('info', `已刷新系统 DNS 缓存（${detail}）`);
+      log('info', `System DNS cache flushed (${detail})`);
       return { ok: true, detail };
     }
     if (platform === 'linux') {
       await exec('resolvectl', ['flush-caches'], EXEC_TIMEOUT_MS);
       const detail = 'resolvectl flush-caches';
-      log('info', `已刷新系统 DNS 缓存（${detail}）`);
+      log('info', `System DNS cache flushed (${detail})`);
       return { ok: true, detail };
     }
     // 其余平台无对应机制：显式标 skipped，与「刷新成功」区分——否则诊断里 no-op 会被读成「已生效」。
-    return { ok: true, skipped: true, detail: `平台 ${platform} 无 DNS 缓存刷新机制，已跳过` };
+    return {
+      ok: true,
+      skipped: true,
+      detail: `No DNS cache flush mechanism on platform ${platform}, skipped`,
+    };
   } catch (e) {
     // 不变量：永不 reject。失败经返回值上报（issue #367：历史实现在此吞成一行 warn）。
     const reason = classifyExecFailure(e);
@@ -300,7 +309,7 @@ export async function flushOsDnsCache(deps: OsDnsFlushDeps = {}): Promise<OsDnsF
     // hint **不参与截断**：分类的全部价值就兑现在这一句可操作提示上，把它拼进 raw 再截断，
     // 恰好在 raw 最长（最需要提示）时把提示切掉。只对 raw 收口，hint 追加在外。
     const detail = `${sanitizeDetail(raw)}${actionHint(reason, platform)}`;
-    log('warn', `刷新系统 DNS 缓存失败（${reason}）: ${detail}`);
+    log('warn', `Failed to flush system DNS cache (${reason}): ${detail}`);
     return { ok: false, reason, detail };
   }
 }

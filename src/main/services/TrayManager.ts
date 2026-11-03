@@ -291,7 +291,7 @@ export class TrayManager implements ITrayManager {
             : ` [${mt('trayTimeout')}]`
           : '';
       // 超长只截「名字」，保「（协议）[延迟]」完整——延迟是选节点的关键信息，不应被尾部截断吃掉。
-      const suffix = `（${proto}）${latencyStr}`;
+      const suffix = ` (${proto})${latencyStr}`;
       const maxName = Math.max(6, maxLabelLength - suffix.length);
       const shownName = name.length > maxName ? `${name.slice(0, maxName - 1)}…` : name;
       const label = `${shownName}${suffix}`;

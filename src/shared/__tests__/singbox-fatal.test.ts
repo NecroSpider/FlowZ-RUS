@@ -75,7 +75,7 @@ describe('classifySingBoxFatal', () => {
     // 掩码不该出现在给用户看的文案里（冲突的是地址本身）。
     expect(info.message).not.toContain('/16');
     // 必须提「已断开或隐藏的适配器」——#324 报告者正是因为设备管理器看不到而回答「没有残留」。
-    expect(info.message).toContain('隐藏');
+    expect(info.message).toContain('hidden');
   });
 
   it('地址冲突：无地址上下文时仍给出正确分类', () => {
@@ -83,7 +83,7 @@ describe('classifySingBoxFatal', () => {
       'FATAL[0000] ... set ipv4 address: The object already exists.'
     );
     expect(info.kind).toBe('tun-address-conflict');
-    expect(info.message).toContain('已被本机其它网络接口占用');
+    expect(info.message).toContain('already in use by another network interface');
   });
 
   it('IPv6 地址冲突同归一类，但文案绝不点名 v4 地址', () => {

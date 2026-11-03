@@ -110,10 +110,10 @@ describe('issue #324 — 启动路径按 spawn 时快照判定，不随模式切
     svc.currentConfig = { proxyModeType: 'tun', servers: [] };
     child.emit('exit', null, 'SIGTERM');
 
-    await expect(p).rejects.toThrow(/启动期退出 \(code=null, signal=SIGTERM\)/);
+    await expect(p).rejects.toThrow(/exited during startup \(code=null, signal=SIGTERM\)/);
     const logged = svc.logToManager.mock.calls.map((c: unknown[]) => String(c[1])).join('\n');
-    expect(logged).not.toMatch(/UAC 授权失败/);
-    expect(logged).not.toMatch(/用户取消了管理员权限请求/);
+    expect(logged).not.toMatch(/UAC authorization failed/);
+    expect(logged).not.toMatch(/User cancelled the administrator permission request/);
   });
 
   it('直起的核以 code=1 退出 + 期间模式已切到 TUN → 按核退出码归因，不误报「用户取消授权」', async () => {
@@ -126,9 +126,11 @@ describe('issue #324 — 启动路径按 spawn 时快照判定，不随模式切
     svc.currentConfig = { proxyModeType: 'tun', servers: [] };
     child.emit('exit', 1, null);
 
-    await expect(p).rejects.toThrow(/sing-box 启动失败，请检查配置文件和服务器设置/);
+    await expect(p).rejects.toThrow(
+      /sing-box failed to start; check the config file and server settings/
+    );
     expect(svc.logToManager.mock.calls.map((c: unknown[]) => String(c[1])).join('\n')).not.toMatch(
-      /用户取消了管理员权限请求/
+      /User cancelled the administrator permission request/
     );
   });
 
@@ -152,9 +154,9 @@ describe('issue #324 — 启动路径按 spawn 时快照判定，不随模式切
 
     child.emit('exit', null, 'SIGTERM');
 
-    await expect(p).rejects.toThrow(/启动期退出 \(code=null, signal=SIGTERM\)/);
+    await expect(p).rejects.toThrow(/exited during startup \(code=null, signal=SIGTERM\)/);
     expect(svc.logToManager.mock.calls.map((c: unknown[]) => String(c[1])).join('\n')).not.toMatch(
-      /UAC 授权失败/
+      /UAC authorization failed/
     );
   });
 
@@ -176,7 +178,7 @@ describe('issue #324 — 启动路径按 spawn 时快照判定，不随模式切
 
     // 修复前：落 Windows UAC 分支 → 记「UAC 授权失败，退出码: null」并 return，停核事件被吞
     const logged = svc.logToManager.mock.calls.map((c: unknown[]) => String(c[1])).join('\n');
-    expect(logged).not.toMatch(/UAC 授权失败/);
+    expect(logged).not.toMatch(/UAC authorization failed/);
     // 修复后：走 handleProcessExit 的信号退出分支 = 正常停核语义（与 Linux 一致，也是 stop() 注释声明的预期）
     expect(stopped).toHaveBeenCalled();
     // 信号退出不得触发崩溃自动重启（否则与外层 stop→start 双启动流并发）
@@ -212,9 +214,11 @@ describe('issue #324 — 启动路径按 spawn 时快照判定，不随模式切
     svc.currentConfig = { proxyModeType: 'tun', servers: [] };
     child.emit('exit', 1, null);
 
-    await expect(p).rejects.toThrow(/sing-box 启动失败，请检查配置文件和服务器设置/);
+    await expect(p).rejects.toThrow(
+      /sing-box failed to start; check the config file and server settings/
+    );
     expect(svc.logToManager.mock.calls.map((c: unknown[]) => String(c[1])).join('\n')).not.toMatch(
-      /用户取消了管理员权限请求/
+      /User cancelled the administrator permission request/
     );
   });
 
@@ -228,9 +232,9 @@ describe('issue #324 — 启动路径按 spawn 时快照判定，不随模式切
 
     child.emit('exit', null, 'SIGTERM');
 
-    await expect(p).rejects.toThrow(/启动期退出 \(code=null, signal=SIGTERM\)/);
+    await expect(p).rejects.toThrow(/exited during startup \(code=null, signal=SIGTERM\)/);
     expect(svc.logToManager.mock.calls.map((c: unknown[]) => String(c[1])).join('\n')).not.toMatch(
-      /启动失败，退出码/
+      /Start failed, exit code/
     );
   });
 
@@ -244,7 +248,7 @@ describe('issue #324 — 启动路径按 spawn 时快照判定，不随模式切
 
     child.emit('exit', 1, null);
 
-    await expect(p).rejects.toThrow(/用户取消了管理员权限请求/);
+    await expect(p).rejects.toThrow(/User cancelled the administrator permission request/);
   });
 
   it('UAC 路径下用户取消授权（code=1）仍报「用户取消了管理员权限请求」（不回归）', async () => {
@@ -254,7 +258,7 @@ describe('issue #324 — 启动路径按 spawn 时快照判定，不随模式切
 
     child.emit('exit', 1, null);
 
-    await expect(p).rejects.toThrow(/用户取消了管理员权限请求/);
+    await expect(p).rejects.toThrow(/User cancelled the administrator permission request/);
   });
 
   it('UAC 路径下包装进程非零退出（code=2）仍报「UAC 授权失败」（不回归）', async () => {
@@ -264,6 +268,6 @@ describe('issue #324 — 启动路径按 spawn 时快照判定，不随模式切
 
     child.emit('exit', 2, null);
 
-    await expect(p).rejects.toThrow(/UAC 授权失败，退出码: 2/);
+    await expect(p).rejects.toThrow(/UAC authorization failed, exit code: 2/);
   });
 });

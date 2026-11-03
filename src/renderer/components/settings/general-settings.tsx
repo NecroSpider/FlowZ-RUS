@@ -97,8 +97,8 @@ export function GeneralSettings() {
     <div className="set-panel">
       <div className="card set-card">
         <div className="set-h">
-          <b>{t('settings.general.groupStartup', '启动')}</b>
-          <small>{t('settings.general.startupSub', '应用启动与托盘行为')}</small>
+          <b>{t('settings.general.groupStartup', 'Startup')}</b>
+          <small>{t('settings.general.startupSub', 'App startup and tray behavior')}</small>
         </div>
         <SettingsRow
           label={t('settings.general.silentStart')}
@@ -108,13 +108,19 @@ export function GeneralSettings() {
         </SettingsRow>
         <SettingsRow
           label={t('settings.general.autoStartTitle')}
-          description={t('settings.general.autoStartDesc', '登录系统时自动运行 FlowZ')}
+          description={t(
+            'settings.general.autoStartDesc',
+            'Run FlowZ automatically when you log in'
+          )}
         >
           <Toggle field="autoStart" checked={config.autoStart} />
         </SettingsRow>
         <SettingsRow
           label={t('settings.general.autoConnect')}
-          description={t('settings.general.autoConnectDesc', '恢复上次的出口节点与接管方式并连接')}
+          description={t(
+            'settings.general.autoConnectDesc',
+            'Restore the last exit node and takeover mode, then connect'
+          )}
         >
           <Toggle field="autoConnect" checked={config.autoConnect} />
         </SettingsRow>
@@ -130,18 +136,26 @@ export function GeneralSettings() {
 
       <div className="card set-card">
         <div className="set-h">
-          <b>{t('settings.general.groupBehavior', '行为与隐私')}</b>
-          <small>{t('settings.general.behaviorSub', '更新提示、窗口与隐私遮罩')}</small>
+          <b>{t('settings.general.groupBehavior', 'Behavior & Privacy')}</b>
+          <small>
+            {t('settings.general.behaviorSub', 'Update prompts, window and privacy mask')}
+          </small>
         </div>
         <SettingsRow
           label={t('settings.general.autoCheckUpdate')}
-          description={t('settings.general.autoCheckUpdateDesc', '发现新版本时在关于页提示')}
+          description={t(
+            'settings.general.autoCheckUpdateDesc',
+            'Notify on the About page when a new version is found'
+          )}
         >
           <Toggle field="autoCheckUpdate" checked={config.autoCheckUpdate !== false} />
         </SettingsRow>
         <SettingsRow
           label={t('settings.general.rememberWindowSize')}
-          description={t('settings.general.rememberWindowSizeDesc', '下次打开时还原上次的窗口布局')}
+          description={t(
+            'settings.general.rememberWindowSizeDesc',
+            'Restore the last window layout the next time you open it'
+          )}
         >
           <Toggle field="rememberWindowSize" checked={config.rememberWindowSize === true} />
         </SettingsRow>
@@ -188,8 +202,13 @@ export function GeneralSettings() {
       {!isLinux && (
         <div className="card set-card">
           <div className="set-h">
-            <b>{t('settings.general.groupGraphics', '图形兼容')}</b>
-            <small>{t('settings.general.graphicsSub', '显示异常或白屏时的自救选项')}</small>
+            <b>{t('settings.general.groupGraphics', 'Graphics compatibility')}</b>
+            <small>
+              {t(
+                'settings.general.graphicsSub',
+                'Turn these off to recover from a blank window or display glitches'
+              )}
+            </small>
           </div>
           <SettingsRow
             label={t('settings.general.hardwareAcceleration')}

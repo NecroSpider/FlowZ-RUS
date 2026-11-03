@@ -321,7 +321,7 @@ describe('buildInbounds — TUN', () => {
     } as unknown as Partial<UserConfig>);
     const ibs = withPlatform('linux', () => buildInbounds(c, undefined, deps({ log })));
     expect(byTag(ibs, 'tun-in').route_exclude_address).toBeUndefined();
-    expect(log).toHaveBeenCalledWith('warn', expect.stringContaining('连入来源排除'));
+    expect(log).toHaveBeenCalledWith('warn', expect.stringContaining('inbound-source exclusion'));
   });
 
   it('darwin/win32 未被 Linux 翻转影响：route_exclude 仍含回环/私网（零回归）', () => {
@@ -373,7 +373,10 @@ describe('buildInbounds — TUN', () => {
       ],
     } as unknown as Partial<UserConfig>);
     withPlatform('linux', () => buildInbounds(c, undefined, deps({ log })));
-    expect(log).not.toHaveBeenCalledWith('warn', expect.stringContaining('接口网段重叠'));
+    expect(log).not.toHaveBeenCalledWith(
+      'warn',
+      expect.stringContaining('overlap local interface subnets')
+    );
     (os.networkInterfaces as jest.Mock).mockReturnValue({});
   });
 });
@@ -514,7 +517,7 @@ describe('buildInbounds — TUN 连入来源排除 (inboundExcludeCidrs)', () =>
     const tun = byTag(ibs, 'tun-in');
     expect(tun.route_exclude_address).toContain('203.0.113.0/24'); // 非重叠段保留
     expect(tun.route_exclude_address).not.toContain('192.168.50.0/24'); // 与生效 mesh 段重叠 → 剔除
-    expect(warns.some((w) => w.includes('组网') && w.includes('192.168.50.0/24'))).toBe(true);
+    expect(warns.some((w) => w.includes('mesh') && w.includes('192.168.50.0/24'))).toBe(true);
   });
 
   it('未 engaged 的「仅出网」组网节点段不减（engaged-only）：alwaysRouteSubnets=false 且未选中时用户段保留（darwin）', () => {
@@ -626,7 +629,9 @@ describe('buildInbounds — Windows bypassLAN engaged-mesh carve (gap #1)', () =
       'tun-in'
     ).route_exclude_address as string[];
     expect(cidrOverlapsAny('192.168.99.5/32', excl)).toBe(true); // 仍被排除（含在 192.168.0.0/16，网关保护优先）
-    expect(warns.some((w) => w.includes('物理子网') && w.includes('192.168.99.0/24'))).toBe(true);
+    expect(warns.some((w) => w.includes('physical subnet') && w.includes('192.168.99.0/24'))).toBe(
+      true
+    );
   });
 
   it('无组网节点 → bypassLAN 排除表与旧行为字节等价（tailnet 100.64/10 仍排除）', () => {
@@ -658,7 +663,7 @@ describe('buildInbounds — Windows bypassLAN engaged-mesh carve (gap #1)', () =
       )
     );
     // 告警列出被排除的 bypass 段（192.168.0.0/16 ⊃ 规则 192.168.5.0/24）——即用户应从「绕过局域网」清单移除的那条。
-    expect(warns.some((w) => w.includes('绕过局域网') && w.includes('192.168.0.0/16'))).toBe(true);
+    expect(warns.some((w) => w.includes('Bypass LAN') && w.includes('192.168.0.0/16'))).toBe(true);
   });
 
   it('W2/M1：carve 生效时告警列出【原始清单条目】而非 carve 合成片段（可操作）', () => {
@@ -686,7 +691,7 @@ describe('buildInbounds — Windows bypassLAN engaged-mesh carve (gap #1)', () =
       )
     );
     // 报原始条目 10.0.0.0/8（carve 前 win.exclude 不含它、只含片段 → 若报片段则不会出现 10.0.0.0/8，此断言唯一验证 M1 修复）
-    expect(warns.some((w) => w.includes('绕过局域网') && w.includes('10.0.0.0/8'))).toBe(true);
+    expect(warns.some((w) => w.includes('Bypass LAN') && w.includes('10.0.0.0/8'))).toBe(true);
   });
 
   it('W2/N-1：清单含嵌套条目（/16+其内 /24）时只报真正阻断的宽条目，不误列被包含的子条目', () => {
@@ -711,7 +716,7 @@ describe('buildInbounds — Windows bypassLAN engaged-mesh carve (gap #1)', () =
         })
       )
     );
-    const w2 = warns.find((w) => w.includes('绕过局域网') && w.includes('自定义规则'));
+    const w2 = warns.find((w) => w.includes('Bypass LAN') && w.includes('custom rule'));
     expect(w2).toBeTruthy();
     expect(w2).toContain('192.168.0.0/16'); // 真正阻断的宽条目
     expect(w2).not.toContain('192.168.50.0/24'); // 被 /16 包含的子条目：移除它 no-op，不误列

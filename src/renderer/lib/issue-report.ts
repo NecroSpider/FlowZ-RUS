@@ -25,7 +25,7 @@ const PLATFORM_LABEL: Record<string, string> = {
 };
 
 const PROXY_MODE_LABEL: Record<string, string> = {
-  systemProxy: '系统代理',
+  systemProxy: 'System proxy',
   tun: 'TUN',
 };
 
@@ -46,33 +46,33 @@ export function formatProxyMode(env: BugReportEnv): string {
 /** 生成预填的 issue 正文：环境段自动填好，其余段留空待用户补全。 */
 export function buildBugReportBody(env: BugReportEnv): string {
   return [
-    '## 环境（自动采集，请保留）',
-    `- FlowZ 版本：${env.appVersion ?? ''}`,
-    `- 系统 + 架构：${formatSystemInfo(env)}`,
-    `- sing-box 内核版本：${env.singBoxVersion ?? ''}`,
-    `- 代理模式：${formatProxyMode(env)}`,
+    '## Environment (auto-filled, please keep)',
+    `- FlowZ version: ${env.appVersion ?? ''}`,
+    `- OS + architecture: ${formatSystemInfo(env)}`,
+    `- sing-box core version: ${env.singBoxVersion ?? ''}`,
+    `- Proxy mode: ${formatProxyMode(env)}`,
     '',
-    '## 问题描述',
+    '## What happened',
     '',
     '',
-    '## 复现步骤',
+    '## Steps to reproduce',
     '1. ',
     '2. ',
     '3. ',
     '',
-    '## 预期行为 / 实际行为',
-    '- 预期：',
-    '- 实际：',
+    '## Expected / actual',
+    '- Expected:',
+    '- Actual:',
     '',
-    '## 原始日志（最关键）',
-    '<!-- 设置 → 日志，复制报错末尾方括号 [...] 内核日志前后几行贴进下方代码块 -->',
+    '## Raw logs (most important)',
+    '<!-- Settings -> Logs: copy a few lines around the core log in square brackets [...] at the end of the error and paste them into the code block below -->',
     '',
     '```',
-    '（在此粘贴日志）',
+    '(paste logs here)',
     '```',
     '',
-    '## 旁证（选填，但往往是定位关键）',
-    '<!-- 其他客户端是否正常？是否仅特定节点（如 Argo / CDN 优选）？地址形态（优选 IP / 优选域名）？是否启用订阅？ -->',
+    '## Extra context (optional, often decisive)',
+    '<!-- Does another client work? Only specific nodes (e.g. Argo / CDN-optimized)? Address type (optimized IP / optimized domain)? Subscription in use? -->',
     '',
   ].join('\n');
 }

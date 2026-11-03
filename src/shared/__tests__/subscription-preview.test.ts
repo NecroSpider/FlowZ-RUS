@@ -47,37 +47,71 @@ describe('classifySubscriptionError（订阅预检错误分类）', () => {
 
   it('本项目确定性中文文案：体积/协议/空/SSRF/解析', () => {
     expect(
-      classifySubscriptionError({ message: '订阅响应体积超过上限 10MB，已拒绝' }).errorKind
+      classifySubscriptionError({
+        message: 'Subscription response too large (limit 10485760 bytes), rejected',
+      }).errorKind
     ).toBe('toolarge');
     expect(
-      classifySubscriptionError({ message: '订阅地址协议不支持（仅允许 http/https）: https://x' })
-        .errorKind
+      classifySubscriptionError({
+        message: 'Unsupported subscription URL scheme (only http/https allowed): https://x',
+      }).errorKind
     ).toBe('scheme');
     expect(
-      classifySubscriptionError({ message: 'sing-box 订阅解析得到 0 个可用节点' }).errorKind
+      classifySubscriptionError({ message: 'sing-box subscription yielded 0 usable nodes' })
+        .errorKind
     ).toBe('empty');
-    expect(classifySubscriptionError({ message: '拒绝访问内网/本机地址' }).errorKind).toBe('ssrf');
-    expect(classifySubscriptionError({ message: '重定向次数超过上限' }).errorKind).toBe('ssrf');
     expect(
-      classifySubscriptionError({ message: 'Clash YAML 解析失败: bad indentation' }).errorKind
+      classifySubscriptionError({
+        message:
+          'Subscription URL points to a local/private/link-local address, rejected: 127.0.0.1',
+      }).errorKind
+    ).toBe('ssrf');
+    expect(
+      classifySubscriptionError({ message: 'Too many redirects (limit 5), rejected' }).errorKind
+    ).toBe('ssrf');
+    expect(
+      classifySubscriptionError({ message: 'Failed to parse Clash YAML: bad indentation' })
+        .errorKind
     ).toBe('parse');
     expect(
-      classifySubscriptionError({ message: '检测到 Clash 订阅特征，但文档结构异常' }).errorKind
+      classifySubscriptionError({
+        message:
+          'Clash subscription detected, but the document structure is malformed (not an object)',
+      }).errorKind
     ).toBe('parse');
+    expect(
+      classifySubscriptionError({
+        message:
+          'Unrecognized subscription format: not sing-box JSON and no parsable node URLs found',
+      }).errorKind
+    ).toBe('parse');
+    expect(
+      classifySubscriptionError({
+        message:
+          'None of the node URLs in the subscription could be parsed (unsupported protocol or malformed); 0 usable nodes',
+      }).errorKind
+    ).toBe('empty');
+    expect(
+      classifySubscriptionError({
+        message: 'DNS lookup failed for subscription host, rejected: sub.example.com (ENOTFOUND)',
+      }).errorKind
+    ).toBe('dns');
   });
 
   it('http 文案优先于 refused：empty/scheme/toolarge 是主动 throw 文案，先于网络码判', () => {
     // 体积超限文案 + 恰好 message 含 refused 关键字（极端），体积优先（本项目主动 throw 稳定文案）
     expect(
-      classifySubscriptionError({ message: '订阅响应体积超过上限，connection refused 噪声' })
-        .errorKind
+      classifySubscriptionError({
+        message:
+          'Subscription response too large (limit 10485760 bytes), rejected, connection refused noise',
+      }).errorKind
     ).toBe('toolarge');
   });
 
   it('节点全部栽在内核不支持的传输层（xhttp）→ transport，先于 empty（文案同含「0 个可用节点」）', () => {
     expect(
       classifySubscriptionError({
-        message: '订阅中的节点都使用内核不支持的传输层（xhttp），解析得到 0 个可用节点',
+        message: 'All subscription nodes use an unsupported transport (xhttp); 0 usable nodes',
       })
     ).toEqual({ errorKind: 'transport' });
   });

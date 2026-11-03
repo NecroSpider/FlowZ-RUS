@@ -15,9 +15,9 @@ const path = require('path');
 const target = path.join(__dirname, '..', 'src', 'shared', 'build-info.ts');
 const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD（UTC，构建服务器时区无关）
 
-const content = `// 自动生成，勿手改（scripts/gen-build-info.js）。不入库（.gitignore）。
+const content = `// Auto-generated, do not edit by hand (scripts/gen-build-info.js). Not committed (.gitignore).
 export const BUILD_DATE = '${today}';
 `;
 
 fs.writeFileSync(target, content, 'utf-8');
-console.log(`[build-info] 写入 ${path.relative(process.cwd(), target)} → BUILD_DATE=${today}`);
+console.log(`[build-info] Wrote ${path.relative(process.cwd(), target)} → BUILD_DATE=${today}`);

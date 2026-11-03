@@ -103,12 +103,12 @@ function assertCronetMatchesCore(mods) {
   for (const mod of mods) {
     const m = out.match(new RegExp(`cronet-go/lib/${mod}\\s+(\\S+)`));
     if (!m) {
-      throw new Error(`sing-box ${CORE_VERSION} 的 go.mod 未引用 cronet-go/lib/${mod}（上游结构变化？）`);
+      throw new Error(`go.mod of sing-box ${CORE_VERSION} does not reference cronet-go/lib/${mod} (upstream layout changed?)`);
     }
     if (m[1] !== CRONET_VERSION) {
       throw new Error(
-        `cronetVersion 与随包内核不同源：core ${CORE_VERSION} 要 ${m[1]}，manifest 写的是 ${CRONET_VERSION}` +
-          `（换核后须同步更新 cronetVersion + 两类 sha，见脚本头「换版本操作」）`
+        `cronetVersion does not match the bundled core: core ${CORE_VERSION} requires ${m[1]}, but the manifest says ${CRONET_VERSION}` +
+          ` (after changing the core, update cronetVersion and both sha pins too; see the version-change steps in the script header)`
       );
     }
   }
@@ -125,7 +125,7 @@ for (const t of TARGETS) {
   if (!FORCE && existsSync(dest)) {
     if (!wantLib) {
       console.error(
-        `  FAILED ${t.key}: 磁盘已有 ${t.lib} 但 core-manifest.json 缺 cronetLibSha256[${t.key}] → 无法自证其版本，拒绝沿用（补 pin 或加 --force 重拉）`
+        `  FAILED ${t.key}: ${t.lib} already exists on disk but core-manifest.json is missing cronetLibSha256[${t.key}] → its version cannot be verified, refusing to reuse it (add the pin or re-download with --force)`
       );
       failed++;
       continue;
@@ -137,7 +137,7 @@ for (const t of TARGETS) {
       continue;
     }
     console.log(
-      `stale: ${t.dir}/${t.lib} 与 cronetLibSha256 不符（磁盘 ${got.slice(0, 12)}… ≠ 期望 ${wantLib.slice(0, 12)}…）→ 重新下载`
+      `stale: ${t.dir}/${t.lib} does not match cronetLibSha256 (disk ${got.slice(0, 12)}… ≠ expected ${wantLib.slice(0, 12)}…) → re-downloading`
     );
   }
   pending.push(t);
@@ -160,7 +160,7 @@ for (const t of pending) {
   const want = normSha(CRONET_SHA[t.key]);
   if (!want) {
     console.error(
-      `  FAILED ${t.key}: core-manifest.json 缺 cronetArchiveSha256[${t.key}] pin → 拒绝无完整性校验拉取（值=module zip 的 sha256，见脚本头「换版本操作」）`
+      `  FAILED ${t.key}: core-manifest.json is missing the cronetArchiveSha256[${t.key}] pin → refusing to download without an integrity check (value = sha256 of the module zip; see the version-change steps in the script header)`
     );
     failed++;
     continue;
@@ -180,7 +180,7 @@ for (const t of pending) {
     // 完整性校验①：对下载的 module zip 本体算 sha256，比对 manifest pin。fail-fast 于解压前。
     const got = sha256(archive);
     if (got !== want) {
-      throw new Error(`module zip sha256 不符：期望 ${want}，实得 ${got}（版本漂移 / 投毒 / 截断）`);
+      throw new Error(`module zip sha256 mismatch: expected ${want}, got ${got} (version drift / tampering / truncation)`);
     }
 
     // 只解目标文件并拍平路径（-j）：`-j` 后直接落 extractDir/<lib>；同时避免顺带解出同目录 57MB 的
@@ -199,13 +199,13 @@ for (const t of pending) {
       stdio: 'inherit',
     });
     const libPath = join(extractDir, t.lib);
-    if (!existsSync(libPath)) throw new Error(`解压产物未找到 ${t.lib}（上游模块结构可能变化）`);
+    if (!existsSync(libPath)) throw new Error(`${t.lib} not found in the extracted archive (the upstream module layout may have changed)`);
 
     // 完整性校验②：库本体 sha —— 锁定「解出来的到底是哪个文件」，并为后续 skip 分支留下可自证的锚。
     const libGot = sha256(libPath);
     const wantLib = normSha(CRONET_LIB_SHA[t.key]);
     if (wantLib && libGot !== wantLib) {
-      throw new Error(`库本体 sha256 不符：期望 ${wantLib}，实得 ${libGot}`);
+      throw new Error(`library sha256 mismatch: expected ${wantLib}, got ${libGot}`);
     }
 
     // 原子落地：拷到 .tmp → chmod（unix 可执行）→ rename 顶替（避免半写文件被打包/误用）。
@@ -216,7 +216,7 @@ for (const t of pending) {
     console.log(`  ok: ${t.dir}/${t.lib} (zip sha ${got.slice(0, 12)}…, lib sha ${libGot})`);
     if (!wantLib) {
       console.log(
-        `  ⚠ core-manifest.json 缺 cronetLibSha256[${t.key}] → 请填入上面的 lib sha（否则下次 skip 无法自证）`
+        `  ⚠ core-manifest.json is missing cronetLibSha256[${t.key}] → add the lib sha shown above (otherwise the next skip cannot be verified)`
       );
     }
     ok++;
@@ -232,5 +232,5 @@ for (const t of pending) {
 }
 
 console.log(`\ncronet libs: ${ok} ready, ${failed} failed (module ${CRONET_VERSION}).`);
-console.log('macOS: cronet 静态编入 mac-arm64 核心，无需下载（见脚本头注）。');
+console.log('macOS: cronet is statically linked into the mac-arm64 core, no download needed (see the script header).');
 process.exit(failed > 0 ? 1 : 0);

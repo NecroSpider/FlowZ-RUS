@@ -115,7 +115,7 @@ function logStartupTimingOnce(): void {
   startupTimingLogged = true;
   logManager?.addLog(
     'info',
-    `[startup-timing] ${JSON.stringify(startupMarks)}（ms，自模块加载起）`,
+    `[startup-timing] ${JSON.stringify(startupMarks)} (ms since module load)`,
     'Main'
   );
 }
@@ -320,7 +320,7 @@ function checkRendererMemory(): void {
     if (action === 'discard') {
       logManager.addLog(
         'warn',
-        `Renderer RSS ${rssMb}MB > ${RENDERER_RSS_LIMIT_MB}MB 且窗口隐藏，进入轻量模式回收`,
+        `Renderer RSS ${rssMb}MB > ${RENDERER_RSS_LIMIT_MB}MB while the window is hidden, entering lightweight mode to reclaim memory`,
         'Main'
       );
       rendererDiscardCount++;
@@ -328,7 +328,7 @@ function checkRendererMemory(): void {
     } else if (action === 'warn') {
       logManager.addLog(
         'warn',
-        `Renderer RSS ${rssMb}MB > ${RENDERER_RSS_LIMIT_MB}MB（窗口可见），建议刷新页面释放内存`,
+        `Renderer RSS ${rssMb}MB > ${RENDERER_RSS_LIMIT_MB}MB (window visible), consider reloading the page to free memory`,
         'Main'
       );
       rendererWarnCount++;
@@ -374,7 +374,11 @@ async function installHelperFromGate(helper: IPrivilegedHelper): Promise<void> {
     error: e instanceof Error ? e.message : String(e),
   }));
   if (result.success) return;
-  logManager?.addLog('error', `提权助手安装失败: ${result.error ?? '未知原因'}`, 'Helper');
+  logManager?.addLog(
+    'error',
+    `Privileged helper installation failed: ${result.error ?? 'unknown reason'}`,
+    'Helper'
+  );
   const win = process.platform === 'win32';
   await dialog.showMessageBox({
     type: 'warning',
@@ -522,13 +526,13 @@ async function promptHelperGate(
 process.on('uncaughtException', (error: Error) => {
   console.error('Uncaught Exception:', error);
   if (logManager) {
-    logManager.addLog('fatal', `未捕获的异常: ${error.message}\n${error.stack}`, 'Main');
+    logManager.addLog('fatal', `Uncaught exception: ${error.message}\n${error.stack}`, 'Main');
   }
 
   if (isDevelopment) {
     const electronApp = require('electron').app;
     if (electronApp?.isReady()) {
-      dialog.showErrorBox('未捕获的异常', `${error.message}\n\n${error.stack}`);
+      dialog.showErrorBox('Uncaught Exception', `${error.message}\n\n${error.stack}`);
     } else {
       console.error(`App not ready. Uncaught Exception: ${error.stack}`);
     }
@@ -542,13 +546,17 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
   const errorMessage = reason instanceof Error ? reason.message : String(reason);
   const errorStack = reason instanceof Error ? reason.stack : '';
   if (logManager) {
-    logManager.addLog('error', `未处理的 Promise 拒绝: ${errorMessage}\n${errorStack}`, 'Main');
+    logManager.addLog(
+      'error',
+      `Unhandled promise rejection: ${errorMessage}\n${errorStack}`,
+      'Main'
+    );
   }
 
   if (isDevelopment && reason instanceof Error) {
     const electronApp = require('electron').app;
     if (electronApp?.isReady()) {
-      dialog.showErrorBox('未处理的 Promise 拒绝', `${errorMessage}\n\n${errorStack}`);
+      dialog.showErrorBox('Unhandled Promise Rejection', `${errorMessage}\n\n${errorStack}`);
     } else {
       console.error(`App not ready. Unhandled Rejection: ${errorStack}`);
     }
@@ -572,7 +580,7 @@ function ensureWindow(forceShow = false): Promise<void> {
       .catch((e) => {
         logManager.addLog(
           'error',
-          `创建主窗口失败: ${e instanceof Error ? e.message : String(e)}`,
+          `Failed to create main window: ${e instanceof Error ? e.message : String(e)}`,
           'Main'
         );
       })
@@ -674,53 +682,60 @@ function getPreferredSystemLanguagesSafe(): string[] {
   return [];
 }
 
+/**
+ * macOS 应用菜单（Cmd+C/V/X/A 等快捷键依赖它）。文案走 mt()，随界面语言（config.language）——
+ * 语言变化时重建（applyLanguageFromConfig）。非 macOS no-op。
+ */
+function applyMacAppMenu(): void {
+  if (process.platform !== 'darwin') return;
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about', label: mt('menuAbout') },
+        { type: 'separator' },
+        { role: 'services', label: mt('menuServices') },
+        { type: 'separator' },
+        { role: 'hide', label: mt('menuHide') },
+        { role: 'hideOthers', label: mt('menuHideOthers') },
+        { role: 'unhide', label: mt('menuUnhide') },
+        { type: 'separator' },
+        { role: 'quit', label: mt('menuQuit') },
+      ],
+    },
+    {
+      label: mt('menuEdit'),
+      submenu: [
+        { role: 'undo', label: mt('menuUndo') },
+        { role: 'redo', label: mt('menuRedo') },
+        { type: 'separator' },
+        { role: 'cut', label: mt('menuCut') },
+        { role: 'copy', label: mt('menuCopy') },
+        { role: 'paste', label: mt('menuPaste') },
+        { role: 'pasteAndMatchStyle', label: mt('menuPasteMatchStyle') },
+        { role: 'delete', label: mt('menuDelete') },
+        { role: 'selectAll', label: mt('menuSelectAll') },
+      ],
+    },
+    {
+      label: mt('menuWindow'),
+      submenu: [
+        { role: 'minimize', label: mt('menuMinimize') },
+        { role: 'zoom', label: mt('menuZoom') },
+        { type: 'separator' },
+        { role: 'front', label: mt('menuFront') },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 async function createWindow(forceShow = false) {
   // Part C：冷重建计时锚点（createWindow 入口 → presentWindow 首次 show）。量化 discard/首唤重建死区，
   // 为将来「优化重建」提供数据。hide→show 走 showWindow 不经本函数 → 天然不计时（保活路径无死区）。
   const createT0 = Date.now();
   // macOS 需要设置应用菜单以启用 Cmd+C/V/X/A 等快捷键
-  if (process.platform === 'darwin') {
-    const template: Electron.MenuItemConstructorOptions[] = [
-      {
-        label: app.name,
-        submenu: [
-          { role: 'about' },
-          { type: 'separator' },
-          { role: 'services' },
-          { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
-          { type: 'separator' },
-          { role: 'quit' },
-        ],
-      },
-      {
-        label: '编辑',
-        submenu: [
-          { role: 'undo', label: '撤销' },
-          { role: 'redo', label: '重做' },
-          { type: 'separator' },
-          { role: 'cut', label: '剪切' },
-          { role: 'copy', label: '复制' },
-          { role: 'paste', label: '粘贴' },
-          { role: 'pasteAndMatchStyle', label: '粘贴并匹配样式' },
-          { role: 'delete', label: '删除' },
-          { role: 'selectAll', label: '全选' },
-        ],
-      },
-      {
-        label: '窗口',
-        submenu: [
-          { role: 'minimize', label: '最小化' },
-          { role: 'zoom', label: '缩放' },
-          { type: 'separator' },
-          { role: 'front', label: '前置全部窗口' },
-        ],
-      },
-    ];
-    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-  }
+  applyMacAppMenu();
 
   const isMac = process.platform === 'darwin';
   const isWindows = process.platform === 'win32';
@@ -989,13 +1004,13 @@ async function createWindow(forceShow = false) {
     }
     // 退出管线中不弹对话框/不重载（与 render-process-gone 同守卫）：退出期窗口在拆、加载常被取消，兜底纯噪音。
     if (isQuitting || !gateWin || gateWin.isDestroyed()) return;
-    logManager.addLog('fatal', `主窗兜底：${title} — ${message}`, 'Main');
+    logManager.addLog('fatal', `Main window fallback: ${title} - ${message}`, 'Main');
     gateWin.webContents
       .loadURL(
         fatalErrorPageDataUrl({
           title,
           message,
-          reloadLabel: '重新加载 / Reload',
+          reloadLabel: 'Reload',
           retryChannel: IPC_CHANNELS.FATAL_RETRY, // 按钮经此通道请主进程 loadFile 真实应用（绕 data: 导航拦截）
         })
       )
@@ -1040,8 +1055,8 @@ async function createWindow(forceShow = false) {
         break;
       case 'fatal':
         enterTerminalFallback(
-          'FlowZ 界面无响应 / Interface not responding',
-          '界面重复加载失败，已停止自动重试；请尝试重新加载或重启 FlowZ。/ The interface repeatedly failed to load. Please reload or restart FlowZ.'
+          'FlowZ is not responding',
+          'The interface repeatedly failed to load and automatic retries have stopped. Please reload or restart FlowZ.'
         );
         break;
       case 'none':
@@ -1125,8 +1140,8 @@ async function createWindow(forceShow = false) {
         // 二次主 frame 失败（生产）：不再空转 reload，落终局兜底（与 GAP-1a 二次超时共用 enterTerminalFallback）。
         // 与 N3 一致，dev **不**弹终局模态：dev 下 vite 未起是常见工作流，Chromium 原生连接错误页 + devtools 更利排障。
         enterTerminalFallback(
-          'FlowZ 加载失败 / Failed to load',
-          `界面加载重复失败（${errorDescription}）；请检查安装完整性或重启 FlowZ。/ The interface repeatedly failed to load (${errorDescription}). Please check the installation or restart FlowZ.`
+          'FlowZ failed to load',
+          `The interface repeatedly failed to load (${errorDescription}). Please check that the installation is intact or restart FlowZ.`
         );
       }
     }
@@ -1148,7 +1163,7 @@ async function createWindow(forceShow = false) {
     renderGoneTimestamps = recent;
     logManager.addLog(
       'error',
-      `主窗渲染进程终止（reason=${details.reason}, exitCode=${details.exitCode}, visible=${wasVisible}${isLoop ? ', 崩溃循环' : ''}）→ ${isLoop ? '停止自动重建' : '冷重建'}`,
+      `Main window renderer process gone (reason=${details.reason}, exitCode=${details.exitCode}, visible=${wasVisible}${isLoop ? ', crash loop' : ''}) -> ${isLoop ? 'automatic rebuild stopped' : 'cold rebuild'}`,
       'Main'
     );
     // GAP-4 + L4：销毁窗口后**不会自动重建**的两种情形——崩溃循环停建（isLoop），或隐藏态非 loop（不立即重建、
@@ -1176,7 +1191,7 @@ async function createWindow(forceShow = false) {
     app.on('child-process-gone', (_event, details) => {
       logManager.addLog(
         'warn',
-        `子进程终止（type=${details.type}, reason=${details.reason}, exitCode=${details.exitCode}）`,
+        `Child process gone (type=${details.type}, reason=${details.reason}, exitCode=${details.exitCode})`,
         'Main'
       );
     });
@@ -1456,20 +1471,28 @@ if (gotTheLock) {
         if (status.enabled && pointsToUs) {
           logManager.addLog(
             'warn',
-            `检测到上次会话残留的系统代理(${marker.ourHostPort})，正在拆除...`,
+            `Found a leftover system proxy (${marker.ourHostPort}) from the previous session, removing it...`,
             'Main'
           );
           await systemProxyManager.disableProxy(); // 拆除成功后内部 clearMarker
-          logManager.addLog('info', '残留系统代理已拆除', 'Main');
+          logManager.addLog('info', 'Leftover system proxy removed', 'Main');
         } else {
           // marker 失效（代理未启用 / 已被用户改走）→ 只清 marker，不动系统设置
           SystemProxyBase.clearMarkerFile();
-          logManager.addLog('info', '清理失效的系统代理 marker（当前代理未指向本应用）', 'Main');
+          logManager.addLog(
+            'info',
+            'Cleared stale system proxy marker (the current proxy does not point to this app)',
+            'Main'
+          );
         }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logManager.addLog('warn', `启动期系统代理 marker 恢复失败: ${errorMessage}`, 'Main');
+      logManager.addLog(
+        'warn',
+        `Failed to recover system proxy marker at startup: ${errorMessage}`,
+        'Main'
+      );
     }
 
     // 启动期系统 DNS marker 恢复：上次会话崩溃/强杀导致 restoreDns 未执行时 marker 残留 → 把系统 DNS 还原为
@@ -1477,13 +1500,21 @@ if (gotTheLock) {
     // （只是少了 FakeIP），故此处还原非断网急救而是恢复用户原配置。常规路径仅一次同步 ENOENT 读（无 marker 即跳过）。
     try {
       if (SystemDnsBase.readMarker()) {
-        logManager.addLog('warn', '检测到上次会话残留的系统 DNS 接管，正在还原...', 'Main');
+        logManager.addLog(
+          'warn',
+          'Found a leftover system DNS takeover from the previous session, restoring...',
+          'Main'
+        );
         await systemDnsManager.restoreDns(); // 还原成功后内部 clearMarker
-        logManager.addLog('info', '残留系统 DNS 已还原', 'Main');
+        logManager.addLog('info', 'Leftover system DNS restored', 'Main');
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logManager.addLog('warn', `启动期系统 DNS marker 恢复失败: ${errorMessage}`, 'Main');
+      logManager.addLog(
+        'warn',
+        `Failed to recover system DNS marker at startup: ${errorMessage}`,
+        'Main'
+      );
     }
 
     // macOS: 禁用 App Nap，防止系统认为应用"没有响应"
@@ -1515,8 +1546,8 @@ if (gotTheLock) {
       logManager.addLog('error', `Failed to load configuration: ${errorMessage}`, 'Main');
 
       dialog.showErrorBox(
-        '配置加载失败',
-        `无法加载配置文件，将使用默认配置。\n\n错误信息: ${errorMessage}`
+        'Failed to Load Configuration',
+        `Could not load the config file; the default configuration will be used.\n\nError: ${errorMessage}`
       );
     }
 
@@ -1955,7 +1986,7 @@ if (gotTheLock) {
           if (rolledBack) {
             logManager.addLog(
               'warn',
-              '新核心启动失败，已自动回滚，正在以旧核心重启代理...',
+              'The new core failed to start and was rolled back automatically; restarting the proxy with the previous core...',
               'Main'
             );
             const cfg = await configManager.loadConfig();
@@ -1963,7 +1994,11 @@ if (gotTheLock) {
             return;
           }
         } catch (rollbackErr) {
-          logManager.addLog('error', `自动回滚重启失败: ${rollbackErr}`, 'Main');
+          logManager.addLog(
+            'error',
+            `Restart after automatic rollback failed: ${rollbackErr}`,
+            'Main'
+          );
         }
 
         // 2) 系统代理清理同样不在此监听器做：'error' 由 giveUpAutoRestart / handleProcessExit 终态分支发出，
@@ -1999,13 +2034,17 @@ if (gotTheLock) {
         const latest = await configManager.loadConfig();
         await proxyManager?.switchMode(latest);
       } catch (e) {
-        logManager.addLog('warn', `启动后配置对账失败: ${e}`, 'Main');
+        logManager.addLog('warn', `Post-startup config reconciliation failed: ${e}`, 'Main');
       }
       try {
         await coreUpdateService.recordSuccessfulVersion();
-        logManager.addLog('info', '已记录当前运行的内核版本基线', 'Main');
+        logManager.addLog(
+          'info',
+          'Recorded the currently running core version as the baseline',
+          'Main'
+        );
       } catch (e) {
-        logManager.addLog('warn', `记录内核基线版本失败: ${e}`, 'Main');
+        logManager.addLog('warn', `Failed to record core baseline version: ${e}`, 'Main');
       }
 
       // 代理就绪后刷新出口 IP（direct 走常规 refresh(true)；proxy 出口走 refreshProxyPostConnect 首连宽退避）。
@@ -2172,7 +2211,7 @@ if (gotTheLock) {
     });
 
     // IPC 处理器全部注册完成（汇总一条，取代各 handler 模块的逐条启动日志）
-    logManager.addLog('info', 'IPC handlers 注册完成', 'Main');
+    logManager.addLog('info', 'IPC handlers registered', 'Main');
 
     setTrayStateCallback((isRunning: boolean, hasError?: boolean) => {
       updateTrayMenuState(isRunning, hasError);
@@ -2267,13 +2306,15 @@ if (gotTheLock) {
       // 读 configManager 缓存而非事件 payload：saveConfig 先更新 currentConfig 再 emit CONFIG_CHANGED（见
       // config-handlers），故缓存恒是最新值；且不受 payload 形状影响（未来某发射点漏带 language、或恢复缺该键的
       // 旧备份，都不会把主进程语言静默重置成系统语言）——与「config.language 单一真值源」主旨一致。
-      applyLanguageFromConfig: () =>
+      applyLanguageFromConfig: () => {
         setMainLanguage(
           resolveEffectiveLanguage(
             configManager.get<string>('language'),
             getPreferredSystemLanguagesSafe()
           )
-        ),
+        );
+        applyMacAppMenu(); // 菜单文案随语言重建
+      },
     });
 
     // 关机/重启早期钩子：powerMonitor 'shutdown' **仅 macOS/Linux 触发**（Electron 文档），Windows 不发。

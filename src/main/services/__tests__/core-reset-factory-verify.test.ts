@@ -63,7 +63,7 @@ describe('verifyFactoryCore — 出厂核完整性', () => {
     for (const plat of ['win32', 'linux'] as const) {
       setPlatform(plat);
       const reason = verify(svc(), p);
-      expect(reason).toMatch(/与官方指纹不符/);
+      expect(reason).toMatch(/does not match the official fingerprint/);
     }
   });
 
@@ -87,6 +87,6 @@ describe('verifyFactoryCore — 出厂核完整性', () => {
 
   it('文件不存在 → 返回可读理由而非抛出（reset 应给出提示，不是崩）', () => {
     setPlatform('linux');
-    expect(verify(svc(), path.join(TMP, 'nope'))).toMatch(/无法读取/);
+    expect(verify(svc(), path.join(TMP, 'nope'))).toMatch(/Cannot read/);
   });
 });

@@ -56,7 +56,7 @@ const createHysteria2Schema = (t: any) =>
         ) || v.obfsMinPacketSize <= v.obfsMaxPacketSize,
       {
         path: ['obfsMaxPacketSize'],
-        message: t('servers.obfsPacketSizeOrder', '最大包长须 ≥ 最小包长'),
+        message: t('servers.obfsPacketSizeOrder', 'Max packet size must be ≥ min packet size'),
       }
     );
 
@@ -273,7 +273,9 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                       name="obfsType"
                       render={({ field }) => (
                         <div className="nd-fld">
-                          <span className="nd-fld-lbl">{t('servers.obfsType', '混淆类型')}</span>
+                          <span className="nd-fld-lbl">
+                            {t('servers.obfsType', 'Obfuscation Type')}
+                          </span>
                           <Select onValueChange={field.onChange} value={field.value}>
                             <SelectTrigger>
                               <SelectValue />
@@ -311,7 +313,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                           render={({ field }) => (
                             <div className="nd-fld">
                               <span className="nd-fld-lbl">
-                                {t('servers.obfsMinPacketSize', '最小包长')}
+                                {t('servers.obfsMinPacketSize', 'Min Packet Size')}
                               </span>
                               <Input
                                 type="number"
@@ -333,7 +335,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                           render={({ field }) => (
                             <div className="nd-fld">
                               <span className="nd-fld-lbl">
-                                {t('servers.obfsMaxPacketSize', '最大包长')}
+                                {t('servers.obfsMaxPacketSize', 'Max Packet Size')}
                               </span>
                               <Input
                                 type="number"
@@ -367,7 +369,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="default">
-                        {t('servers.bbrProfileDefault', '默认')}
+                        {t('servers.bbrProfileDefault', 'Default')}
                       </SelectItem>
                       <SelectItem value="standard">
                         {t('servers.bbrProfileStandard', 'Standard')}
@@ -407,7 +409,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
               name="hopInterval"
               render={({ field }) => (
                 <div className="nd-fld">
-                  <span className="nd-fld-lbl">{t('servers.hopInterval', '跳跃间隔')}</span>
+                  <span className="nd-fld-lbl">{t('servers.hopInterval', 'Hop Interval')}</span>
                   <Input placeholder="30s" {...field} />
                   <FormMessage className="fld-err" />
                 </div>
@@ -417,7 +419,10 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
               <SwitchField
                 control={form.control}
                 name="disableChromeParrot"
-                label={t('servers.disableChromeParrot', '关闭 Chrome QUIC 指纹拟态')}
+                label={t(
+                  'servers.disableChromeParrot',
+                  'Disable Chrome QUIC fingerprint parroting'
+                )}
                 tooltip={t('servers.disableChromeParrotDesc')}
               />
             </FieldSpan>

@@ -157,7 +157,7 @@ export class CoreUpdateService {
 
   async checkUpdate(): Promise<CoreUpdateCheckResult> {
     try {
-      this.logManager.addLog('info', '正在检查 Sing-box 核心更新...', 'CoreUpdateService');
+      this.logManager.addLog('info', 'Checking for sing-box core updates...', 'CoreUpdateService');
 
       const currentVersion = await this.getCurrentVersion();
 
@@ -166,27 +166,27 @@ export class CoreUpdateService {
       if ((await this.getCoreBuild()) === 'fork') {
         this.logManager.addLog(
           'info',
-          '检测到第三方（非官方）内核，已禁用在线检查更新',
+          'Third-party (unofficial) core detected, online update check disabled',
           'CoreUpdateService'
         );
         return {
           hasUpdate: false,
           currentVersion,
           error:
-            '当前为第三方（非官方）内核，已禁用在线更新；如需恢复官方更新，请先回滚或重置到出厂内核',
+            'The current core is a third-party (unofficial) build, so online updates are disabled. To get official updates again, roll back or reset to the factory core first',
         };
       }
 
       const releases = await this.coreDownloader.fetchReleases();
 
       if (!releases || releases.length === 0) {
-        return { hasUpdate: false, currentVersion, error: '未找到发布版本' };
+        return { hasUpdate: false, currentVersion, error: 'No releases found' };
       }
 
       // 过滤出正式版 (非 prerelease)
       const validReleases = releases.filter((r: any) => !r.prerelease);
       if (validReleases.length === 0) {
-        return { hasUpdate: false, currentVersion, error: '未找到正式版本' };
+        return { hasUpdate: false, currentVersion, error: 'No stable release found' };
       }
 
       const latestRelease = validReleases[0];
@@ -195,7 +195,7 @@ export class CoreUpdateService {
 
       this.logManager.addLog(
         'info',
-        `当前版本: ${currentVersion}, 最新版本: ${latestVersion}`,
+        `Current version: ${currentVersion}, latest version: ${latestVersion}`,
         'CoreUpdateService'
       );
 
@@ -204,14 +204,14 @@ export class CoreUpdateService {
         if (this.isKnownBad(latestVersion)) {
           this.logManager.addLog(
             'info',
-            `最新版本 ${latestVersion} 曾验证失败，已跳过自动更新`,
+            `Latest version ${latestVersion} failed validation before, skipping auto-update`,
             'CoreUpdateService'
           );
           return {
             hasUpdate: false,
             currentVersion,
             latestVersion,
-            error: `版本 ${latestVersion} 与当前配置不兼容（已跳过）；如需仍可手动更新`,
+            error: `Version ${latestVersion} is incompatible with the current config (skipped). You can still update manually`,
           };
         }
 
@@ -227,14 +227,14 @@ export class CoreUpdateService {
           if (!isNaN(latest) && latest > effectiveCeiling) {
             this.logManager.addLog(
               'info',
-              `最新版本 ${latestVersion} 跨越当前兼容版本带，不自动更新`,
+              `Latest version ${latestVersion} is outside the current compatible version band, not auto-updating`,
               'CoreUpdateService'
             );
             return {
               hasUpdate: false,
               currentVersion,
               latestVersion,
-              error: `新版本 ${latestVersion} 跨越兼容版本带，建议随 App 升级（可在设置关闭"仅兼容版本带内更新"以手动尝试）`,
+              error: `New version ${latestVersion} is outside the compatible version band. Update it together with the app (or turn off "Limit to compatible band" in Settings to try it manually)`,
             };
           }
         }
@@ -261,7 +261,7 @@ export class CoreUpdateService {
           );
           return result;
         } else {
-          const msg = `未找到适合当前平台的构建 (Platform: ${process.platform}, Arch: ${process.arch})`;
+          const msg = `No build found for this platform (Platform: ${process.platform}, Arch: ${process.arch})`;
           this.logManager.addLog('warn', msg, 'CoreUpdateService');
           return { hasUpdate: false, currentVersion, error: msg };
         }
@@ -270,8 +270,8 @@ export class CoreUpdateService {
       return { hasUpdate: false, currentVersion };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logManager.addLog('error', `检查核心更新失败: ${msg}`, 'CoreUpdateService');
-      return { hasUpdate: false, currentVersion: '未知', error: msg };
+      this.logManager.addLog('error', `Core update check failed: ${msg}`, 'CoreUpdateService');
+      return { hasUpdate: false, currentVersion: 'unknown', error: msg };
     }
   }
 
@@ -299,7 +299,7 @@ export class CoreUpdateService {
     } catch (e) {
       this.logManager.addLog(
         'warn',
-        `重新解析内核资产摘要失败（将拒绝安装未校验的内核）: ${e}`,
+        `Failed to re-resolve the core asset digest (an unverified core will be refused): ${e}`,
         'CoreUpdateService'
       );
       return null;
@@ -309,13 +309,13 @@ export class CoreUpdateService {
 
   async updateCore(downloadUrl: string): Promise<boolean> {
     if (this.isUpdating) {
-      throw new Error('更新正在进行中');
+      throw new Error('An update is already in progress');
     }
 
     // 第三方（非官方）内核：拒绝在线更新，避免覆盖用户刻意安装的 fork。force 刷新版本行（本方法守卫前无 getCurrentVersion）。
     if ((await this.getCoreBuild(true)) === 'fork') {
       throw new Error(
-        '当前为第三方（非官方）内核，已禁用在线更新；请先回滚或重置到出厂内核后再更新'
+        'The current core is a third-party (unofficial) build, so online updates are disabled. Roll back or reset to the factory core before updating'
       );
     }
 
@@ -327,15 +327,15 @@ export class CoreUpdateService {
       const sha256 = await this.resolveAssetSha256(downloadUrl);
       if (!sha256) {
         throw new Error(
-          '无法获取该内核资产的官方 sha256 摘要，已中止更新（拒绝安装未经校验的内核）。请稍后重试或检查网络。'
+          'Could not get the official sha256 digest for this core asset, update aborted (an unverified core will not be installed). Try again later or check your network.'
         );
       }
-      this.logManager.addLog('info', '开始下载核心文件...', 'CoreUpdateService');
+      this.logManager.addLog('info', 'Downloading core files...', 'CoreUpdateService');
       const tempPath = await this.coreDownloader.downloadFile(downloadUrl, false, sha256);
 
       // 2. 解压文件 (如果需要)
       // Sing-box release 通常是 .tar.gz 或 .zip
-      this.logManager.addLog('info', '正在解压核心文件...', 'CoreUpdateService');
+      this.logManager.addLog('info', 'Extracting core files...', 'CoreUpdateService');
       const { corePath, extractDir: tempExtractDir } =
         await this.coreDownloader.extractCore(tempPath);
 
@@ -351,7 +351,9 @@ export class CoreUpdateService {
         } catch {
           /* ignore */
         }
-        throw new Error(`核心更新预检失败，已放弃（现役核心继续运行）：${preflight.reason}`);
+        throw new Error(
+          `Core update preflight failed, update abandoned (the current core keeps running): ${preflight.reason}`
+        );
       }
 
       // 3. 停止代理
@@ -359,7 +361,7 @@ export class CoreUpdateService {
       if (this.proxyManager) {
         const status = this.proxyManager.getStatus();
         if (status.running) {
-          this.logManager.addLog('info', '正在停止代理服务...', 'CoreUpdateService');
+          this.logManager.addLog('info', 'Stopping the proxy service...', 'CoreUpdateService');
           await this.proxyManager.stop();
           wasRunning = true;
           // 等待进程完全退出
@@ -386,24 +388,32 @@ export class CoreUpdateService {
         // 清理整个临时解压目录
         if (tempExtractDir && fs.existsSync(tempExtractDir)) {
           fs.rmSync(tempExtractDir, { recursive: true, force: true });
-          this.logManager.addLog('info', '已清理临时解压目录', 'CoreUpdateService');
+          this.logManager.addLog(
+            'info',
+            'Temporary extraction directory cleaned up',
+            'CoreUpdateService'
+          );
         }
       } catch (err) {
         // 忽略清理错误
-        this.logManager.addLog('warn', `清理临时解压目录失败: ${err}`, 'CoreUpdateService');
+        this.logManager.addLog(
+          'warn',
+          `Failed to clean up the temporary extraction directory: ${err}`,
+          'CoreUpdateService'
+        );
       }
 
       // 7. 重启代理（之前在运行才重启）。照 applyStagedNow：configProvider() 拿当前 config → proxyManager.start。
       //    早期此处是空壳占位（只打日志不启动），导致手动「检查更新→更新」换核后代理永不自动拉起 → 断网（P0-1）。
       if (wasRunning && this.proxyManager) {
-        this.logManager.addLog('info', '正在重启代理服务...', 'CoreUpdateService');
+        this.logManager.addLog('info', 'Restarting the proxy service...', 'CoreUpdateService');
         const cfg = this.configProvider ? await this.configProvider() : null;
         if (cfg) {
           await this.proxyManager.start(cfg);
         } else {
           this.logManager.addLog(
             'warn',
-            '无法获取配置，代理未自动重启，请在主界面手动连接',
+            'Could not load the config, so the proxy was not restarted automatically. Connect manually from the main window',
             'CoreUpdateService'
           );
         }
@@ -412,7 +422,7 @@ export class CoreUpdateService {
       return true;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logManager.addLog('error', `更新核心失败: ${msg}`, 'CoreUpdateService');
+      this.logManager.addLog('error', `Core update failed: ${msg}`, 'CoreUpdateService');
 
       // 尝试恢复备份（仅当本次确已备份；预检阶段失败时尚无新备份，避免误恢复陈旧 .bak 致降级）
       if (backupMade) await this.restoreBackup();
@@ -463,7 +473,8 @@ export class CoreUpdateService {
         onBackupDone?.();
         await resourceManager.ensureCronetBeside(sourceDir);
         const res = await this.helperManager.installCore(sourceDir);
-        if (!res.ok) throw new Error(`内核写入受保护目录失败：${res.error}`);
+        if (!res.ok)
+          throw new Error(`Failed to write the core to the protected directory: ${res.error}`);
         this.armPendingValidation(version); // 待首启验证闩：首启 crash → autoRollback（经 helper，见 rollbackCore）
         return;
       }
@@ -474,7 +485,7 @@ export class CoreUpdateService {
     onBackupDone?.();
 
     // 5. 替换核心
-    this.logManager.addLog('info', '正在替换核心文件...', 'CoreUpdateService');
+    this.logManager.addLog('info', 'Replacing core files...', 'CoreUpdateService');
     const targetPath = resourceManager.getSingBoxUpdateTargetPath();
 
     // 确保目标目录存在
@@ -491,7 +502,7 @@ export class CoreUpdateService {
     if (process.platform === 'win32') {
       // Windows: 目标在 Program Files（UAC 保护），逐文件 elevated 覆盖；无简单原子 rename，保持原行为。
       for (const file of files) {
-        this.logManager.addLog('info', `正在复制: ${file}`, 'CoreUpdateService');
+        this.logManager.addLog('info', `Copying: ${file}`, 'CoreUpdateService');
         await this.copyFileElevatedWindows(path.join(sourceDir, file), path.join(targetDir, file));
       }
     } else {
@@ -501,7 +512,7 @@ export class CoreUpdateService {
       const stagedRenames: Array<{ tmp: string; dest: string }> = [];
       try {
         for (const file of files) {
-          this.logManager.addLog('info', `正在复制: ${file}`, 'CoreUpdateService');
+          this.logManager.addLog('info', `Copying: ${file}`, 'CoreUpdateService');
           const dest = path.join(targetDir, file);
           const tmp = `${dest}.flowz-new`;
           await this.copyFileWithRetry(path.join(sourceDir, file), tmp);
@@ -540,24 +551,24 @@ export class CoreUpdateService {
         const { execSync } = require('child_process');
         execSync(`xattr -cr "${targetPath}"`, { stdio: 'pipe' });
         execSync(`codesign --force --deep -s - "${targetPath}"`, { stdio: 'pipe' });
-        this.logManager.addLog('info', '已完成 macOS Gatekeeper 签名处理', 'CoreUpdateService');
+        this.logManager.addLog('info', 'macOS Gatekeeper signing done', 'CoreUpdateService');
       } catch (signError: any) {
         this.logManager.addLog(
           'warn',
-          `macOS 签名处理失败 (可能需要手动运行 sudo codesign --force -s -): ${signError.message}`,
+          `macOS signing failed (you may need to run sudo codesign --force -s - manually): ${signError.message}`,
           'CoreUpdateService'
         );
       }
     }
 
-    this.logManager.addLog('info', '核心文件替换成功', 'CoreUpdateService');
+    this.logManager.addLog('info', 'Core files replaced successfully', 'CoreUpdateService');
 
     // naive 依赖随 app 打包的 libcronet（匹配出厂核心的 cronet-go 版本）。单独更新核心——尤其跨版本——
     // 可能与打包库 ABI 漂移；该漂移在 dlopen 前不可见，sing-box check 预检无法发现。有 naive 节点则提示。
     if (this.proxyManager?.hasNaiveNodes()) {
       this.logManager.addLog(
         'warn',
-        'naive 节点依赖随 app 打包的 libcronet；本次核心更新后如遇 naive 不可用，请回滚核心或等待 app 整体更新',
+        'naive nodes depend on the libcronet bundled with the app. If naive stops working after this core update, roll back the core or wait for an app update',
         'CoreUpdateService'
       );
     }
@@ -580,7 +591,7 @@ export class CoreUpdateService {
       if (this.pendingUpdateVersion) {
         this.logManager.addLog(
           'info',
-          '核心更新待验证窗口超时未见首启事件，解除自动重启抑制',
+          'Core update validation window expired without a first-start event, lifting auto-restart suppression',
           'CoreUpdateService'
         );
         this.pendingUpdateVersion = null;
@@ -602,14 +613,15 @@ export class CoreUpdateService {
   /** B 块 macOS：把单个 sing-box 二进制 src 经 helper install-core 持久化写入受保护目录（连带打包的 libcronet）。
    *  调用方须先经 helperSupportsInstallCore(st) 确认 helper 支持 install-core。replaceManualCore / rollbackCore / restoreBackup 共用。 */
   private async installSingleCoreViaHelper(src: string): Promise<void> {
-    if (!this.helperManager) throw new Error('helper 不可用');
+    if (!this.helperManager) throw new Error('helper unavailable');
     const tmpDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'flowz-core-'));
     try {
       fs.copyFileSync(src, path.join(tmpDir, 'sing-box'));
       fs.chmodSync(path.join(tmpDir, 'sing-box'), 0o755);
       await resourceManager.ensureCronetBeside(tmpDir);
       const res = await this.helperManager.installCore(tmpDir);
-      if (!res.ok) throw new Error(`内核写入受保护目录失败：${res.error}`);
+      if (!res.ok)
+        throw new Error(`Failed to write the core to the protected directory: ${res.error}`);
     } finally {
       try {
         fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -656,7 +668,7 @@ export class CoreUpdateService {
     const before = await pm.getCoreVersion(false).catch(() => 'unknown');
     this.logManager.addLog(
       'info',
-      `macOS 无 helper：一次性授权安装随包核 ${bundledVersion} 到受保护目录...`,
+      `macOS without helper: one-time authorization to install the bundled core ${bundledVersion} into the protected directory...`,
       'CoreUpdateService'
     );
     try {
@@ -665,7 +677,7 @@ export class CoreUpdateService {
       // 用户取消授权 / 写失败 = 正常路径（非错误）：info 记录、延后（已记 declinedVersion 本版本不再自动弹）。
       this.logManager.addLog(
         'info',
-        `随包核 elevated 安装未完成（${(e as Error)?.message ?? e}），延后；可在「设置·内核·重置到出厂」手动切回随包核`,
+        `Elevated install of the bundled core did not complete (${(e as Error)?.message ?? e}), postponed. You can switch back to the bundled core manually via Settings > Core > Reset core to factory`,
         'CoreUpdateService'
       );
       return;
@@ -677,8 +689,8 @@ export class CoreUpdateService {
     this.logManager.addLog(
       'info',
       applied
-        ? `随包核已 elevated 安装至受保护目录: ${version}`
-        : `随包核 elevated 安装后仍为 ${version}（期望 ≥ ${bundledVersion}）`,
+        ? `Bundled core installed (elevated) into the protected directory: ${version}`
+        : `Core is still ${version} after the elevated bundled-core install (expected >= ${bundledVersion})`,
       'CoreUpdateService'
     );
   }
@@ -693,7 +705,11 @@ export class CoreUpdateService {
         if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
       } catch (e) {
         // L3：删暂存目录失败不致命（下次 stageCore 会 rmSync 重建覆盖），但记一条便于排查残留磁盘垃圾。
-        this.logManager.addLog('warn', `清除 staged 暂存目录失败: ${e}`, 'CoreUpdateService');
+        this.logManager.addLog(
+          'warn',
+          `Failed to clear the staged directory: ${e}`,
+          'CoreUpdateService'
+        );
       }
     }
   }
@@ -760,7 +776,7 @@ export class CoreUpdateService {
     this.saveAutoState({ staged });
     this.logManager.addLog(
       'info',
-      `新内核 ${version} 已下载预检通过，暂存待代理停止后落位`,
+      `New core ${version} downloaded and passed preflight, staged until the proxy stops`,
       'CoreUpdateService'
     );
     return staged;
@@ -799,13 +815,13 @@ export class CoreUpdateService {
         if (
           notified &&
           current &&
-          current !== '未知' &&
+          current !== 'unknown' &&
           (this.compareVersions(current, notified) >= 0 || sameMajorMinor(current, notified))
         ) {
           this.saveAutoState({ crossBandNotifiedVersion: undefined });
           this.logManager.addLog(
             'info',
-            `当前内核 ${current} 已追上跨带提示版本 ${notified}，清除跨带提示`,
+            `Current core ${current} has caught up with the cross-band notice version ${notified}, clearing the notice`,
             'CoreUpdateService'
           );
           this.emitAutoStatus({ crossBandLatest: null });
@@ -822,7 +838,7 @@ export class CoreUpdateService {
           this.saveAutoState({ crossBandNotifiedVersion: latest });
           this.logManager.addLog(
             'info',
-            `检测到跨版本带新版 ${latest}（当前 ${current}），不自动更新，已提示用户手动处理`,
+            `New version ${latest} is outside the version band (current ${current}), not auto-updating; the user was asked to update manually`,
             'CoreUpdateService'
           );
           this.emitAutoStatus({ crossBandLatest: latest });
@@ -849,7 +865,7 @@ export class CoreUpdateService {
         if (!sha256) {
           this.logManager.addLog(
             'warn',
-            '自动更新中止：无法获取内核资产的官方 sha256 摘要（拒绝安装未经校验的内核）',
+            'Auto-update aborted: could not get the official sha256 digest for the core asset (an unverified core will not be installed)',
             'CoreUpdateService'
           );
           return;
@@ -862,7 +878,7 @@ export class CoreUpdateService {
           if (preflight.version) this.markKnownBad(preflight.version);
           this.logManager.addLog(
             'warn',
-            `自动更新预检失败，放弃 ${latest}：${preflight.reason}`,
+            `Auto-update preflight failed, dropping ${latest}: ${preflight.reason}`,
             'CoreUpdateService'
           );
           return;
@@ -914,7 +930,7 @@ export class CoreUpdateService {
         if (!this.loadAutoState().staged) return 'noop'; // 无暂存可作废 → noop（保持返回契约：discarded=确有 staged 被清）
         this.logManager.addLog(
           'info',
-          '当前为第三方内核，作废暂存的官方内核（不覆盖用户内核）',
+          'The current core is a third-party build, discarding the staged official core (the user core is not overwritten)',
           'CoreUpdateService'
         );
         this.clearStaged();
@@ -937,7 +953,7 @@ export class CoreUpdateService {
         if (!autoEnabled) {
           this.logManager.addLog(
             'info',
-            `自动更新已关闭，内核 ${staged.version} 保持暂存不自动落位（${trigger}）`,
+            `Auto-update is off, core ${staged.version} stays staged and will not be applied automatically (${trigger})`,
             'CoreUpdateService'
           );
           this.emitAutoStatus();
@@ -950,7 +966,7 @@ export class CoreUpdateService {
       if (this.compareVersions(staged.version, current) <= 0 || this.isKnownBad(staged.version)) {
         this.logManager.addLog(
           'info',
-          `staged 内核 ${staged.version} 不再适用（当前 ${current}），清理暂存`,
+          `Staged core ${staged.version} no longer applies (current ${current}), clearing it`,
           'CoreUpdateService'
         );
         this.clearStaged();
@@ -962,7 +978,7 @@ export class CoreUpdateService {
       if (this.proxyManager?.getStatus().running) {
         this.logManager.addLog(
           'info',
-          `代理运行中，内核 ${staged.version} 暂不落位，待停止后生效（${trigger}）`,
+          `Proxy is running, core ${staged.version} will be applied after it stops (${trigger})`,
           'CoreUpdateService'
         );
         this.emitAutoStatus();
@@ -977,7 +993,7 @@ export class CoreUpdateService {
       if (!fs.existsSync(corePath)) {
         this.logManager.addLog(
           'warn',
-          `staged 暂存核心缺失，清理：${corePath}`,
+          `Staged core is missing, clearing: ${corePath}`,
           'CoreUpdateService'
         );
         this.clearStaged();
@@ -989,7 +1005,7 @@ export class CoreUpdateService {
         if (preflight.version) this.markKnownBad(preflight.version);
         this.logManager.addLog(
           'warn',
-          `落位前重预检失败，放弃 staged ${staged.version}：${preflight.reason}`,
+          `Preflight re-check before applying failed, dropping staged ${staged.version}: ${preflight.reason}`,
           'CoreUpdateService'
         );
         this.clearStaged();
@@ -1018,7 +1034,7 @@ export class CoreUpdateService {
       this.clearStaged();
       this.logManager.addLog(
         'info',
-        `内核已自动更新落位至 ${staged.version}（${trigger}）`,
+        `Core auto-updated to ${staged.version} (${trigger})`,
         'CoreUpdateService'
       );
       // 复用 banner 作成功提示 + 回滚入口。push 型持久通知：先记 pendingChangeNotice（供 banner mount 兜 listener
@@ -1034,7 +1050,7 @@ export class CoreUpdateService {
       this.emitAutoStatus();
       return 'applied';
     } catch (e) {
-      this.logManager.addLog('error', `staged 落位失败: ${e}`, 'CoreUpdateService');
+      this.logManager.addLog('error', `Failed to apply the staged core: ${e}`, 'CoreUpdateService');
       this.emitAutoStatus();
       return 'failed';
     } finally {
@@ -1057,7 +1073,7 @@ export class CoreUpdateService {
     if (wasRunning && this.proxyManager) {
       this.logManager.addLog(
         'info',
-        '用户点「立即应用」，停止代理以落位新内核...',
+        'User clicked "Apply now", stopping the proxy to apply the new core...',
         'CoreUpdateService'
       );
       await this.proxyManager.stop();
@@ -1072,7 +1088,9 @@ export class CoreUpdateService {
     if (wasRunning && this.proxyManager) {
       this.logManager.addLog(
         'info',
-        result === 'applied' ? '新内核已落位，正在重启代理...' : '落位未生效，以原内核重启代理...',
+        result === 'applied'
+          ? 'New core applied, restarting the proxy...'
+          : 'New core was not applied, restarting the proxy with the previous core...',
         'CoreUpdateService'
       );
       const cfg = this.configProvider ? await this.configProvider() : null;
@@ -1132,7 +1150,7 @@ export class CoreUpdateService {
     if (this.proxyManager) {
       return await this.proxyManager.getCoreVersion(force);
     }
-    return '未知';
+    return 'unknown';
   }
 
   /**
@@ -1158,12 +1176,16 @@ export class CoreUpdateService {
     try {
       const version = await this.getCurrentVersion();
       // 版本未知时不记录：避免把占位串 '未知' 当作可回滚的「可用版本」持久化
-      if (!version || version === '未知') {
+      if (!version || version === 'unknown') {
         return;
       }
       // core-version.json 持久位已废除（曾仅供内核版本变更横幅推断式比对；已改 push 型 pendingChangeNotice 根治每启误报）。
       // 本方法保留：成功运行 → clearKnownBad + verifiedCeiling 棘轮（回滚安全网走 .bak / known-bad，不依赖此文件）。
-      this.logManager.addLog('info', `内核版本 ${version} 成功运行`, 'CoreUpdateService');
+      this.logManager.addLog(
+        'info',
+        `Core version ${version} ran successfully`,
+        'CoreUpdateService'
+      );
 
       // 该版本成功运行 → 从问题版本名单移除（曾因瞬时原因误标记的版本恢复自动更新资格）
       this.clearKnownBad(version);
@@ -1181,7 +1203,7 @@ export class CoreUpdateService {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logManager.addLog('warn', `记录版本失败: ${msg}`, 'CoreUpdateService');
+      this.logManager.addLog('warn', `Failed to record the version: ${msg}`, 'CoreUpdateService');
     }
   }
 
@@ -1239,7 +1261,7 @@ export class CoreUpdateService {
    */
   async rollbackCore(): Promise<void> {
     if (!this.hasBackup()) {
-      throw new Error('没有可用的备份版本');
+      throw new Error('No backup version available');
     }
     // 回滚（手动 / autoRollbackIfPendingUpdate 自动）使旧「版本已变更」通知作废：清 pendingChangeNotice 防陈旧误弹
     // （核已回退，通知的 A→B 不再成立；回滚本身即反馈，无需再弹。自动回滚不经 banner show→ack 之补口）。
@@ -1248,7 +1270,11 @@ export class CoreUpdateService {
     if (this.proxyManager) {
       const status = this.proxyManager.getStatus();
       if (status.running) {
-        this.logManager.addLog('info', '回滚前停止代理服务...', 'CoreUpdateService');
+        this.logManager.addLog(
+          'info',
+          'Stopping the proxy service before rollback...',
+          'CoreUpdateService'
+        );
         await this.proxyManager.stop();
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
@@ -1268,7 +1294,11 @@ export class CoreUpdateService {
         } catch {
           /* ignore */
         }
-        this.logManager.addLog('info', '核心回滚成功（写回受保护目录）', 'CoreUpdateService');
+        this.logManager.addLog(
+          'info',
+          'Core rolled back (written back to the protected directory)',
+          'CoreUpdateService'
+        );
         await this.recordSuccessfulVersion();
         const rolledEnc = encodeMajorMinor(await this.getCurrentVersion());
         if (!isNaN(rolledEnc)) this.saveAutoState({ verifiedCeiling: rolledEnc });
@@ -1278,7 +1308,7 @@ export class CoreUpdateService {
       const currentPath = resourceManager.getSingBoxUpdateTargetPath();
       this.logManager.addLog(
         'info',
-        `正在回滚核心: ${backupPath} → ${currentPath}`,
+        `Rolling back core: ${backupPath} -> ${currentPath}`,
         'CoreUpdateService'
       );
 
@@ -1295,17 +1325,17 @@ export class CoreUpdateService {
           const { execSync } = require('child_process');
           execSync(`xattr -cr "${currentPath}"`, { stdio: 'pipe' });
           execSync(`codesign --force --deep -s - "${currentPath}"`, { stdio: 'pipe' });
-          this.logManager.addLog('info', '回滚：已完成 macOS 签名处理', 'CoreUpdateService');
+          this.logManager.addLog('info', 'Rollback: macOS signing done', 'CoreUpdateService');
         } catch (signError: any) {
           this.logManager.addLog(
             'warn',
-            `回滚签名处理失败: ${signError.message}`,
+            `Rollback signing failed: ${signError.message}`,
             'CoreUpdateService'
           );
         }
       }
 
-      this.logManager.addLog('info', '核心回滚成功', 'CoreUpdateService');
+      this.logManager.addLog('info', 'Core rolled back successfully', 'CoreUpdateService');
 
       // 删除备份（回滚后备份不再有意义）
       try {
@@ -1351,7 +1381,7 @@ export class CoreUpdateService {
     let sourcePath = opts?.filePath;
     if (!sourcePath) {
       const result = await dialog.showOpenDialog({
-        title: '选择 sing-box 可执行文件',
+        title: 'Select the sing-box executable',
         filters:
           process.platform === 'win32'
             ? [{ name: 'Executable', extensions: ['exe'] }]
@@ -1369,7 +1399,7 @@ export class CoreUpdateService {
     if (!preSrc.ok) {
       return {
         ok: false,
-        error: `所选文件未通过核心预检（${preSrc.reason}）。\nMac 用户请注意：\n1. 请先双击解压下载的 .tar.gz，选择解压出的名为 sing-box 的 UNIX 可执行文件。\n2. 请确保架构 (arm64/amd64) 与当前 Mac 匹配。`,
+        error: `The selected file failed the core preflight (${preSrc.reason}).\nMac users:\n1. Double-click the downloaded .tar.gz to extract it, then select the extracted UNIX executable named sing-box.\n2. Make sure the architecture (arm64/amd64) matches this Mac.`,
       };
     }
 
@@ -1413,7 +1443,11 @@ export class CoreUpdateService {
     if (this.proxyManager) {
       const status = this.proxyManager.getStatus();
       if (status.running) {
-        this.logManager.addLog('info', '手动替换核心：停止代理服务...', 'CoreUpdateService');
+        this.logManager.addLog(
+          'info',
+          'Manual core replace: stopping the proxy service...',
+          'CoreUpdateService'
+        );
         await this.proxyManager.stop();
         wasRunning = true;
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -1441,7 +1475,7 @@ export class CoreUpdateService {
             await this.installSingleCoreViaHelper(sourcePath);
             this.logManager.addLog(
               'info',
-              '手动替换核心已写入受保护/受管核目录',
+              'Manual core replacement written to the protected/managed core directory',
               'CoreUpdateService'
             );
           } else {
@@ -1464,7 +1498,11 @@ export class CoreUpdateService {
         } else {
           await this.recordSuccessfulVersion();
         }
-        this.logManager.addLog('info', '手动替换完成，正在重启代理服务...', 'CoreUpdateService');
+        this.logManager.addLog(
+          'info',
+          'Manual replace done, restarting the proxy service...',
+          'CoreUpdateService'
+        );
         const cfg = this.configProvider ? await this.configProvider() : null;
         if (cfg) await this.proxyManager.start(cfg);
       } else {
@@ -1474,7 +1512,7 @@ export class CoreUpdateService {
       return { ok: true, build: uploadBuild };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logManager.addLog('error', `手动替换核心失败: ${msg}`, 'CoreUpdateService');
+      this.logManager.addLog('error', `Manual core replace failed: ${msg}`, 'CoreUpdateService');
       // 撤销可能已 arm 的待验证闩（防下面以原核重启被首启钩子当新核记录/观察）
       this.disarmPendingValidation();
       // 失败回滚：恢复备份的原核心；之前在运行则尽力以原核心重启代理恢复网络
@@ -1500,7 +1538,7 @@ export class CoreUpdateService {
     }
     this.logManager.addLog(
       'info',
-      `手动替换核心: ${sourcePath} → ${targetPath}`,
+      `Manual core replace: ${sourcePath} -> ${targetPath}`,
       'CoreUpdateService'
     );
     if (process.platform === 'win32') {
@@ -1519,7 +1557,7 @@ export class CoreUpdateService {
       } catch (signError: any) {
         this.logManager.addLog(
           'warn',
-          `手动替换签名处理失败: ${signError.message}`,
+          `Manual replace signing failed: ${signError.message}`,
           'CoreUpdateService'
         );
       }
@@ -1527,7 +1565,7 @@ export class CoreUpdateService {
     // 落位 + 签名后预检（确认落位核能跑）；失败抛出 → 外层 catch restoreBackup。
     const preflight = await this.preflightValidate(targetPath);
     if (!preflight.ok) {
-      throw new Error(`落位后核心预检失败（${preflight.reason}）`);
+      throw new Error(`Core preflight failed after install (${preflight.reason})`);
     }
     // record 不在此做——由 replaceManualCore 统一处理（wasRunning ? 待验证闩+首启钩子 : 直接 record）
   }
@@ -1562,25 +1600,29 @@ export class CoreUpdateService {
     try {
       const actual = createHash('sha256').update(fs.readFileSync(bundlePath)).digest('hex');
       if (actual === pin) return null;
-      return `随包出厂内核与官方指纹不符（期望 ${pin.slice(0, 12)}…，实得 ${actual.slice(0, 12)}…）。安装目录内的内核可能已被替换，已拒绝重置；请重新安装 FlowZ。`;
+      return `The bundled factory core does not match the official fingerprint (expected ${pin.slice(0, 12)}..., got ${actual.slice(0, 12)}...). The core in the install directory may have been replaced, so the reset was refused. Please reinstall FlowZ.`;
     } catch (e) {
-      return `无法读取随包出厂内核以校验完整性：${e}`;
+      return `Cannot read the bundled factory core to verify its integrity: ${e}`;
     }
   }
 
   async resetCoreToFactory(): Promise<{ ok: boolean; error?: string }> {
-    this.logManager.addLog('info', '重置内核到出厂版本...', 'CoreUpdateService');
+    this.logManager.addLog(
+      'info',
+      'Resetting the core to the factory version...',
+      'CoreUpdateService'
+    );
     const bundlePath = resourceManager.getBundledSingBoxPath();
     // 出厂核完整性：reset 是「回到已知良好」的动作，装回一个已被替换的二进制比不 reset 更糟。
     const bad = this.verifyFactoryCore(bundlePath);
     if (bad) {
-      this.logManager.addLog('error', `重置内核被拒绝：${bad}`, 'CoreUpdateService');
+      this.logManager.addLog('error', `Core reset refused: ${bad}`, 'CoreUpdateService');
       return { ok: false, error: bad };
     }
     const r = await this.replaceManualCore({ filePath: bundlePath, force: true, skipBackup: true });
     if (r.ok) {
       this.pruneBackup(); // 清理旧备份（reset 到出厂 = 干净状态，残留 .bak 无意义）
-      this.logManager.addLog('info', '内核已重置到出厂版本', 'CoreUpdateService');
+      this.logManager.addLog('info', 'Core reset to the factory version', 'CoreUpdateService');
     }
     return { ok: r.ok, error: r.error };
   }
@@ -1641,7 +1683,7 @@ export class CoreUpdateService {
         ok: false,
         version: null,
         versionLine,
-        reason: '新核心无法执行（架构不符或文件损坏）',
+        reason: 'New core cannot be executed (wrong architecture or corrupted file)',
       };
     }
 
@@ -1650,7 +1692,7 @@ export class CoreUpdateService {
       // 无活动配置（代理从未启动）→ 二进制可执行即视为通过
       this.logManager.addLog(
         'info',
-        `预检：新核心 ${version} 可执行（无活动配置，跳过 check）`,
+        `Preflight: new core ${version} is executable (no active config, skipping check)`,
         'CoreUpdateService'
       );
       return { ok: true, version, versionLine };
@@ -1663,13 +1705,18 @@ export class CoreUpdateService {
       await execFileAsync(newCorePath, ['check', '-c', tmpCfg]);
       this.logManager.addLog(
         'info',
-        `预检通过：新核心 ${version} 可解析当前配置`,
+        `Preflight passed: new core ${version} can parse the current config`,
         'CoreUpdateService'
       );
       return { ok: true, version, versionLine };
     } catch (e: any) {
       const detail = String(e?.stderr || e?.message || e).split('\n')[0];
-      return { ok: false, version, versionLine, reason: `新核心无法解析当前配置：${detail}` };
+      return {
+        ok: false,
+        version,
+        versionLine,
+        reason: `New core cannot parse the current config: ${detail}`,
+      };
     } finally {
       try {
         fs.unlinkSync(tmpCfg);
@@ -1685,7 +1732,11 @@ export class CoreUpdateService {
       const bak = this.getBackupPath();
       if (fs.existsSync(bak)) {
         fs.unlinkSync(bak);
-        this.logManager.addLog('info', '新核心已稳定运行，已删除旧核心备份', 'CoreUpdateService');
+        this.logManager.addLog(
+          'info',
+          'New core is running stably, old core backup deleted',
+          'CoreUpdateService'
+        );
       }
     } catch {
       /* ignore */
@@ -1704,7 +1755,7 @@ export class CoreUpdateService {
       if (this.pendingUpdateVersion !== watching) return; // 已被回滚/其它路径清除
       this.logManager.addLog(
         'info',
-        `新核心 ${watching} 已稳定运行 ${CoreUpdateService.STABILITY_DWELL_MS / 1000}s，删除旧核心备份`,
+        `New core ${watching} has run stably for ${CoreUpdateService.STABILITY_DWELL_MS / 1000}s, deleting the old core backup`,
         'CoreUpdateService'
       );
       this.pruneBackup();
@@ -1737,7 +1788,7 @@ export class CoreUpdateService {
     if (pendingAge > CoreUpdateService.PENDING_MAX_AGE_MS) {
       this.logManager.addLog(
         'info',
-        `待验证版本 ${pending} 距更新已超 ${CoreUpdateService.PENDING_MAX_AGE_MS / 60000} 分钟仍未成功运行，本次错误不触发回滚`,
+        `Pending version ${pending} has not run successfully for over ${CoreUpdateService.PENDING_MAX_AGE_MS / 60000} min since the update, so this error will not trigger a rollback`,
         'CoreUpdateService'
       );
       return false;
@@ -1745,7 +1796,7 @@ export class CoreUpdateService {
     if (!this.hasBackup()) return false;
     this.logManager.addLog(
       'error',
-      `新核心 ${pending} 启动失败，自动回滚到备份核心`,
+      `New core ${pending} failed to start, rolling back to the backup core`,
       'CoreUpdateService'
     );
     try {
@@ -1753,7 +1804,7 @@ export class CoreUpdateService {
       this.markKnownBad(pending);
       return true;
     } catch (e) {
-      this.logManager.addLog('error', `自动回滚失败: ${e}`, 'CoreUpdateService');
+      this.logManager.addLog('error', `Auto-rollback failed: ${e}`, 'CoreUpdateService');
       return false;
     }
   }
@@ -1792,7 +1843,11 @@ export class CoreUpdateService {
       } else {
         fs.copyFileSync(currentPath, backupPath);
       }
-      this.logManager.addLog('info', `已备份当前核心到: ${backupPath}`, 'CoreUpdateService');
+      this.logManager.addLog(
+        'info',
+        `Current core backed up to: ${backupPath}`,
+        'CoreUpdateService'
+      );
     }
   }
 
@@ -1803,7 +1858,11 @@ export class CoreUpdateService {
       // B 块 macOS（helper v5）：经 helper install-core 把 backup 写回受保护目录（与 rollbackCore 同源）。
       if (await this.isProtectedCoreActive()) {
         await this.installSingleCoreViaHelper(backupPath);
-        this.logManager.addLog('info', '已从备份恢复核心（受保护目录）', 'CoreUpdateService');
+        this.logManager.addLog(
+          'info',
+          'Core restored from backup (protected directory)',
+          'CoreUpdateService'
+        );
         return;
       }
       const currentPath = resourceManager.getSingBoxUpdateTargetPath();
@@ -1813,9 +1872,9 @@ export class CoreUpdateService {
         fs.copyFileSync(backupPath, currentPath);
         fs.chmodSync(currentPath, 0o755);
       }
-      this.logManager.addLog('info', '已从备份恢复核心', 'CoreUpdateService');
+      this.logManager.addLog('info', 'Core restored from backup', 'CoreUpdateService');
     } catch {
-      this.logManager.addLog('error', '恢复备份失败', 'CoreUpdateService');
+      this.logManager.addLog('error', 'Failed to restore the backup', 'CoreUpdateService');
     }
   }
 
@@ -1827,7 +1886,7 @@ export class CoreUpdateService {
     // 恒经 PlatformPrivilegeService（index.ts 无条件注入）。旧内联 PowerShell RunAs 实现已删：它不可达，
     // 且缺 service 侧的两处加固（脚本落盘随机名 + 不盲杀同名 sing-box 进程）——留着=误触发即复现已修 bug。
     if (!this.privilegeService) {
-      throw new Error('privilegeService 未注入：copyFileElevatedWindows 不可用');
+      throw new Error('privilegeService not injected: copyFileElevatedWindows unavailable');
     }
     return this.privilegeService.copyFileElevated(src, dest);
   }

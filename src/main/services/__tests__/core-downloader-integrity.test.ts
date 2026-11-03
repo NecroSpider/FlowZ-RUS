@@ -93,7 +93,7 @@ describe('CoreDownloader.downloadFile — sha256 完整性校验', () => {
     const before = fs.readdirSync(TMP).length;
     await expect(
       newDownloader().downloadFile('https://example.com/core.tar.gz', false, wrong)
-    ).rejects.toThrow(/完整性校验失败/);
+    ).rejects.toThrow(/integrity verification failed/);
     // 半成品已清，不会被后续流程捡去用。
     // **这条曾是时序相关的**：清理与 reject 原先并发发起（`file.close(); fs.unlink(tempPath, () => {}); … reject(err)`），
     // 于是「promise 落定时临时文件已不在」只是大概率成立 —— macOS CI 实测判红过（Expected: 1 / Received: 2），
@@ -137,7 +137,7 @@ describe('CoreDownloader.downloadFile — sha256 完整性校验', () => {
         false,
         'c'.repeat(64)
       )
-    ).rejects.toThrow(/完整性校验失败/);
+    ).rejects.toThrow(/integrity verification failed/);
     expect(call).toBe(2); // 确实重试了；且重试那次没有绕过校验
     expect(urls[1]).toBe('https://my.mirror/https://github.com/x/core.tar.gz');
   });

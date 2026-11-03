@@ -14,7 +14,7 @@ window.addEventListener('error', (event: ErrorEvent) => {
 
   const errorMessage = event.error?.message || event.message;
   const errorStack = event.error?.stack || '';
-  console.error(`渲染进程错误: ${errorMessage}\n${errorStack}`);
+  console.error(`Renderer error: ${errorMessage}\n${errorStack}`);
 
   event.preventDefault();
 });
@@ -24,7 +24,7 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
 
   const errorMessage = event.reason instanceof Error ? event.reason.message : String(event.reason);
   const errorStack = event.reason instanceof Error ? event.reason.stack : '';
-  console.error(`渲染进程未处理的 Promise 拒绝: ${errorMessage}\n${errorStack}`);
+  console.error(`Renderer unhandled promise rejection: ${errorMessage}\n${errorStack}`);
 
   event.preventDefault();
 });
@@ -61,11 +61,9 @@ function RootErrorFallback() {
       }}
     >
       <div style={{ maxWidth: 520 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 12px' }}>
-          界面初始化失败 / Failed to initialize
-        </h1>
+        <h1 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 12px' }}>Failed to initialize</h1>
         <p style={{ fontSize: 13, lineHeight: 1.6, color: '#9DA7B3', margin: '0 0 20px' }}>
-          界面加载遇到问题，请尝试重新加载。/ The interface failed to load. Please try reloading.
+          The interface failed to load. Please try reloading.
         </p>
         <button
           type="button"
@@ -81,7 +79,7 @@ function RootErrorFallback() {
             cursor: 'pointer',
           }}
         >
-          重新加载 / Reload
+          Reload
         </button>
       </div>
     </div>
@@ -102,9 +100,9 @@ function injectStaticFailureDom(root: HTMLElement, err: unknown): void {
   root.innerHTML =
     '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;box-sizing:border-box;background:#1F252E;color:#E6EDF3;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif">' +
     '<div style="max-width:520px">' +
-    '<h1 style="font-size:18px;font-weight:600;margin:0 0 12px">界面初始化失败 / Failed to initialize</h1>' +
-    '<p style="font-size:13px;line-height:1.6;color:#9DA7B3;margin:0 0 20px">界面加载遇到问题，请尝试重新加载。/ The interface failed to load. Please try reloading.</p>' +
-    '<button type="button" onclick="location.reload()" style="font-size:13px;color:#fff;background:#2F81F7;border:0;border-radius:8px;padding:9px 20px;cursor:pointer">重新加载 / Reload</button>' +
+    '<h1 style="font-size:18px;font-weight:600;margin:0 0 12px">Failed to initialize</h1>' +
+    '<p style="font-size:13px;line-height:1.6;color:#9DA7B3;margin:0 0 20px">The interface failed to load. Please try reloading.</p>' +
+    '<button type="button" onclick="location.reload()" style="font-size:13px;color:#fff;background:#2F81F7;border:0;border-radius:8px;padding:9px 20px;cursor:pointer">Reload</button>' +
     '</div></div>';
 }
 

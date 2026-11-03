@@ -116,13 +116,13 @@ export function TlsEngineField({ control, t }: { control: AnyControl; t: TFn }) 
       name="tlsEngine"
       render={({ field }) => (
         <div className="nd-fld">
-          <span className="nd-fld-lbl">{t('servers.tlsEngine', 'TLS 引擎')}</span>
+          <span className="nd-fld-lbl">{t('servers.tlsEngine', 'TLS Engine')}</span>
           <Select onValueChange={field.onChange} value={field.value || 'go'}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="go">{t('servers.tlsEngineGo', 'Go（默认）')}</SelectItem>
+              <SelectItem value="go">{t('servers.tlsEngineGo', 'Go (Default)')}</SelectItem>
               {isWin && (
                 <SelectItem value="windows">
                   {t('servers.tlsEngineWindows', 'Windows (Schannel)')}
@@ -185,7 +185,7 @@ export function TlsSpoofField({ control, t }: { control: AnyControl; t: TFn }) {
               <div className="nd-swrow-d">
                 {t(
                   'servers.tlsSpoofArchUnsupported',
-                  'ARM64 不支持 TLS spoof（内核仅 amd64 实现）。'
+                  'TLS spoof is not supported on ARM64 (the core implements it only on amd64).'
                 )}
               </div>
             )}

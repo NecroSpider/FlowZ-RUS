@@ -137,24 +137,29 @@ describe('CoreStartTunPersistentError (issue #324)', () => {
 describe('startMessageIsNonRetryable (issue #176/#324 retry 词表守卫)', () => {
   it('#324 A1「TUN 适配器未建立」文案 → 可重试（不命中词表）', () => {
     expect(
-      startMessageIsNonRetryable('sing-box 已就绪但 TUN 适配器 flowz-tun0 未建立，正在自动重试')
+      startMessageIsNonRetryable(
+        'sing-box is ready but TUN adapter flowz-tun0 was not created, retrying automatically'
+      )
     ).toBe(false);
   });
   it('#324 A3「TUN 适配器从未创建」文案 → 可重试', () => {
     expect(
       startMessageIsNonRetryable(
-        'sing-box 启动期退出（TUN 适配器从未创建，疑 wintun 被拦/驱动异常），正在自动重试'
+        'sing-box exited during startup (TUN adapter was never created, likely wintun blocked or a driver failure), retrying automatically'
       )
     ).toBe(false);
   });
   it('既有「TUN 初始化未完成」dead 文案 → 可重试（不回归）', () => {
     expect(
-      startMessageIsNonRetryable('sing-box 启动期退出（TUN 初始化未完成），正在自动重试')
+      startMessageIsNonRetryable(
+        'sing-box exited during startup (TUN initialization incomplete), retrying automatically'
+      )
     ).toBe(false);
   });
   it('黑名单词照常命中不可重试（权限/找不到/坏配置，大小写不敏感）', () => {
-    expect(startMessageIsNonRetryable('管理员权限被拒绝')).toBe(true);
-    expect(startMessageIsNonRetryable('文件找不到')).toBe(true);
+    expect(startMessageIsNonRetryable('TUN mode requires administrator privileges')).toBe(true);
+    expect(startMessageIsNonRetryable('TUN mode requires administrator permission')).toBe(true);
+    expect(startMessageIsNonRetryable('sing-box executable not found: /x')).toBe(true);
     expect(startMessageIsNonRetryable('Invalid Config: bad field')).toBe(true); // 大写也命中
     expect(startMessageIsNonRetryable('EACCES: permission denied')).toBe(true);
   });

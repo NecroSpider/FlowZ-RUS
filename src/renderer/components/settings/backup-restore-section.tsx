@@ -57,7 +57,7 @@ export function BackupRestoreSection() {
     try {
       const result = await api.backup.export(selected);
       if (result.success) {
-        const now = new Date().toLocaleString('zh-CN');
+        const now = new Date().toLocaleString();
         localStorage.setItem(LAST_EXPORT_KEY, now);
         setLastExportTime(now);
         toast.success(t('settings.advanced.backup.exportSuccess'), {

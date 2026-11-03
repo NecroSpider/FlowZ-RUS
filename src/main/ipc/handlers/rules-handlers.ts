@@ -11,7 +11,7 @@ import { mainEventEmitter, MAIN_EVENTS } from '../main-events';
 function assertValidRule(rule: Rule): void {
   // 聚合校验：单/多条件统一经 validateRule（遍历 conditions：类型合法 + 至少一合法值 + combineMode 合法）
   if (!rule || !validateRule(rule)) {
-    throw new Error('规则非法：类型 / 匹配值 / 组合模式不合法');
+    throw new Error('Invalid rule: type / match values / combine mode are invalid');
   }
 }
 

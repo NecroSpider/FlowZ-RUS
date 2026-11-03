@@ -110,11 +110,11 @@ for (const t of TARGETS) {
         continue;
       }
       console.log(
-        `stale: ${t.dir}/${t.bin} 与 coreBinarySha256 不符（磁盘 ${gotBin.slice(0, 12)}… ≠ pin ${wantBin.slice(0, 12)}…）→ 重新下载`
+        `stale: ${t.dir}/${t.bin} does not match coreBinarySha256 (disk ${gotBin.slice(0, 12)}… ≠ pin ${wantBin.slice(0, 12)}…) → re-downloading`
       );
     } else {
       console.log(
-        `skip (unverified): ${t.dir}/${t.bin} — core-manifest.json 缺 coreBinarySha256[${t.key}]，无法确认磁盘上是否就是 ${VERSION}；若刚改 bundledCoreVersion 须加 --force`
+        `skip (unverified): ${t.dir}/${t.bin} — core-manifest.json is missing coreBinarySha256[${t.key}], cannot confirm the file on disk is ${VERSION}; if you just changed bundledCoreVersion, add --force`
       );
       ok++;
       unverified++;
@@ -127,7 +127,7 @@ for (const t of TARGETS) {
   const want = (SHA[t.key] || '').replace(/^sha256:/, '');
   if (!want) {
     console.error(
-      `  FAILED ${t.key}: core-manifest.json 缺 coreArchiveSha256[${t.key}] pin → 拒绝无完整性校验拉取（换版本须同步补；值=官方 release API 的 asset digest）`
+      `  FAILED ${t.key}: core-manifest.json is missing the coreArchiveSha256[${t.key}] pin → refusing to download without an integrity check (add it when changing versions; value = the asset digest from the official release API)`
     );
     failed++;
     continue;
@@ -145,7 +145,7 @@ for (const t of TARGETS) {
     // 完整性校验：对下载的压缩包本体算 sha256，比对 manifest pin（= 官方 API asset digest）。fail-fast 于解压前。
     const got = sha256(archive);
     if (got !== want) {
-      throw new Error(`压缩包 sha256 不符：期望 ${want}，实得 ${got}（版本漂移 / 投毒 / 截断）`);
+      throw new Error(`archive sha256 mismatch: expected ${want}, got ${got} (version drift / tampering / truncation)`);
     }
 
     const extractDir = join(work, 'x');
@@ -166,7 +166,7 @@ for (const t of TARGETS) {
       }
     }
     if (!binPath && existsSync(join(extractDir, t.bin))) binPath = join(extractDir, t.bin);
-    if (!binPath) throw new Error(`解压产物未找到 ${t.bin}（官方资产结构可能变化）`);
+    if (!binPath) throw new Error(`${t.bin} not found in the extracted archive (the official asset layout may have changed)`);
 
     // 原子落地：拷到 .tmp → chmod（unix 可执行）→ rename 顶替（避免半写文件被打包/误用）。
     const tmpDest = `${dest}.tmp`;
@@ -181,12 +181,12 @@ for (const t of TARGETS) {
     if (wantBin && gotBin !== wantBin) {
       rmSync(tmpDest, { force: true });
       throw new Error(
-        `二进制 sha256 不符：期望 ${wantBin}，实得 ${gotBin}（官方资产内容变化 / 取错文件）`
+        `binary sha256 mismatch: expected ${wantBin}, got ${gotBin} (official asset contents changed / wrong file picked)`
       );
     }
     renameSync(tmpDest, dest);
     console.log(
-      `  ok: ${t.dir}/${t.bin} (archive sha ${got.slice(0, 12)}…, bin sha ${gotBin}${wantBin ? '' : ' ← 请抄进 coreBinarySha256'})`
+      `  ok: ${t.dir}/${t.bin} (archive sha ${got.slice(0, 12)}…, bin sha ${gotBin}${wantBin ? '' : ' ← copy this into coreBinarySha256'})`
     );
     ok++;
   } catch (e) {
@@ -205,7 +205,7 @@ for (const t of TARGETS) {
 console.log(
   `\nsing-box cores: ${ok} ready, ${failed} failed` +
     (unverified > 0
-      ? ` — 其中 ${unverified} 个未经校验，磁盘上未必是 ${VERSION}（补 coreBinarySha256 或加 --force）`
+      ? ` — ${unverified} of them unverified, the files on disk may not be ${VERSION} (add coreBinarySha256 or use --force)`
       : ` (version ${VERSION}).`)
 );
 process.exit(failed > 0 ? 1 : 0);

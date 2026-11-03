@@ -63,7 +63,7 @@ export function registerProxyHandlers(
     IPC_CHANNELS.PROXY_START,
     async (_event: IpcMainInvokeEvent, config: UserConfig) => {
       if (!config) {
-        throw new Error('配置参数未传递');
+        throw new Error('Config argument was not provided');
       }
 
       // 启动 sing-box 进程。helper 引导统一收敛到 ProxyManager.start() 的 native gate（无窗口依赖、单点）。

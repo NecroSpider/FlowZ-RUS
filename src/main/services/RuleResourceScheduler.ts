@@ -69,14 +69,22 @@ export class RuleResourceScheduler {
     this.started = true;
 
     setTimeout(() => {
-      this.runDueUpdates('启动补更').catch((e) => {
-        this.logManager.addLog('warn', `规则资源启动补更异常: ${e}`, 'RuleResScheduler');
+      this.runDueUpdates('startup catch-up').catch((e) => {
+        this.logManager.addLog(
+          'warn',
+          `Rule resource startup catch-up error: ${e}`,
+          'RuleResScheduler'
+        );
       });
     }, RuleResourceScheduler.STARTUP_DELAY_MS);
 
     this.tickTimer = setInterval(() => {
-      this.runDueUpdates('周期更新').catch((e) => {
-        this.logManager.addLog('warn', `规则资源周期更新异常: ${e}`, 'RuleResScheduler');
+      this.runDueUpdates('periodic update').catch((e) => {
+        this.logManager.addLog(
+          'warn',
+          `Rule resource periodic update error: ${e}`,
+          'RuleResScheduler'
+        );
       });
     }, RuleResourceScheduler.TICK_MS);
   }
@@ -116,10 +124,18 @@ export class RuleResourceScheduler {
         if (now - lastCatalog >= intervalMs) {
           this.lastCatalogRefreshAttempt = now;
           await this.ruleResourceManager.refreshCatalog();
-          this.logManager.addLog('info', `[${reason}] 资源库目录已刷新`, 'RuleResScheduler');
+          this.logManager.addLog(
+            'info',
+            `[${reason}] Resource catalog refreshed`,
+            'RuleResScheduler'
+          );
         }
       } catch (e) {
-        this.logManager.addLog('debug', `资源库目录刷新跳过: ${e}`, 'RuleResScheduler');
+        this.logManager.addLog(
+          'debug',
+          `Resource catalog refresh skipped: ${e}`,
+          'RuleResScheduler'
+        );
       }
 
       const staleIds: string[] = [];
@@ -158,10 +174,10 @@ export class RuleResourceScheduler {
       // 排查得靠猜（启动补更撞起核初期网络/代理未就绪的暂态尤甚）。
       const { ok, failed, failures } = formatRuleUpdateSummary(results);
       if (ok > 0 || failed > 0) {
-        const detail = failures.length > 0 ? `（失败: ${failures.join('；')}）` : '';
+        const detail = failures.length > 0 ? ` (failed: ${failures.join('; ')})` : '';
         this.logManager.addLog(
           'info',
-          `[${reason}] 规则资源自动更新：成功 ${ok}，失败 ${failed}${detail}`,
+          `[${reason}] Rule resource auto-update: ${ok} succeeded, ${failed} failed${detail}`,
           'RuleResScheduler'
         );
       }

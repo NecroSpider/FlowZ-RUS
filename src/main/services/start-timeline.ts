@@ -109,8 +109,9 @@ export class StartTimeline {
    */
   summarize(outcome: string): string {
     const body = this.items.map((p) => `${p.label}=${p.ms}`).join(' ');
-    const tail = this.droppedCount > 0 ? ` (+${this.droppedCount} 格超限未记)` : '';
-    const head = `起核阶段耗时 total=${this.totalMs()}ms outcome=${outcome}`;
+    const tail =
+      this.droppedCount > 0 ? ` (+${this.droppedCount} phases over the limit, not recorded)` : '';
+    const head = `Core start timings total=${this.totalMs()}ms outcome=${outcome}`;
     // 一格没记时（如 rejectIfCoreSwapInProgress 在首个标记之前就抛）不留空尾巴 `| `——那是条零信息量的行，
     // 而它每次 start 都会进 app.log 与诊断报告。
     return body || tail ? `${head} | ${body}${tail}` : head;

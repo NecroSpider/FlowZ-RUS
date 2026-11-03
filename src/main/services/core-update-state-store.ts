@@ -61,7 +61,11 @@ export class CoreUpdateStateStore {
       fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf-8');
       fs.renameSync(tmp, p);
     } catch (e) {
-      this.logManager.addLog('warn', `写入内核自动更新状态失败: ${e}`, 'CoreUpdateService');
+      this.logManager.addLog(
+        'warn',
+        `Failed to write the core auto-update state: ${e}`,
+        'CoreUpdateService'
+      );
     }
   }
 
@@ -92,7 +96,7 @@ export class CoreUpdateStateStore {
       );
       this.logManager.addLog(
         'warn',
-        `已标记问题版本 ${version}，自动更新将跳过`,
+        `Marked version ${version} as bad, auto-update will skip it`,
         'CoreUpdateService'
       );
     } catch {

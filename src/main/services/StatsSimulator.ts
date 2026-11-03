@@ -100,7 +100,7 @@ export function parseStatsSimConfig(
 
   if (bad.length > 0) {
     warn?.(
-      `FLOWZ_STATS_SIM 解析非法字段 [${bad.join(', ')}]（原值 "${raw ?? ''}"），已回退缺省 ` +
+      `FLOWZ_STATS_SIM has invalid fields [${bad.join(', ')}] (raw value "${raw ?? ''}"), falling back to defaults ` +
         `${d.intervalMs},${d.connCount},${d.churnPerFrame}`
     );
   }
@@ -142,8 +142,8 @@ export class StatsSimulator implements StatsHost {
 
     this.log?.(
       'warn',
-      `stats 模拟器激活（FLOWZ_STATS_SIM=${rawConfig ?? ''} → intervalMs=${this.config.intervalMs}, ` +
-        `connCount=${this.config.connCount}, churnPerFrame=${this.churnPerFrame}），仅用于泄漏定证`
+      `stats simulator active (FLOWZ_STATS_SIM=${rawConfig ?? ''} → intervalMs=${this.config.intervalMs}, ` +
+        `connCount=${this.config.connCount}, churnPerFrame=${this.churnPerFrame}), for leak verification only`
     );
 
     // 初始填满连接池，使首个 tick 起 aggregate.total 即等于 connCount。
@@ -228,12 +228,15 @@ export class StatsSimulator implements StatsHost {
 
   /** dev 工具：不跟随代理生命周期，仅记日志、不重启 ticker。 */
   resubscribe(): void {
-    this.log?.('info', 'stats 模拟器 resubscribe()（dev 工具，ticker 不受代理生命周期影响，忽略）');
+    this.log?.(
+      'info',
+      'stats simulator resubscribe() (dev tool; the ticker is independent of the proxy lifecycle, ignored)'
+    );
   }
 
   /** dev 工具：不跟随代理生命周期，仅记日志、不停 ticker。 */
   stop(): void {
-    this.log?.('info', 'stats 模拟器 stop()（dev 工具，ticker 持续，忽略）');
+    this.log?.('info', 'stats simulator stop() (dev tool; the ticker keeps running, ignored)');
   }
 
   /** batch3：合成器无 worker demand（ticker 自跑），registry 订阅变化对其无意义 → no-op。 */
@@ -268,6 +271,6 @@ export class StatsSimulator implements StatsHost {
       clearInterval(this.timer);
       this.timer = null;
     }
-    this.log?.('info', 'stats 模拟器 dispose()，ticker 已停');
+    this.log?.('info', 'stats simulator dispose(), ticker stopped');
   }
 }

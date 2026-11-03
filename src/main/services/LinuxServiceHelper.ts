@@ -69,7 +69,7 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
       let buf = '';
       const timer = setTimeout(() => {
         sock.destroy();
-        reject(new Error('helper socket 超时'));
+        reject(new Error('helper socket timed out'));
       }, timeoutMs);
       sock.on('connect', () => {
         sock.end(rest.join('\n') + '\n');
@@ -174,7 +174,7 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
       );
       const m = resp.match(/^OK (?:started|already) (\d+)/);
       if (m) return { ok: true, pid: parseInt(m[1], 10) };
-      return { ok: false, error: resp || 'helper 无响应' };
+      return { ok: false, error: resp || 'no response from helper' };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
@@ -204,7 +204,7 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
       if (resp.startsWith('OK free') || resp.startsWith('OK killed')) return { freed: true };
       const m = resp.match(/^OK foreign (.+)/);
       if (m) return { foreign: m[1].trim() };
-      return { error: resp || 'helper 无响应' };
+      return { error: resp || 'no response from helper' };
     } catch (e) {
       return { error: e instanceof Error ? e.message : String(e) };
     }
@@ -250,16 +250,16 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
     if (!this.supported) {
       return {
         success: false,
-        error: '仅 Linux 支持 systemd helper',
+        error: 'The systemd helper is only supported on Linux',
         status: await this.getStatus(),
       };
     }
     const srcBinary = resourceManager.getLinuxHelperPath();
     if (!fs.existsSync(srcBinary)) {
-      this.log('error', `helper 二进制缺失: ${srcBinary}`);
+      this.log('error', `helper binary missing: ${srcBinary}`);
       return {
         success: false,
-        error: 'helper 二进制缺失（构建未包含）',
+        error: 'helper binary missing (not included in this build)',
         status: await this.getStatus(),
       };
     }
@@ -280,8 +280,8 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
       await new Promise((r) => setTimeout(r, 300));
       status = await this.getStatus();
     }
-    if (status.ready) this.log('info', 'helper 安装并就绪');
-    else this.log('warn', 'helper 已安装但未在预期内就绪');
+    if (status.ready) this.log('info', 'helper installed and ready');
+    else this.log('warn', 'helper installed but did not become ready in time');
     return { success: true, status };
   }
 
@@ -290,7 +290,7 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
     if (!this.supported) {
       return {
         success: false,
-        error: '仅 Linux 支持 systemd helper',
+        error: 'The systemd helper is only supported on Linux',
         status: await this.getStatus(),
       };
     }
@@ -301,7 +301,7 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
     if (!result.success) {
       return { success: false, error: result.error, status: await this.getStatus() };
     }
-    this.log('info', 'helper 已卸载');
+    this.log('info', 'helper uninstalled');
     return { success: true, status: await this.getStatus() };
   }
 
@@ -397,9 +397,13 @@ echo flowz-helper-uninstall-ok
         }
         if (code === 0) resolve({ success: true });
         else if (code === 126)
-          resolve({ success: false, error: '授权被取消或系统缺少 polkit 认证代理' });
-        else if (code === 127) resolve({ success: false, error: '系统缺少 pkexec（polkit）' });
-        else resolve({ success: false, error: stderr.trim() || `pkexec 退出码 ${code}` });
+          resolve({
+            success: false,
+            error: 'Authorization was cancelled, or no polkit authentication agent is available',
+          });
+        else if (code === 127)
+          resolve({ success: false, error: 'pkexec (polkit) is not installed' });
+        else resolve({ success: false, error: stderr.trim() || `pkexec exit code ${code}` });
       });
       proc.on('error', (err) => {
         resolve({ success: false, error: err.message });

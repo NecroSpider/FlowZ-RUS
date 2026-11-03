@@ -16,11 +16,11 @@ export function registerDiagnosticHandlers(diagnosticService: DiagnosticService)
         const report = await diagnosticService.buildReport();
 
         const result = await dialog.showSaveDialog({
-          title: '导出 FlowZ 诊断报告',
+          title: 'Export FlowZ Diagnostic Report',
           defaultPath: `flowz-diagnostic-${new Date().toISOString().slice(0, 10)}.md`,
           filters: [
             { name: 'Markdown', extensions: ['md'] },
-            { name: '所有文件', extensions: ['*'] },
+            { name: 'All files', extensions: ['*'] },
           ],
         });
 

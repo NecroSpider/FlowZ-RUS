@@ -257,7 +257,7 @@ export function RealTimeLogs({
               className="lv-lines mono tnum"
               title={
                 searchTerm
-                  ? (t('home.logLinesFilteredTitle', '命中 / 缓冲总行数') as string)
+                  ? (t('home.logLinesFilteredTitle', 'Matched / buffered lines') as string)
                   : undefined
               }
             >

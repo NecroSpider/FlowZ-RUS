@@ -103,7 +103,7 @@ export class MeshExitRouteManager {
     } catch (e) {
       this.log(
         'warn',
-        `出口路由托管 reconcile 失败(不影响代理): ${e instanceof Error ? e.message : e}`
+        `Exit route manager reconcile failed (proxy unaffected): ${e instanceof Error ? e.message : e}`
       );
     }
   }
@@ -126,12 +126,18 @@ export class MeshExitRouteManager {
         return;
       }
       if (process.platform === 'darwin' && !(await this.listUtuns()).has(this.installed.iface)) {
-        this.log('info', `出口路由重申:接口 ${this.installed.iface} 已不在 → 复位重装`);
+        this.log(
+          'info',
+          `Exit route reassert: interface ${this.installed.iface} is gone -> resetting and reinstalling`
+        );
         this.installed = null;
         await this.reconcile(config, enableIPv6);
       }
     } catch (e) {
-      this.log('warn', `出口路由重申失败(不影响代理): ${e instanceof Error ? e.message : e}`);
+      this.log(
+        'warn',
+        `Exit route reassert failed (proxy unaffected): ${e instanceof Error ? e.message : e}`
+      );
     }
   }
 
@@ -148,15 +154,18 @@ export class MeshExitRouteManager {
     if (process.platform === 'darwin' && !(await this.listUtuns()).has(cur.iface)) {
       this.log(
         'info',
-        `出口路由:接口 ${cur.iface} 已随停核移除,ifscope 路由自动清理,跳过 route delete(防误删主表)`
+        `Exit route: interface ${cur.iface} was removed when the core stopped and its ifscope routes went with it; skipping route delete (avoids deleting main table routes)`
       );
       return;
     }
     try {
       await this.runRoute('del', cur.iface, cur.cidrs);
-      this.log('info', `出口路由已清理: ${cur.iface} ${cur.cidrs.join(',')}`);
+      this.log('info', `Exit routes removed: ${cur.iface} ${cur.cidrs.join(',')}`);
     } catch (e) {
-      this.log('warn', `出口路由清理失败(best-effort): ${e instanceof Error ? e.message : e}`);
+      this.log(
+        'warn',
+        `Exit route cleanup failed (best-effort): ${e instanceof Error ? e.message : e}`
+      );
     }
   }
 
@@ -172,12 +181,18 @@ export class MeshExitRouteManager {
   private async apply(plan: MeshExitRoutePlan): Promise<void> {
     const iface = await this.resolveIface(plan.iface);
     if (!iface) {
-      this.log('warn', '出口路由托管:未找到 TS 内核接口(tailnet 100.x),跳过装路由');
+      this.log(
+        'warn',
+        'Exit route manager: TS kernel interface (tailnet 100.x) not found, skipping route install'
+      );
       return;
     }
     await this.runRoute('add', iface, plan.cidrs);
     this.installed = { iface, cidrs: plan.cidrs };
-    this.log('info', `出口路由已装: ${iface} ${plan.cidrs.join(',')}(System TS exit 出网)`);
+    this.log(
+      'info',
+      `Exit routes installed: ${iface} ${plan.cidrs.join(',')} (System TS exit egress)`
+    );
   }
 
   /**
@@ -228,7 +243,7 @@ export class MeshExitRouteManager {
       // 兜底：新增集里没找到带 tailnet 地址的（baseline 偏差/边缘）→ 全量 utun 里找带 tailnet 的。
       return [...ifaceIps.keys()].find((n) => isTailnet(ifaceIps.get(n) || [])) || null;
     } catch (e) {
-      this.log('warn', `反查 TS 接口失败: ${e instanceof Error ? e.message : e}`);
+      this.log('warn', `Failed to look up the TS interface: ${e instanceof Error ? e.message : e}`);
     }
     return null;
   }
@@ -269,7 +284,10 @@ export class MeshExitRouteManager {
     }
     const helper = this.getHelper();
     if (!helper) {
-      this.log('warn', '出口路由托管:helper 不可用,无法装路由(System+exit 出网将不通)');
+      this.log(
+        'warn',
+        'Exit route manager: helper unavailable, cannot install routes (System + exit egress will not work)'
+      );
       return;
     }
     const res =
@@ -277,7 +295,7 @@ export class MeshExitRouteManager {
     if (!res.ok) {
       this.log(
         'warn',
-        `helper 路由${op === 'add' ? '装' : '清'}失败(可能 helper 版本过旧需重装 v7): ${res.error || ''}`
+        `helper route ${op === 'add' ? 'install' : 'removal'} failed (the helper may be outdated; reinstall it to get v7): ${res.error || ''}`
       );
     }
   }

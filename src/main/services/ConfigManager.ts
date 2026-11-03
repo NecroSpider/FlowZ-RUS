@@ -160,7 +160,9 @@ export class ConfigManager implements IConfigManager {
         } catch {
           await fs
             .copyFile(this.configPath, backupPath)
-            .catch((e) => this.log('warn', `备份旧配置失败（不阻断迁移）: ${e}`));
+            .catch((e) =>
+              this.log('warn', `Failed to back up old config (migration continues): ${e}`)
+            );
         }
       }
 
@@ -171,7 +173,7 @@ export class ConfigManager implements IConfigManager {
       if (!config.clashApiSecret) {
         config.clashApiSecret = randomBytes(16).toString('hex');
         await this.saveConfig(config).catch((e) =>
-          this.log('warn', `持久化 clashApiSecret 失败（不阻断）: ${e}`)
+          this.log('warn', `Failed to persist clashApiSecret (non-blocking): ${e}`)
         );
       }
 
@@ -184,10 +186,16 @@ export class ConfigManager implements IConfigManager {
         try {
           if (!readPrivacyHash()) writePrivacyHash(hashPasswordSync(legacyPlain));
           await this.saveConfig(config).catch((e) =>
-            this.log('warn', `隐私密码迁移后落盘失败（不阻断）: ${e}`)
+            this.log(
+              'warn',
+              `Failed to save config after privacy password migration (non-blocking): ${e}`
+            )
           );
         } catch (e) {
-          this.log('warn', `隐私密码迁移失败（明文已从内存清除，下次加载重试）: ${e}`);
+          this.log(
+            'warn',
+            `Privacy password migration failed (plaintext cleared from memory; will retry on next load): ${e}`
+          );
         }
       }
 
@@ -223,7 +231,7 @@ export class ConfigManager implements IConfigManager {
         config.appRules = seedDefaultAppRules(config.appRules || []);
         config.appRulesSeeded = true;
         await this.saveConfig(config).catch((e) =>
-          this.log('warn', `应用分流默认注入落盘失败（不阻断）: ${e}`)
+          this.log('warn', `Failed to save default app rules seeding (non-blocking): ${e}`)
         );
       }
 
@@ -237,9 +245,12 @@ export class ConfigManager implements IConfigManager {
           config.logLevel = prev;
           delete config.diagnosticCapture;
           await this.saveConfig(config).catch((e) =>
-            this.log('warn', `诊断采集还原落盘失败（不阻断）: ${e}`)
+            this.log(
+              'warn',
+              `Failed to save config after restoring from diagnostic capture (non-blocking): ${e}`
+            )
           );
-          this.log('info', `诊断采集已结束，日志级别还原为 ${prev}`);
+          this.log('info', `Diagnostic capture ended, log level restored to ${prev}`);
         }
       }
 
@@ -250,19 +261,19 @@ export class ConfigManager implements IConfigManager {
     } catch (error) {
       // 文件不存在或解析失败，返回默认配置
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.log('error', `配置文件加载失败，使用默认配置: ${errorMessage}`);
+      this.log('error', `Failed to load config file, using default config: ${errorMessage}`);
 
       const isMissing = (error as NodeJS.ErrnoException).code === 'ENOENT';
 
       // 记录详细错误信息
       if (error instanceof SyntaxError) {
-        this.log('error', `配置文件 JSON 格式错误: ${errorMessage}`);
+        this.log('error', `Config file has invalid JSON: ${errorMessage}`);
       } else if (isMissing) {
-        this.log('info', '配置文件不存在，将创建默认配置');
+        this.log('info', 'Config file not found, creating default config');
       } else if ((error as NodeJS.ErrnoException).code === 'EACCES') {
-        this.log('error', '配置文件权限不足，无法读取');
+        this.log('error', 'Insufficient permissions to read config file');
       } else {
-        this.log('error', `配置验证失败: ${errorMessage}`);
+        this.log('error', `Config validation failed: ${errorMessage}`);
       }
 
       const defaultConfig = this.createDefaultConfig();
@@ -276,9 +287,9 @@ export class ConfigManager implements IConfigManager {
       if (isMissing) {
         try {
           await this.saveConfig(defaultConfig);
-          this.log('info', `默认配置已保存到: ${this.configPath}`);
+          this.log('info', `Default config saved to: ${this.configPath}`);
         } catch (saveError) {
-          this.log('error', `保存默认配置失败: ${saveError}`);
+          this.log('error', `Failed to save default config: ${saveError}`);
         }
       } else {
         // 存在但损坏：备份，不覆盖。
@@ -289,10 +300,10 @@ export class ConfigManager implements IConfigManager {
           await this.pruneCorruptBackups();
           this.log(
             'error',
-            `配置文件损坏或校验失败，已备份到 ${backupPath}，未覆盖原文件；本次以默认配置启动`
+            `Config file is corrupt or failed validation; backed up to ${backupPath}, original left untouched; starting with default config this time`
           );
         } catch (backupError) {
-          this.log('error', `备份损坏配置失败（不阻断启动）: ${backupError}`);
+          this.log('error', `Failed to back up corrupt config (startup continues): ${backupError}`);
         }
       }
 
@@ -441,7 +452,7 @@ export class ConfigManager implements IConfigManager {
           values,
           action: 'direct',
           enabled: true,
-          remarks: '排除进程（自动迁移）',
+          remarks: 'Excluded processes (auto-migrated)',
         });
       }
       config.bypassProcesses = [];
@@ -473,7 +484,10 @@ export class ConfigManager implements IConfigManager {
         return true;
       });
       if (droppedSubs > 0) {
-        this.log('warn', `[ConfigManager] 丢弃 ${droppedSubs} 条非法订阅（缺 id/name/url）`);
+        this.log(
+          'warn',
+          `[ConfigManager] Dropped ${droppedSubs} invalid subscription(s) (missing id/name/url)`
+        );
       }
     } else {
       config.subscriptions = [];
@@ -570,13 +584,13 @@ export class ConfigManager implements IConfigManager {
     if (droppedServers > 0) {
       this.log(
         'warn',
-        `[ConfigManager] 丢弃 ${droppedServers} 个结构非法节点（无 id/name、未知协议、缺 address/port 或协议必填缺失）`
+        `[ConfigManager] Dropped ${droppedServers} malformed node(s) (no id/name, unknown protocol, missing address/port, or missing required protocol fields)`
       );
     }
     if (droppedCidrs > 0) {
       this.log(
         'warn',
-        `[ConfigManager] 丢弃 ${droppedCidrs} 处非法 CIDR（endpoint allowedIPs/routes）`
+        `[ConfigManager] Dropped ${droppedCidrs} invalid CIDR(s) (endpoint allowedIPs/routes)`
       );
     }
 
@@ -598,7 +612,7 @@ export class ConfigManager implements IConfigManager {
     if (droppedTailscale > 0) {
       this.log(
         'warn',
-        `[ConfigManager] Tailscale 单节点硬限：丢弃 ${droppedTailscale} 个多余 Tailscale 节点（保留第一个）`
+        `[ConfigManager] Tailscale single-node limit: dropped ${droppedTailscale} extra Tailscale node(s) (kept the first one)`
       );
     }
 
@@ -608,12 +622,15 @@ export class ConfigManager implements IConfigManager {
     // 规则全丢。归 null（回落「未选节点」，用户重选即可）零功能损失，与本文件 sanitize-不-throw 惯例一致。
     if (config.selectedServerId !== null && !isDirectSelection(config.selectedServerId)) {
       if (typeof config.selectedServerId !== 'string') {
-        this.log('warn', '[ConfigManager] selectedServerId 类型非法，归零为未选节点');
+        this.log(
+          'warn',
+          '[ConfigManager] selectedServerId has an invalid type, reset to no node selected'
+        );
         config.selectedServerId = null;
       } else if (!config.servers.some((s) => s.id === config.selectedServerId)) {
         this.log(
           'warn',
-          '[ConfigManager] selectedServerId 指向已不存在的节点（坏节点已剔除 / Tailscale 去重），归零为未选节点'
+          '[ConfigManager] selectedServerId points to a node that no longer exists (invalid node removed / Tailscale deduplicated), reset to no node selected'
         );
         config.selectedServerId = null;
       }
@@ -699,7 +716,7 @@ export class ConfigManager implements IConfigManager {
         if (dropped > 0) {
           this.log(
             'warn',
-            `[ConfigManager] tunConfig.inboundExcludeCidrs 剔除 ${dropped} 条非法/过宽网段（须合法 CIDR，不含 0.0.0.0/0 等过宽段）`
+            `[ConfigManager] tunConfig.inboundExcludeCidrs: removed ${dropped} invalid/overly broad range(s) (must be valid CIDRs, no overly broad ranges such as 0.0.0.0/0)`
           );
         }
         if (deduped.length > 0) config.tunConfig.inboundExcludeCidrs = deduped;
@@ -732,7 +749,7 @@ export class ConfigManager implements IConfigManager {
         delete config.dnsConfig.dnsTimeoutMs;
         this.log(
           'warn',
-          `[ConfigManager] 丢弃非法 dns.timeout（须 ${DNS_TIMEOUT_MIN_MS}..${DNS_TIMEOUT_MAX_MS}ms）: ${ms}`
+          `[ConfigManager] Dropped invalid dns.timeout (must be ${DNS_TIMEOUT_MIN_MS}..${DNS_TIMEOUT_MAX_MS}ms): ${ms}`
         );
       } else if (!Number.isInteger(ms)) {
         config.dnsConfig.dnsTimeoutMs = Math.round(ms);
@@ -828,10 +845,13 @@ export class ConfigManager implements IConfigManager {
     });
     // 汇总告警（替代逐条），防单份脏配置批量刷屏
     if (droppedRules > 0) {
-      this.log('warn', `[ConfigManager] 丢弃 ${droppedRules} 条非法规则`);
+      this.log('warn', `[ConfigManager] Dropped ${droppedRules} invalid rule(s)`);
     }
     if (sanitizedIssues > 0) {
-      this.log('warn', `[ConfigManager] 清洗 ${sanitizedIssues} 处规则非法字段（已保留/重置默认）`);
+      this.log(
+        'warn',
+        `[ConfigManager] Sanitized ${sanitizedIssues} invalid rule field(s) (kept or reset to defaults)`
+      );
     }
 
     // 验证布尔值字段
@@ -1035,10 +1055,16 @@ export class ConfigManager implements IConfigManager {
       }
       delete legacy.subscriptionUpdateViaProxy; // 消化后删除旧字段
       await this.saveConfig(config).catch((e) =>
-        this.log('warn', `订阅代理策略迁移后落盘失败（不阻断，下次重试）: ${e}`)
+        this.log(
+          'warn',
+          `Failed to save after subscription proxy policy migration (non-blocking, will retry next time): ${e}`
+        )
       );
     } catch (e) {
-      this.log('warn', `订阅代理策略迁移失败（吞掉，不影响启动）: ${e}`);
+      this.log(
+        'warn',
+        `Subscription proxy policy migration failed (ignored, startup unaffected): ${e}`
+      );
     }
   }
 
@@ -1070,10 +1096,13 @@ export class ConfigManager implements IConfigManager {
       }
       // best-effort 落盘标记；失败不阻断（下次加载重试，期间标记未持久 = 未迁移语义一致）。
       await this.saveConfig(config).catch((e) =>
-        this.log('warn', `FakeIP 开关迁移后落盘失败（不阻断，下次重试）: ${e}`)
+        this.log(
+          'warn',
+          `Failed to save after FakeIP toggle migration (non-blocking, will retry next time): ${e}`
+        )
       );
     } catch (e) {
-      this.log('warn', `FakeIP 开关迁移失败（吞掉，不影响启动）: ${e}`);
+      this.log('warn', `FakeIP toggle migration failed (ignored, startup unaffected): ${e}`);
     }
   }
 
@@ -1101,10 +1130,16 @@ export class ConfigManager implements IConfigManager {
         config.dnsConfig.enableFakeIp === false &&
         config.dnsConfig.fakeIpToggleMigrated === true;
       await this.saveConfig(config).catch((e) =>
-        this.log('warn', `FakeIP-TUN 待纠正评估落盘失败（不阻断，下次重试）: ${e}`)
+        this.log(
+          'warn',
+          `Failed to save FakeIP-TUN pending-correction evaluation (non-blocking, will retry next time): ${e}`
+        )
       );
     } catch (e) {
-      this.log('warn', `FakeIP-TUN 待纠正评估失败（吞掉，不影响启动）: ${e}`);
+      this.log(
+        'warn',
+        `FakeIP-TUN pending-correction evaluation failed (ignored, startup unaffected): ${e}`
+      );
     }
   }
 
@@ -1128,10 +1163,13 @@ export class ConfigManager implements IConfigManager {
       }
       dns.nodeResolverMigrated = true;
       await this.saveConfig(config).catch((e) =>
-        this.log('warn', `节点解析器迁移后落盘失败（不阻断，下次重试）: ${e}`)
+        this.log(
+          'warn',
+          `Failed to save after node resolver migration (non-blocking, will retry next time): ${e}`
+        )
       );
     } catch (e) {
-      this.log('warn', `节点解析器迁移失败（吞掉，不影响启动）: ${e}`);
+      this.log('warn', `Node resolver migration failed (ignored, startup unaffected): ${e}`);
     }
   }
 
@@ -1166,13 +1204,16 @@ export class ConfigManager implements IConfigManager {
       }
       dns.dnsDefaultsMigrated = true;
       if (changed.length) {
-        this.log('info', `DNS 默认值已从中国 DNS 迁移到 Yandex：${changed.join(', ')}`);
+        this.log('info', `DNS defaults migrated from Chinese DNS to Yandex: ${changed.join(', ')}`);
       }
       await this.saveConfig(config).catch((e) =>
-        this.log('warn', `DNS 默认值迁移后落盘失败（不阻断，下次重试）: ${e}`)
+        this.log(
+          'warn',
+          `Failed to save after DNS defaults migration (non-blocking, will retry next time): ${e}`
+        )
       );
     } catch (e) {
-      this.log('warn', `DNS 默认值迁移失败（吞掉，不影响启动）: ${e}`);
+      this.log('warn', `DNS defaults migration failed (ignored, startup unaffected): ${e}`);
     }
   }
 
@@ -1192,10 +1233,13 @@ export class ConfigManager implements IConfigManager {
       // 纯逻辑收敛到 shared/tun-defaults#migrateTunDefaults（可单测）；本壳只负责落盘 + 吞异常。
       if (!migrateTunDefaults(config)) return; // 幂等/无变更（含新装）→ 不落盘
       await this.saveConfig(config).catch((e) =>
-        this.log('warn', `TUN 默认值迁移后落盘失败（不阻断，下次重试）: ${e}`)
+        this.log(
+          'warn',
+          `Failed to save after TUN defaults migration (non-blocking, will retry next time): ${e}`
+        )
       );
     } catch (e) {
-      this.log('warn', `TUN 默认值迁移失败（吞掉，不影响启动）: ${e}`);
+      this.log('warn', `TUN defaults migration failed (ignored, startup unaffected): ${e}`);
     }
   }
 

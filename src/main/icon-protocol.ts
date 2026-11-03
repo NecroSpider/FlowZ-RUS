@@ -92,7 +92,7 @@ export function registerIconProtocol(deps: IconProtocolDeps): void {
         const status = e.reason === 'redirect-protocol' ? 400 : e.reason === 'ssrf' ? 403 : 502;
         return new Response(null, { status });
       }
-      deps.logManager.addLog('warn', `图标代理拉取失败: ${e}`, 'IconProtocol');
+      deps.logManager.addLog('warn', `Icon proxy fetch failed: ${e}`, 'IconProtocol');
       return new Response(null, { status: 502 });
     }
   });

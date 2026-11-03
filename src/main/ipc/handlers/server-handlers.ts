@@ -95,7 +95,7 @@ export function registerServerHandlers(
       const index = config.servers.findIndex((s) => s.id === args.server.id);
 
       if (index === -1) {
-        throw new Error(`服务器不存在: ${args.server.id}`);
+        throw new Error(`Server not found: ${args.server.id}`);
       }
 
       config.servers[index] = args.server;
@@ -118,7 +118,7 @@ export function registerServerHandlers(
       const index = config.servers.findIndex((s) => s.id === args.serverId);
 
       if (index === -1) {
-        throw new Error(`服务器不存在: ${args.serverId}`);
+        throw new Error(`Server not found: ${args.serverId}`);
       }
 
       const removed = config.servers[index];
@@ -204,7 +204,7 @@ export function registerServerHandlers(
       const server = config.servers.find((s) => s.id === args.serverId);
 
       if (!server) {
-        throw new Error(`服务器不存在: ${args.serverId}`);
+        throw new Error(`Server not found: ${args.serverId}`);
       }
 
       config.selectedServerId = args.serverId;

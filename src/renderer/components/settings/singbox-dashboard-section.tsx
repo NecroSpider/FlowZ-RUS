@@ -75,12 +75,14 @@ export function SingboxDashboardSection() {
     <div className="card set-card">
       <div className="set-h">
         <b>{t('settings.advanced.singboxDashboard')}</b>
-        <small>{t('settings.advanced.singboxDashboardCardSub', 'sing-box 原生控制 API')}</small>
+        <small>
+          {t('settings.advanced.singboxDashboardCardSub', 'sing-box native control API')}
+        </small>
       </div>
       <Srow
         label={
           <>
-            {t('settings.advanced.singboxDashboardEnable', '启用外部控制')}
+            {t('settings.advanced.singboxDashboardEnable', 'Enable external control')}
             {/* 单个 ⓘ 合并两段说明：面板离线可用 + D5 延迟重启下节点组可能与 FlowZ 列表不一致（避免同 label 双 i）。 */}
             <InfoTooltip
               content={

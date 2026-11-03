@@ -30,7 +30,9 @@ export class CoreStartRetryError extends Error {
  * 抢放 wintun 适配器 → 「管理 API 未绑定」假超时自我放大（Windows TUN 重启风暴根因）。
  */
 export class CoreStartSupersededError extends Error {
-  constructor(message = 'sing-box 起核已被更新的启动/停止操作接管，本腿让位') {
+  constructor(
+    message = 'sing-box start was superseded by a newer start/stop; this attempt is yielding'
+  ) {
     super(message);
     this.name = 'CoreStartSupersededError';
   }
@@ -50,7 +52,7 @@ export class CoreStartTunPersistentError extends Error {
   // 冷启拉 ruleset 超时）同样命中——那些场景适配器也从未创建。故文案**不独指 wintun**：先陈述观测事实 + 引导开诊断采集
   // 定位（真正拍板证据），再把 wintun/冲突 VPN 列为常见原因之一。定向到具体根因的日志佐证留真机项 #1 后增强。
   constructor(
-    message = 'TUN 适配器持续未能建立，起核重试均未成功——已停止无谓重试。常见原因：wintun 驱动被杀软拦截/损坏、其它 VPN/TUN 客户端占用，或内核/配置/端口导致起核失败。请开启「诊断采集」重导日志以定位；若确为 wintun，检查杀软隔离区的 wintun.dll 并关闭其它 TUN/VPN 客户端后重试。'
+    message = 'The TUN adapter could not be brought up and every start retry failed, so FlowZ stopped retrying. Common causes: the wintun driver is blocked or damaged by antivirus software, another VPN/TUN client is holding it, or a core/config/port problem keeps sing-box from starting. Start a diagnostic capture and export the logs again to find the cause; if it is wintun, check the antivirus quarantine for wintun.dll, close other TUN/VPN clients and try again.'
   ) {
     super(message);
     this.name = 'CoreStartTunPersistentError';
@@ -63,13 +65,12 @@ export class CoreStartTunPersistentError extends Error {
  * 「…从未创建」/「…初始化未完成」均已避开，由 startMessageIsNonRetryable 单测守卫，防未来加词静默把可重试文案变不可重试）。
  */
 export const NON_RETRYABLE_START_ERROR_PATTERNS = [
-  '找不到',
-  '权限',
+  'executable not found',
+  'privileges',
   'permission',
   'enoent',
   'eacces',
   'eperm',
-  '配置文件格式错误',
   'invalid config',
 ] as const;
 

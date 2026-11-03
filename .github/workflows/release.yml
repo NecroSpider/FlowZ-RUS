@@ -35,7 +35,7 @@ jobs:
 
       # 提权 helper 二进制不入库（.gitignore），由 build:helper 现编现打：mac(helper/) + win(helper-win/)。
       # 必须在 mac 与 win 两个 runner 都装 Go，否则该平台 package 缺 helper 二进制 → 安装提权助手「二进制缺失」(issue #57)。
-      - name: Setup Go (提权 helper, mac + win)
+      - name: Setup Go (privilege helper, mac + win)
         if: matrix.platform == 'mac' || matrix.platform == 'win'
         uses: actions/setup-go@v5
         with:
@@ -82,7 +82,7 @@ jobs:
               fi
             done
             if [ -z "$APP_PATH" ]; then
-              echo "::error::找不到 ${ARCH}(${WANT}) 架构的 FlowZ.app（查了 dist-package/mac-${ARCH}/ 与 dist-package/mac/）——发布将缺 mac-${ARCH} 包，请检查 package:mac 的 electron-builder --${ARCH} 产出。"
+              echo "::error::FlowZ.app for ${ARCH} (${WANT}) not found (checked dist-package/mac-${ARCH}/ and dist-package/mac/); the release would miss the mac-${ARCH} package. Check the electron-builder --${ARCH} output of package:mac."
               exit 1
             fi
             echo "Using ${ARCH} app bundle: $APP_PATH"
@@ -96,7 +96,7 @@ jobs:
             # ad-hoc 签名（无付费 Developer ID/公证）→ 从下载的 DMG 拖出的 app 带 quarantine，
             # macOS 首次打开报「已损坏，应移到废纸篓」，且右键→打开无效、须 xattr -cr。
             # DMG 内附首次打开引导（中英），教用户清除隔离属性。文件名带序号让它排在 app 前、更显眼。
-            cp "build/macos-dmg-open-guide.txt" "$TEMP_DIR/0 首次打开必读 READ ME FIRST.txt"
+            cp "build/macos-dmg-open-guide.txt" "$TEMP_DIR/0 READ ME FIRST.txt"
             hdiutil create -volname "FlowZ ${VERSION} (${ARCH})" \
               -srcfolder "$TEMP_DIR" \
               -ov -format UDZO \

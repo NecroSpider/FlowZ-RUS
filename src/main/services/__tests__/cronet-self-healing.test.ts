@@ -158,7 +158,7 @@ describe('ensureCronetHealthy — 缺失/损坏自愈（linux/win 对称）', ()
         const res = await rm.ensureCronetHealthy(coreDir);
         expect(res.action).toBe('failed');
         expect(res.reason).toMatch(/EACCES/);
-        expect(logs.some((l) => l.level === 'warn' && /自愈失败/.test(l.msg))).toBe(true);
+        expect(logs.some((l) => l.level === 'warn' && /self-heal failed/.test(l.msg))).toBe(true);
         // C 修复：copyFile 已建 .tmp、rename 失败 → catch 清理 .tmp（防跨重启累积）。
         expect(fsSync.existsSync(path.join(coreDir, `${libName}.tmp`))).toBe(false);
         spy.mockRestore();

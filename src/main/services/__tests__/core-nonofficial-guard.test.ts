@@ -41,7 +41,7 @@ function fakePm(initialLine: string) {
     getCoreVersionLine: jest.fn(async (_force?: boolean) => line),
     getCoreVersion: jest.fn(async (_force?: boolean) => {
       const m = line.match(/(\d+\.\d+\.\d+)/);
-      return m ? m[1] : '未知';
+      return m ? m[1] : 'unknown';
     }),
     getStatus: () => ({ running: false }),
   } as any;
@@ -71,14 +71,16 @@ describe('非官方内核更新闸门（给定 verdict）', () => {
     const fetchSpy = jest.spyOn(svc.coreDownloader, 'fetchReleases');
     const r = await svc.checkUpdate();
     expect(r.hasUpdate).toBe(false);
-    expect(r.error).toMatch(/第三方|非官方/);
+    expect(r.error).toMatch(/third-party|unofficial/);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('fork → updateCore 抛错（拒绝在线更新）', async () => {
     const svc = mkSvc();
     jest.spyOn(svc, 'getCoreBuild').mockResolvedValue('fork');
-    await expect(svc.updateCore('https://example.com/x.tar.gz')).rejects.toThrow(/第三方|非官方/);
+    await expect(svc.updateCore('https://example.com/x.tar.gz')).rejects.toThrow(
+      /third-party|unofficial/
+    );
   });
 
   it('fork + 有 staged → tryApplyStaged 作废暂存官方核并返回 discarded', async () => {
@@ -106,7 +108,7 @@ describe('非官方内核更新闸门（给定 verdict）', () => {
     const fetchSpy = jest.spyOn(svc.coreDownloader, 'fetchReleases').mockResolvedValue([]);
     const r = await svc.checkUpdate();
     expect(r.hasUpdate).toBe(false);
-    expect(r.error).not.toMatch(/第三方|非官方/);
+    expect(r.error).not.toMatch(/third-party|unofficial/);
     expect(fetchSpy).toHaveBeenCalled(); // 确实走到官方在线检查路径
   });
 });
@@ -118,7 +120,7 @@ describe('换核检测全链路（注入版本行，无需运行内核）', () =
     jest.spyOn(svc.coreDownloader, 'fetchReleases').mockResolvedValue([]);
     expect(await svc.getCoreBuild()).toBe('official');
     const r = await svc.checkUpdate();
-    expect(r.error).not.toMatch(/第三方|非官方/);
+    expect(r.error).not.toMatch(/third-party|unofficial/);
   });
 
   it('会话内换核 官方→fork：即时被守卫拦下（证明守卫跟随当前实跑内核、非陈旧缓存）', async () => {
@@ -127,18 +129,18 @@ describe('换核检测全链路（注入版本行，无需运行内核）', () =
     svc.setProxyManager(pm);
     jest.spyOn(svc.coreDownloader, 'fetchReleases').mockResolvedValue([]);
     // 起始官方：放行
-    expect((await svc.checkUpdate()).error).not.toMatch(/第三方|非官方/);
+    expect((await svc.checkUpdate()).error).not.toMatch(/third-party|unofficial/);
 
     // 换到第三方 fork（仅改版本行，无需重启/运行）
     pm.setLine('sing-box version 1.13.13-reF1nd');
     expect(await svc.getCoreBuild(true)).toBe('fork');
     const r = await svc.checkUpdate();
     expect(r.hasUpdate).toBe(false);
-    expect(r.error).toMatch(/第三方|非官方/);
+    expect(r.error).toMatch(/third-party|unofficial/);
 
     // updateCore 守卫 force 刷新版本行（自包含，不依赖调用方先刷新）
     const lineSpy = jest.spyOn(pm, 'getCoreVersionLine');
-    await expect(svc.updateCore('https://x/y.tar.gz')).rejects.toThrow(/第三方|非官方/);
+    await expect(svc.updateCore('https://x/y.tar.gz')).rejects.toThrow(/third-party|unofficial/);
     expect(lineSpy).toHaveBeenCalledWith(true);
   });
 

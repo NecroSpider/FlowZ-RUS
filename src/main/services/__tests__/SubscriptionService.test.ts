@@ -105,7 +105,7 @@ describe('HIGH-1 + M5 — 0 节点必须 throw（不穿仓）', () => {
     });
     mockFetch.mockResolvedValue(makeResponse({ body }));
     await expect(svc.fetchSubscription('https://sub.example.com/c', SUB_ID)).rejects.toThrow(
-      /0 个可用节点/
+      /0 usable nodes/
     );
   });
 
@@ -115,7 +115,7 @@ describe('HIGH-1 + M5 — 0 节点必须 throw（不穿仓）', () => {
     const body = JSON.stringify({ outbounds: [{ type: 'direct', tag: 'd' }] }); // 无受支持节点
     mockFetch.mockResolvedValue(makeResponse({ body }));
     await expect(svc.fetchSubscription('https://sub.example.com/sb', SUB_ID)).rejects.toThrow(
-      /sing-box 订阅解析得到 0/
+      /sing-box subscription yielded 0/
     );
   });
 
@@ -124,7 +124,7 @@ describe('HIGH-1 + M5 — 0 节点必须 throw（不穿仓）', () => {
     const svc = newService(log);
     mockFetch.mockResolvedValue(makeResponse({ body: 'notaurl://garbage\nmailto:x@y' }));
     await expect(svc.fetchSubscription('https://sub.example.com/u', SUB_ID)).rejects.toThrow(
-      /0 个可用节点|无法识别/
+      /0 usable nodes|Unrecognized/
     );
   });
 
@@ -134,7 +134,7 @@ describe('HIGH-1 + M5 — 0 节点必须 throw（不穿仓）', () => {
     const b64 = Buffer.from('ssr://unsupported\n', 'utf-8').toString('base64');
     mockFetch.mockResolvedValue(makeResponse({ body: b64 }));
     await expect(svc.fetchSubscription('https://sub.example.com/b', SUB_ID)).rejects.toThrow(
-      /0 个可用节点|无法识别/
+      /0 usable nodes|Unrecognized/
     );
   });
 
@@ -366,7 +366,7 @@ describe('H2 重定向绕过', () => {
       makeResponse({ status: 302, headers: { location: 'https://inner.example.com/c' } })
     );
     await expect(svc.fetchSubscription('https://entry.example.com/c', SUB_ID)).rejects.toThrow(
-      /本机\/内网/
+      /local\/private/
     );
   });
 
@@ -394,7 +394,7 @@ describe('H2 重定向绕过', () => {
       makeResponse({ status: 302, headers: { location: 'https://loop.example.com/next' } })
     );
     await expect(svc.fetchSubscription('https://loop.example.com/c', SUB_ID)).rejects.toThrow(
-      /重定向次数超过上限/
+      /Too many redirects/
     );
   });
 });
@@ -407,7 +407,7 @@ describe('M2 体积上限', () => {
       makeResponse({ headers: { 'content-length': String(20 * 1024 * 1024) }, body: 'x' })
     );
     await expect(svc.fetchSubscription('https://big.example.com/c', SUB_ID)).rejects.toThrow(
-      /体积.*超过上限/
+      /too large/
     );
   });
 
@@ -418,7 +418,7 @@ describe('M2 体积上限', () => {
     const huge = 'a'.repeat(11 * 1024 * 1024);
     mockFetch.mockResolvedValue(makeResponse({ body: huge }));
     await expect(svc.fetchSubscription('https://big.example.com/c', SUB_ID)).rejects.toThrow(
-      /体积.*超过上限/
+      /too large/
     );
   });
 });
@@ -433,7 +433,7 @@ describe('M6 日志 url 脱敏', () => {
     ).rejects.toThrow();
     const joined = log.entries.map((e) => e.message).join('\n');
     expect(joined).not.toContain('SECRET123');
-    expect(joined).toContain('正在拉取订阅');
+    expect(joined).toContain('Fetching subscription');
     expect(joined).toContain('<redacted>');
   });
 });
@@ -492,7 +492,7 @@ describe('LOW-1 provider 复用主解析 — 嵌套 proxy-providers 不递归 + 
     const r = await svc.fetchSubscription('https://sub.example.com/c', SUB_ID);
     expect(r.servers.map((s) => s.name)).toEqual(['prov-node']);
     const joined = log.entries.map((e) => e.message).join('\n');
-    expect(joined).toMatch(/再嵌套 proxy-providers|不递归/);
+    expect(joined).toMatch(/Nested proxy-providers|no recursion/);
   });
 });
 
@@ -574,7 +574,7 @@ describe('parseLocalContent — 本地导入（不联网）', () => {
 
   it('不可识别格式 → throw（门控）', async () => {
     const svc = newService(new FakeLog());
-    await expect(svc.parseLocalContent('this-is-not-a-config')).rejects.toThrow(/无法识别/);
+    await expect(svc.parseLocalContent('this-is-not-a-config')).rejects.toThrow(/Unrecognized/);
   });
 
   it('sing-box socks/http 原生映射（非 custom，不置灰）', async () => {
@@ -613,7 +613,7 @@ describe('parseLocalContent — 本地导入（不联网）', () => {
   it('导入内容过大 → throw（体积闸）', async () => {
     const svc = newService(new FakeLog());
     const huge = 'x'.repeat(10 * 1024 * 1024 + 1);
-    await expect(svc.parseLocalContent(huge)).rejects.toThrow(/过大/);
+    await expect(svc.parseLocalContent(huge)).rejects.toThrow(/too large/);
   });
 });
 
@@ -636,14 +636,14 @@ describe('issue #263 — 聚合可见性 / 指纹传输维度 / ssh 映射', () 
       .filter((e) => e.level === 'warn')
       .map((e) => e.message)
       .join('\n');
-    expect(warns).toMatch(/跳过不支持的协议链接/);
+    expect(warns).toMatch(/Skipped unsupported protocol links/);
     expect(warns).toMatch(/ssr\(2\)/);
     expect(warns).toMatch(/juicity\(1\)/);
     const infos = log.entries
       .filter((e) => e.level === 'info')
       .map((e) => e.message)
       .join('\n');
-    expect(infos).toMatch(/另有 3 条被跳过\/失败/);
+    expect(infos).toMatch(/plus 3 skipped\/failed/);
   });
 
   it('URL-list：xhttp 节点 fail 计入结果 info（issue #263 主症状可见化）', async () => {
@@ -659,12 +659,12 @@ describe('issue #263 — 聚合可见性 / 指纹传输维度 / ssh 映射', () 
       .filter((e) => e.level === 'warn')
       .map((e) => e.message)
       .join('\n');
-    expect(warns).toMatch(/不支持的传输层类型: xhttp/);
+    expect(warns).toMatch(/Unsupported transport type: xhttp/);
     const infos = log.entries
       .filter((e) => e.level === 'info')
       .map((e) => e.message)
       .join('\n');
-    expect(infos).toMatch(/另有 1 条被跳过\/失败/);
+    expect(infos).toMatch(/plus 1 skipped\/failed/);
   });
 
   it('sing-box outbounds：type/transport/缺字段三类跳过聚合 warn；internal 类型不计噪声', () => {
@@ -692,9 +692,9 @@ describe('issue #263 — 聚合可见性 / 指纹传输维度 / ssh 映射', () 
       .filter((e) => e.level === 'warn')
       .map((e) => e.message)
       .join('\n');
-    expect(warns).toMatch(/跳过不支持的 outbound 类型: wireguard\(1\)/);
-    expect(warns).toMatch(/跳过不支持的传输层类型: quic\(1\)/);
-    expect(warns).toMatch(/跳过 1 个缺 server\/port 的 outbound/);
+    expect(warns).toMatch(/Skipped unsupported outbound types: wireguard\(1\)/);
+    expect(warns).toMatch(/Skipped unsupported transport types: quic\(1\)/);
+    expect(warns).toMatch(/Skipped 1 outbound\(s\) missing server\/port/);
     expect(warns).not.toMatch(/direct|selector/);
   });
 
@@ -788,7 +788,9 @@ describe('issue #263 review 补测 — ssh 算法字段 / 行首空白', () => {
     });
     expect(r.servers).toHaveLength(2);
     const warns = log.entries.filter((e) => e.level === 'warn');
-    expect(warns.find((w) => w.message.includes('跳过不支持的协议链接'))).toBeUndefined();
+    expect(
+      warns.find((w) => w.message.includes('Skipped unsupported protocol links'))
+    ).toBeUndefined();
   });
 });
 
@@ -906,8 +908,8 @@ describe('parseSingboxOutbounds — snell', () => {
       .filter((e) => e.level === 'warn')
       .map((e) => e.message)
       .join('\n');
-    expect(warns).toMatch(/版本 3 不受支持/);
-    expect(warns).toMatch(/缺 psk/);
+    expect(warns).toMatch(/version 3 is not supported/);
+    expect(warns).toMatch(/missing psk/);
   });
 });
 
@@ -947,7 +949,7 @@ describe('parseSingboxOutbounds — snell review 边界补测', () => {
         .filter((e) => e.level === 'warn')
         .map((e) => e.message)
         .join('\n')
-    ).toMatch(/缺 psk/);
+    ).toMatch(/missing psk/);
   });
 });
 
@@ -1134,7 +1136,7 @@ describe('Xray JSON 配置数组订阅', () => {
     const r = await (svc as any).parseSubscriptionContent(content, SUB_ID, CTX);
     expect(r.servers).toHaveLength(1);
     const all = log.entries.map((e) => e.message).join('\n');
-    expect(all).toMatch(/非链接行\(1\)/);
+    expect(all).toMatch(/non-link line\(1\)/);
     expect(all).not.toMatch(/203\.0\.113\.10|SECRET-PK/i);
   });
 });
@@ -1225,7 +1227,7 @@ describe('设备标识（HWID，Remnawave 设备数限制）', () => {
       false
     );
     const warns = log.entries.filter((e) => e.level === 'warn').map((e) => e.message);
-    expect(warns.some((m) => m.includes('发送设备 ID'))).toBe(true);
-    expect(warns.some((m) => m.includes('设备数上限'))).toBe(true);
+    expect(warns.some((m) => m.includes('Send device ID'))).toBe(true);
+    expect(warns.some((m) => m.includes('device limit reached'))).toBe(true);
   });
 });

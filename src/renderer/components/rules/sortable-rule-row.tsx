@@ -47,7 +47,7 @@ function actionPillClass(action: string): string {
 function ruleName(rule: Rule, t: TFunction): string {
   if (rule.remarks) return rule.remarks;
   const vals = ruleConditions(rule).flatMap((c) => c.values);
-  return vals.slice(0, 2).join(', ') || t('rules.unnamedRule', '未命名规则');
+  return vals.slice(0, 2).join(', ') || t('rules.unnamedRule', 'Unnamed rule');
 }
 
 /** 副行摘要：匹配值预览（有备注时展示，作为「命中什么」的速览；无备注时主行已是值，副行留空）。 */
@@ -75,12 +75,12 @@ function RuleHoverCard({
     <div className="rl-hovercard">
       <div className="rl-hc-name">
         {ruleName(rule, t)}
-        {!rule.enabled && <span className="rl-hc-off">{t('rules.disabledBadge', '已禁用')}</span>}
+        {!rule.enabled && <span className="rl-hc-off">{t('rules.disabledBadge', 'Disabled')}</span>}
         {multi && (
           <span className="rl-hc-off">
             {rule.combineMode === 'and'
-              ? t('rules.combineAnd', '全部满足')
-              : t('rules.combineOr', '满足任一')}
+              ? t('rules.combineAnd', 'Match all')
+              : t('rules.combineOr', 'Match any')}
           </span>
         )}
       </div>
@@ -96,7 +96,7 @@ function RuleHoverCard({
       </div>
       <div className="rl-hc-hair" />
       <div className="rl-hc-strat">
-        <span className="rl-hc-lbl">{t('rules.policyLabel', '策略')}</span>
+        <span className="rl-hc-lbl">{t('rules.policyLabel', 'Policy')}</span>
         <span className={`pill ${actionPillClass(rule.action)}`}>
           {ruleActionLabel(rule.action, t)}
         </span>
@@ -150,7 +150,7 @@ export function SortableRuleRow({
       >
         <span
           className="rl-handle"
-          aria-label={t('rules.dragToReorder', '拖拽排序')}
+          aria-label={t('rules.dragToReorder', 'Drag to reorder')}
           {...attributes}
           {...listeners}
         >
@@ -163,7 +163,7 @@ export function SortableRuleRow({
         <div className="rl-move">
           <button
             type="button"
-            title={t('rules.moveTop', '置顶')}
+            title={t('rules.moveTop', 'Move to top')}
             disabled={savingOrder || index === 0}
             onClick={() => onMoveToEdge(index, 'top')}
           >
@@ -171,7 +171,7 @@ export function SortableRuleRow({
           </button>
           <button
             type="button"
-            title={t('rules.moveUp', '上移')}
+            title={t('rules.moveUp', 'Move up')}
             disabled={savingOrder || index === 0}
             onClick={() => onMove(index, -1)}
           >
@@ -179,7 +179,7 @@ export function SortableRuleRow({
           </button>
           <button
             type="button"
-            title={t('rules.moveDown', '下移')}
+            title={t('rules.moveDown', 'Move down')}
             disabled={savingOrder || index === rowsLength - 1}
             onClick={() => onMove(index, 1)}
           >
@@ -187,7 +187,7 @@ export function SortableRuleRow({
           </button>
           <button
             type="button"
-            title={t('rules.moveBottom', '置底')}
+            title={t('rules.moveBottom', 'Move to bottom')}
             disabled={savingOrder || index === rowsLength - 1}
             onClick={() => onMoveToEdge(index, 'bottom')}
           >
@@ -206,7 +206,7 @@ export function SortableRuleRow({
           type="button"
           role="switch"
           aria-checked={rule.enabled}
-          aria-label={t('rules.enableRule', '启用规则')}
+          aria-label={t('rules.enableRule', 'Enable Rule')}
           className={`swt${rule.enabled ? ' on' : ''}`}
           onClick={() => onToggle(rule)}
         />
@@ -228,10 +228,10 @@ export function SortableRuleRow({
               className="rl-badge mesh"
               title={t(
                 'rules.meshOverlapTip',
-                '该规则网段与组网(WG/Tailscale)路由段重叠，优先级更高将覆盖组网路由，该段可能不走组网节点。如非有意请调整。'
+                "This rule's CIDR overlaps a mesh (WireGuard/Tailscale) route segment; with higher priority it overrides the mesh route, so that segment may not go through the mesh node. Adjust if unintended."
               )}
             >
-              {t('rules.meshOverlap', '覆盖组网')}
+              {t('rules.meshOverlap', 'Overrides mesh')}
             </span>
           )}
           {hasMissingResource && (
@@ -239,10 +239,10 @@ export function SortableRuleRow({
               className="rl-badge warn"
               title={t(
                 'rules.resourceMissingTip',
-                '该规则引用的规则资源缺失（已删除或文件丢失），当前不生效；请到「规则资源」页下载恢复'
+                'This rule references a rule resource that is missing (deleted or file lost); it is currently inactive. Re-download it on the Rule Resources page to restore.'
               )}
             >
-              {t('rules.resourceMissing', '资源缺失')}
+              {t('rules.resourceMissing', 'Resource missing')}
             </span>
           )}
         </div>
@@ -253,7 +253,7 @@ export function SortableRuleRow({
         <button
           type="button"
           className="rl-ic"
-          title={t('common.edit', '编辑')}
+          title={t('common.edit', 'Edit')}
           onClick={() => onEdit(rule)}
         >
           <Pencil />
@@ -261,7 +261,7 @@ export function SortableRuleRow({
         <button
           type="button"
           className="rl-ic rl-del"
-          title={t('rules.delete', '删除')}
+          title={t('rules.delete', 'Delete')}
           onClick={() => onDelete(rule)}
         >
           <Trash2 />

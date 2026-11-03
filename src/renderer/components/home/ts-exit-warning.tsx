@@ -41,22 +41,25 @@ export function TsExitWarning() {
       <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0 text-warning" />
       <p className="min-w-0 text-xs text-muted-foreground">
         {warning === 'no-exit-device'
-          ? t('home.tsExitNoDeviceWarn', '已设为出口，但未选择出口设备，公网流量仍走直连。')
+          ? t(
+              'home.tsExitNoDeviceWarn',
+              'Set as exit, but no exit node selected — internet traffic still goes direct.'
+            )
           : warning === 'exit-device-not-advertised'
             ? t(
                 'home.tsExitNotAdvertisedWarn',
-                '所选出口设备未广告为出口节点，公网无法经其出网，请换一台已广告出口的设备。'
+                "The selected exit node isn't advertising as an exit; internet can't route through it — pick a device that advertises exit."
               )
             : t(
                 'home.tsExitDeviceOfflineWarn',
-                '出口设备当前离线，公网可能无法经 Tailscale 出网。'
+                'The exit node is offline; internet may not route through Tailscale.'
               )}
         <button
           type="button"
           onClick={goPickExitNode}
           className="ms-1 text-warning underline underline-offset-2 hover:opacity-80"
         >
-          {t('home.tsExitPickDevice', '选择出口设备')}
+          {t('home.tsExitPickDevice', 'Pick exit node')}
         </button>
       </p>
     </div>

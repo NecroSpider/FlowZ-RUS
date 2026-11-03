@@ -62,9 +62,9 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
     value.length > 0
       ? t('ruleResources.picker.summary', {
           count: value.length,
-          defaultValue: '已选 {{count}} 个规则集',
+          defaultValue: '{{count}} rule-sets selected',
         })
-      : t('ruleResources.picker.placeholder', '选择规则集');
+      : t('ruleResources.picker.placeholder', 'Select rule-sets');
 
   const renderRow = (r: RuleResourceListItem) => {
     const selected = isResourceSelected(value, r.id);
@@ -82,7 +82,7 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
       >
         <span className="rl-res-nm">{r.name}</span>
         {!r.fileExists && (
-          <span className="pill err">{t('ruleResources.missing', '文件缺失')}</span>
+          <span className="pill err">{t('ruleResources.missing', 'File missing')}</span>
         )}
         <span className="pill rl-res-kind">
           {t(`ruleResources.category.${r.category}`, r.category)}
@@ -99,10 +99,10 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
           style={{ borderColor: 'hsl(var(--hair))' }}
         >
           <p className="mb-2 text-[13px]" style={{ color: 'hsl(var(--fg-faint))' }}>
-            {t('ruleResources.picker.empty', '尚无已下载资源')}
+            {t('ruleResources.picker.empty', 'No downloaded resources yet')}
           </p>
           <button type="button" className="btn ghost sm" onClick={goToResources}>
-            {t('ruleResources.picker.goDownload', '前往规则资源页')}
+            {t('ruleResources.picker.goDownload', 'Go to Rule Resources')}
           </button>
         </div>
       ) : (
@@ -115,9 +115,9 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
           query={query}
           onQueryChange={setQuery}
           searchIcon
-          searchPlaceholder={t('ruleResources.picker.search', '搜索规则集')}
+          searchPlaceholder={t('ruleResources.picker.search', 'Search rule-sets')}
           isEmpty={builtin.length === 0 && external.length === 0}
-          emptyText={t('ruleResources.picker.noMatch', '无匹配规则集')}
+          emptyText={t('ruleResources.picker.noMatch', 'No matching rule-sets')}
           trigger={
             <>
               <span className="rl-resdd-sum min-w-0 flex-1 truncate">{summary}</span>
@@ -130,21 +130,23 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
               onClick={goToResources}
               className="rl-res-more mt-1 w-full text-start"
             >
-              {t('ruleResources.picker.manageMore', '前往「规则资源」下载更多 →')}
+              {t('ruleResources.picker.manageMore', 'Download more in Rule Resources →')}
             </button>
           }
         >
           {builtin.length > 0 && (
             <>
               <div className="rl-res-grp">
-                {t('ruleResources.picker.groupBuiltin', '内置 · 随包')}
+                {t('ruleResources.picker.groupBuiltin', 'Builtin · Bundled')}
               </div>
               {builtin.map(renderRow)}
             </>
           )}
           {external.length > 0 && (
             <>
-              <div className="rl-res-grp">{t('ruleResources.picker.groupExternal', '已下载')}</div>
+              <div className="rl-res-grp">
+                {t('ruleResources.picker.groupExternal', 'Downloaded')}
+              </div>
               {external.map(renderRow)}
             </>
           )}
@@ -170,9 +172,13 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
                 }
               >
                 <span className="max-w-[180px] truncate">
-                  {isRes ? name || t('ruleResources.picker.deletedBadge', '已删除') : v}
+                  {isRes ? name || t('ruleResources.picker.deletedBadge', 'Deleted') : v}
                 </span>
-                <button type="button" onClick={() => remove(v)} title={t('common.remove', '移除')}>
+                <button
+                  type="button"
+                  onClick={() => remove(v)}
+                  title={t('common.remove', 'Remove')}
+                >
                   <X size={11} />
                 </button>
               </span>

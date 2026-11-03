@@ -42,11 +42,12 @@ export function SpeedBadge({
     return (
       <ActionTip
         label={t('servers.speedTestNodeDirty', {
-          defaultValue: '节点参数已修改但内核尚未应用；重启内核或点「立即应用」后生效',
+          defaultValue:
+            'Node parameters changed but not yet applied by the core; restart the core or click Apply Now to take effect',
         })}
       >
         <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>
-          {t('servers.speedTestPendingEffect', { defaultValue: '待生效' })}
+          {t('servers.speedTestPendingEffect', { defaultValue: 'Pending effect' })}
         </span>
       </ActionTip>
     );
@@ -72,21 +73,23 @@ export function SpeedBadge({
       return (
         <ActionTip label={t(EXIT_BLOCK_TITLE_KEY[badge.reason])}>
           <span className="nd-lat mono" style={{ color: 'hsl(var(--warn))' }}>
-            {t('home.exitInvalid', '出口无效')}
+            {t('home.exitInvalid', 'Exit invalid')}
           </span>
         </ActionTip>
       );
     case 'not-logged-in':
       return (
         <span className="nd-lat mono" style={{ color: 'hsl(var(--warn))' }}>
-          {t('servers.tsNotLoggedIn', '未登录')}
+          {t('servers.tsNotLoggedIn', 'Not logged in')}
         </span>
       );
     // 不可测且无值：faint 占位。§16.1 reason=ts-needs-core（TS-exit 代理关，只是缺主核）→ 显「—」+ tooltip「连接代理后可测速」；
     // 否则恒不可测三类 → 「不支持测速」+ exitProbeHint（选为出口后伴测得真值，非永远测不了）。
     case 'na':
       return badge.reason === 'ts-needs-core' ? (
-        <ActionTip label={t('servers.speedTestTsNeedsCore', { defaultValue: '连接代理后可测速' })}>
+        <ActionTip
+          label={t('servers.speedTestTsNeedsCore', { defaultValue: 'Connect proxy to test' })}
+        >
           <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>
             —
           </span>
@@ -105,11 +108,12 @@ export function SpeedBadge({
         return (
           <ActionTip
             label={t('servers.speedTestNodePending', {
-              defaultValue: '新增节点尚未写入运行内核；选中该节点或重启内核后纳入测速',
+              defaultValue:
+                'New node not yet written to the running core; select it or restart the core to include it in testing',
             })}
           >
             <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>
-              {t('servers.speedTestPendingPool', { defaultValue: '待入池' })}
+              {t('servers.speedTestPendingPool', { defaultValue: 'Pending' })}
             </span>
           </ActionTip>
         );

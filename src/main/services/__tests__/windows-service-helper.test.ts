@@ -84,7 +84,7 @@ describe('WindowsServiceHelper', () => {
         /\$helperDst = '[^']*ProgramData[^']*FlowZ[^']*com\.flowz\.helper\.exe'/
       );
       expect(script).toContain('Copy-Item -LiteralPath $helperSrc -Destination $helperDst -Force');
-      expect(script).toContain('复制 helper.exe 到 ProgramData 失败'); // 复制失败 fail-loud（不静默留旧副本）
+      expect(script).toContain('Failed to copy helper.exe to ProgramData'); // 复制失败 fail-loud（不静默留旧副本）
       // 目录 ACL 硬化（防本地提权 + 闭 token TOCTOU）：去继承 + 仅 SYSTEM/Administrators 完全控制并 (OI)(CI) 下传。
       // ProgramData 默认让 Users 能在子目录建/删文件 → 不锁目录则普通用户可替换以 SYSTEM 运行的 helper.exe（=提权）。
       // icacls 经 System32 绝对路径调（规避 PATH 缺失），PS 调用算子 & '<abs>'
@@ -149,7 +149,7 @@ describe('WindowsServiceHelper', () => {
       const afterMove = script.slice(script.indexOf(move));
       expect(afterMove.indexOf(grant)).toBeGreaterThan(-1);
       expect(afterMove.indexOf(grant)).toBeLessThan(afterMove.indexOf('/inheritance:r'));
-      expect(script).toContain('旧目录也无法挪开');
+      expect(script).toContain('the old directory could not be moved aside');
     });
 
     it('install 脚本自愈旧版留下的空 DACL helper 副本（先补授权、再删、再拷，报错带真实原因）', () => {

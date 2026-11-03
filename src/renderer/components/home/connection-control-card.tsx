@@ -75,9 +75,13 @@ function ExitNodePicker({
         servers,
         subscriptions,
         latencyMap,
-        meshLabel: t('servers.meshNodes', '组网'),
-        manualLabel: t('servers.manualNodes', '自建节点'),
-        sentinel: { id: DIRECT_SERVER_ID, name: t('servers.directGlobal', '直连'), role: 'direct' },
+        meshLabel: t('servers.meshNodes', 'Mesh'),
+        manualLabel: t('servers.manualNodes', 'Custom Nodes'),
+        sentinel: {
+          id: DIRECT_SERVER_ID,
+          name: t('servers.directGlobal', 'Direct'),
+          role: 'direct',
+        },
         withAddress: true,
         sortServers: (arr) =>
           sortByLatency ? sortServersByLatency(arr, (id) => latencyMap[id]) : arr,
@@ -87,8 +91,8 @@ function ExitNodePicker({
           selectedServerId,
           proxyRunning,
           proxyBlocked,
-          exitInvalidLabel: t('home.exitInvalid', '出口无效'),
-          notLoggedInLabel: t('servers.tsNotLoggedIn', '未登录'),
+          exitInvalidLabel: t('home.exitInvalid', 'Exit invalid'),
+          notLoggedInLabel: t('servers.tsNotLoggedIn', 'Not logged in'),
         },
       }),
     [
@@ -116,8 +120,8 @@ function ExitNodePicker({
       hideTriggerLatency
       className="min-w-0 flex-1"
       placeholder={t('home.selectServer')}
-      searchPlaceholder={t('common.search', '搜索')}
-      ariaLabel={t('home.exitNode', '出口节点')}
+      searchPlaceholder={t('common.search', 'Search')}
+      ariaLabel={t('home.exitNode', 'Exit Node')}
     />
   );
 }
@@ -326,7 +330,7 @@ export function ConnectionControlCard() {
         <div className="field">
           {/* 出口节点标签行：右侧内联解锁检测（解锁态 ↔ 出口节点强绑，零挤占垂直空间） */}
           <div className="flex items-center gap-3">
-            <div className="field-lbl shrink-0">{t('home.exitNode', '出口节点')}</div>
+            <div className="field-lbl shrink-0">{t('home.exitNode', 'Exit Node')}</div>
             <div className="ms-auto min-w-0">
               <UnlockInline />
             </div>
@@ -474,7 +478,10 @@ export function ConnectionControlCard() {
       {/* 全局直连说明（仅 direct 模式）。选中节点协议/地址/端口已由出口 npick + 状态栏承载，首页不再重复该行。 */}
       {isDirect && (
         <p className="text-xs text-muted-foreground">
-          {t('home.directGlobalHint', '全局直连：未命中规则的流量直连，仅按规则走代理')}
+          {t(
+            'home.directGlobalHint',
+            'Global Direct: unmatched traffic goes direct; only rule-matched traffic uses proxy'
+          )}
         </p>
       )}
 
@@ -482,7 +489,7 @@ export function ConnectionControlCard() {
         <p className="text-xs text-warning">
           {t(
             'home.meshExitDirectHint',
-            '所选组网节点未开启外网访问：外网流量走直连，仅其网段经此节点。'
+            'Selected mesh node has internet access off: outbound traffic goes direct; only its subnets route through it.'
           )}
         </p>
       )}

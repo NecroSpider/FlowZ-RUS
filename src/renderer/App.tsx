@@ -127,13 +127,13 @@ function App() {
       if (payload.skipped && payload.skipped > 0) {
         description += ` · ${i18n.t('servers.speedTestSkippedSummary', {
           count: payload.skipped,
-          defaultValue: '{{count}} 个节点待入池（重启内核后可测）',
+          defaultValue: '{{count}} node(s) pending pool (restart core to test)',
         })}`;
       }
 
       // §16.2：interrupted（核 stop/restart/regen 打断，已测保留、未测原值）→ warning「测速中断」；否则 success「测速完成」。
       if (payload.outcome === 'interrupted') {
-        toast.warning(i18n.t('home.speedTestInterrupted', { defaultValue: '测速中断' }), {
+        toast.warning(i18n.t('home.speedTestInterrupted', { defaultValue: 'Speed test interrupted' }), {
           description,
         });
       } else {

@@ -125,7 +125,7 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
       };
       fs.writeFileSync(SystemDnsBase.getMarkerPath(), JSON.stringify(marker));
     } catch (error) {
-      this.log('warn', `写入系统 DNS marker 失败: ${error}`);
+      this.log('warn', `Failed to write system DNS marker: ${error}`);
     }
   }
 
@@ -138,7 +138,7 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
     try {
       fs.rmSync(SystemDnsBase.getMarkerPath(), { force: true });
     } catch (error) {
-      console.warn('删除系统 DNS marker 失败:', error);
+      console.warn('Failed to delete system DNS marker:', error);
     }
   }
 
@@ -205,22 +205,22 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
     if (!isControlledDnsIpValid(this.controlledIp)) {
       this.log(
         'error',
-        `受控 DNS IP ${this.controlledIp} 在 bootstrap-direct 列表，拒绝接管（会逃逸 hijack）`
+        `Controlled DNS IP ${this.controlledIp} is in the bootstrap-direct list; refusing to take over (it would bypass the hijack)`
       );
       return;
     }
 
-    this.log('info', '正在接管系统 DNS（TUN 模式）');
+    this.log('info', 'Taking over system DNS (TUN mode)');
 
     let targets: string[];
     try {
       targets = await this.listTargets();
     } catch (error) {
-      this.log('warn', `获取网络服务列表失败，跳过 DNS 接管: ${error}`);
+      this.log('warn', `Failed to list network services, skipping DNS takeover: ${error}`);
       return;
     }
     if (targets.length === 0) {
-      this.log('warn', '无可接管的网络服务，跳过 DNS 接管');
+      this.log('warn', 'No network services to take over, skipping DNS takeover');
       return;
     }
 
@@ -251,18 +251,21 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
             return !(m.includes('permission') || m.includes('not authorized'));
           },
           onRetry: (error, attempt) => {
-            this.log('warn', `设置系统 DNS 失败，正在进行第 ${attempt} 次重试: ${error.message}`);
+            this.log('warn', `Failed to set system DNS, retry ${attempt}: ${error.message}`);
           },
         }
       );
-      this.log('info', `系统 DNS 已接管为 ${this.controlledIp}`);
+      this.log('info', `System DNS taken over: ${this.controlledIp}`);
     } catch (error) {
-      this.log('error', `接管系统 DNS 失败: ${error}`);
+      this.log('error', `Failed to take over system DNS: ${error}`);
       // 失败兜底：还原（best-effort）以免半接管残留；还原失败则补清 marker。不抛——不阻断 TUN 启动。
       try {
         await this.restoreDns();
       } catch (rollbackError) {
-        this.log('error', `失败兜底还原系统 DNS 失败: ${rollbackError}`);
+        this.log(
+          'error',
+          `Rollback after failure (restore system DNS) also failed: ${rollbackError}`
+        );
         this.clearMarker();
       }
     }
@@ -314,10 +317,13 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
       try {
         await this.applyDns(t, [this.controlledIp]);
       } catch (e) {
-        this.log('warn', `重灌服务 "${t}" DNS 失败: ${e}`);
+        this.log('warn', `Failed to re-apply DNS to service "${t}": ${e}`);
       }
     }
-    this.log('info', `DNS 重灌：${toApply.length} 个未受控服务接管为 ${this.controlledIp}`);
+    this.log(
+      'info',
+      `DNS re-apply: ${toApply.length} uncontrolled services set to ${this.controlledIp}`
+    );
   }
 
   /**
@@ -331,7 +337,7 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
       return;
     }
 
-    this.log('info', '正在还原系统 DNS');
+    this.log('info', 'Restoring system DNS');
     let targets: string[];
     try {
       targets = await this.listTargets();
@@ -350,15 +356,18 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
         await this.applyDns(t, original[t]);
       } catch (error) {
         allOk = false;
-        this.log('warn', `还原网络服务 "${t}" 的 DNS 失败: ${error}`);
+        this.log('warn', `Failed to restore DNS for network service "${t}": ${error}`);
       }
     }
     if (allOk) {
       this.originalDns = null;
       this.clearMarker();
-      this.log('info', '系统 DNS 已还原');
+      this.log('info', 'System DNS restored');
     } else {
-      this.log('warn', '部分网络服务 DNS 还原失败，保留 marker 交下次启动重试');
+      this.log(
+        'warn',
+        'Failed to restore DNS for some network services; marker kept for a retry on next launch'
+      );
     }
   }
 
@@ -384,7 +393,7 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
       // 全部还原成功才删 marker；任一失败保留，交下次启动恢复重试（避免漏还原而 marker 已删失去兜底）。
       if (allOk) this.clearMarker();
     } catch (error) {
-      this.log('error', `同步还原系统 DNS 失败: ${error}`);
+      this.log('error', `Failed to restore system DNS synchronously: ${error}`);
     }
   }
 }
@@ -537,7 +546,7 @@ export class WindowsSystemDns extends SystemDnsBase {
   async setDns(): Promise<void> {
     this.log(
       'info',
-      'Windows 不接管系统 DNS（sing-box TUN strict_route/WFP 已在路由层劫持 :53；netsh set 需管理员、GUI 非提权必失败）'
+      'Windows: not taking over system DNS (sing-box TUN strict_route/WFP already hijacks :53 at the routing layer; netsh set needs admin and always fails from the non-elevated GUI)'
     );
   }
   async restoreDns(): Promise<void> {
@@ -667,11 +676,14 @@ export class LinuxSystemDns extends SystemDnsBase {
         this.resolvectlAvailable = false;
         this.log(
           'info',
-          '本机无 resolvectl（非 systemd-resolved 发行版），不接管系统 DNS（TUN DNS 仍由 sing-box auto_route 劫持）'
+          'resolvectl not found (not a systemd-resolved distro); not taking over system DNS (TUN DNS is still hijacked by sing-box auto_route)'
         );
       } else if (!this.probeWarned) {
         this.probeWarned = true;
-        this.log('info', `systemd-resolved 不可用（${msg.split('\n')[0]}），本次不接管系统 DNS`);
+        this.log(
+          'info',
+          `systemd-resolved unavailable (${msg.split('\n')[0]}); not taking over system DNS this time`
+        );
       }
       return false;
     }
@@ -693,7 +705,7 @@ export class LinuxSystemDns extends SystemDnsBase {
       const msg = e instanceof Error ? e.message : String(e);
       this.log(
         'info',
-        `无权修改 systemd-resolved 链路配置（${msg.split('\n')[0]}），本次不接管系统 DNS`
+        `Not authorized to modify systemd-resolved link settings (${msg.split('\n')[0]}); not taking over system DNS this time`
       );
       return false;
     }
@@ -794,7 +806,7 @@ export class LinuxSystemDns extends SystemDnsBase {
     if (!isControlledDnsIpValid(this.controlledIp)) {
       this.log(
         'error',
-        `受控 DNS IP ${this.controlledIp} 在 bootstrap-direct 列表，拒绝接管（会逃逸 hijack）`
+        `Controlled DNS IP ${this.controlledIp} is in the bootstrap-direct list; refusing to take over (it would bypass the hijack)`
       );
       return;
     }
@@ -803,14 +815,17 @@ export class LinuxSystemDns extends SystemDnsBase {
       // fail-closed：没有地址就无法确定哪条链路是自己的，宁可不接管也不碰别人的链路。
       this.log(
         'warn',
-        '未取得 TUN 地址，跳过 Linux 系统 DNS 接管（不按接口名猜，避免误改他人链路）'
+        'TUN address unknown, skipping Linux system DNS takeover (not guessing by interface name, to avoid changing other links)'
       );
       return;
     }
     if (!(await this.ensureResolvectl())) return;
     this.tunInterface = await this.resolveTunInterface();
     if (!this.tunInterface) {
-      this.log('warn', `未找到地址为 ${this.tunInet4Address} 的 TUN 接口，跳过系统 DNS 接管`);
+      this.log(
+        'warn',
+        `No TUN interface with address ${this.tunInet4Address} found, skipping system DNS takeover`
+      );
       return;
     }
     // 写 marker 之前先证明「能写」：失败即降级，不留任何 marker（见 probeWritable 的注释）。
@@ -818,7 +833,7 @@ export class LinuxSystemDns extends SystemDnsBase {
       this.tunInterface = null;
       return;
     }
-    this.log('info', `Linux 系统 DNS 接管目标链路：${this.tunInterface}`);
+    this.log('info', `Linux system DNS takeover target link: ${this.tunInterface}`);
     await super.setDns(opts);
   }
 
@@ -876,9 +891,12 @@ export class LinuxSystemDns extends SystemDnsBase {
       this.clearMarker();
       this.tunInterface = null;
       this.tunInet4Address = null;
-      this.log('info', '系统 DNS 已还原');
+      this.log('info', 'System DNS restored');
     } catch (e) {
-      this.log('warn', `还原链路 "${iface}" 的 DNS 失败，保留 marker 交下次启动重试: ${e}`);
+      this.log(
+        'warn',
+        `Failed to restore DNS for link "${iface}"; marker kept for a retry on next launch: ${e}`
+      );
     }
   }
 

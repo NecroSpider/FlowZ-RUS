@@ -126,7 +126,7 @@ export function buildRouteConfig(
       const sample = Array.from(overlapping).slice(0, 5).join(', ');
       deps.log(
         'warn',
-        `${overlapping.size} 个自定义规则网段（${sample}${overlapping.size > 5 ? '…' : ''}）与组网(WG/Tailscale)路由段重叠：按优先级将覆盖组网路由，该段可能不走组网节点。如非有意请调整规则或组网配置。`
+        `${overlapping.size} custom rule CIDR(s) (${sample}${overlapping.size > 5 ? '...' : ''}) overlap mesh (WG/Tailscale) routes: by priority they override the mesh routes, so these ranges may not go via the mesh node. Adjust the rules or mesh config if unintended.`
       );
     }
   }
@@ -143,7 +143,7 @@ export function buildRouteConfig(
   if (exitFallback) {
     deps.log(
       'warn',
-      '选中的组网节点已关闭外网访问：外网流量已回退直连（具体网段仍经组网节点），如需经此节点全隧道请开启该节点「允许访问外网」'
+      'Selected mesh node has internet access off: internet traffic falls back to direct (its specific subnets still go via the mesh node). To full-tunnel through this node, enable "Allow internet access" on it'
     );
   }
 
@@ -657,7 +657,7 @@ export function buildRouteConfig(
     if (forceRouteConflicts > 0) {
       deps.log(
         'warn',
-        `${forceRouteConflicts} 个 endpoint 路由段被多个节点重复声明，已按节点顺序去重（先声明者生效）`
+        `${forceRouteConflicts} endpoint route range(s) declared by multiple nodes; deduplicated by node order (first declaration wins)`
       );
     }
   }
@@ -681,7 +681,7 @@ export function buildRouteConfig(
     if (overlapping.length > 0) {
       deps.log(
         'warn',
-        `旁路局域网清单含与 FakeIP 段(${fakeipRanges.join(', ')})相交的条目，已剔除以免假 IP 被当私网直连：${overlapping.join(', ')}`
+        `Bypass LAN list has entries intersecting the FakeIP range (${fakeipRanges.join(', ')}); removed so fake IPs are not treated as private and sent direct: ${overlapping.join(', ')}`
       );
     }
     if (bypassCidrs.length > 0) {
@@ -914,8 +914,8 @@ export function buildRouteConfig(
       applyRuleSetPrune({ route: routeConfig } as SingBoxConfig, dangling);
       deps.log(
         'warn',
-        `规则资源：${Array.from(dangling).join(', ')} 缺少本地副本，已跳过引用它的规则以避免代理启动失败` +
-          `（在「规则资源」页下载后自动恢复；应用分流仍按进程名生效）`
+        `Rule Resources: ${Array.from(dangling).join(', ')} missing local copy; skipped the rules that reference it to avoid proxy startup failure` +
+          ` (restored automatically after downloading on the Rule Resources page; app routing still applies by process name)`
       );
     }
   }

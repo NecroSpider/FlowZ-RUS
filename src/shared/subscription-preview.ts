@@ -69,12 +69,11 @@ export function classifySubscriptionError(sig: SubscriptionErrorSignal): {
 
   // 体积/协议/空/SSRF：本项目 fetchSubscriptionText/parseSubscriptionContent 的确定性中文文案（先于网络码，
   // 因为这些是本项目主动 throw、文案稳定）。
-  if (/体积超过上限|too large|导入内容过大/.test(msg)) return { errorKind: 'toolarge' };
-  if (/协议不支持|仅允许 http/.test(msg)) return { errorKind: 'scheme' };
-  if (/不支持的传输层/.test(msg)) return { errorKind: 'transport' };
-  if (/0 个可用节点|得到 0 个|为空/.test(msg)) return { errorKind: 'empty' };
-  if (/内网|本机|私有地址|ssrf|loopback|private|重定向次数超过/.test(m) || /内网|本机/.test(msg))
-    return { errorKind: 'ssrf' };
+  if (/too large/.test(m)) return { errorKind: 'toolarge' };
+  if (/only http/.test(m)) return { errorKind: 'scheme' };
+  if (/unsupported transport/.test(m)) return { errorKind: 'transport' };
+  if (/0 usable nodes/.test(m)) return { errorKind: 'empty' };
+  if (/ssrf|loopback|private|link-local|too many redirects/.test(m)) return { errorKind: 'ssrf' };
 
   // 网络错误码（Node dns/socket 层）。
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return { errorKind: 'dns' };
@@ -94,11 +93,7 @@ export function classifySubscriptionError(sig: SubscriptionErrorSignal): {
     return { errorKind: 'refused' };
 
   // 解析类文案（parseSubscriptionContent 的结构/格式错误）。
-  if (
-    /解析失败|无法识别|结构异常|格式错误|不是有效|parse|yaml|json/.test(m) ||
-    /解析|识别|格式/.test(msg)
-  )
-    return { errorKind: 'parse' };
+  if (/parse|yaml|json|unrecognized|malformed|not a valid/.test(m)) return { errorKind: 'parse' };
 
   return { errorKind: 'unknown' };
 }

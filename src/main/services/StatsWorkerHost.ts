@@ -138,7 +138,7 @@ export class StatsWorkerHost implements StatsHost {
       w.on('exit', (code: number) => this.onWorkerExit(code));
       // 退避不在此重置：fork 成功 ≠ worker 健康。boot 即崩的 worker 收不到 'ready'，退避须持续增长（见 'ready' case）。
     } catch (e) {
-      this.opts.log?.('error', `stats worker spawn 失败: ${(e as Error)?.message ?? e}`);
+      this.opts.log?.('error', `stats worker spawn failed: ${(e as Error)?.message ?? e}`);
       this.scheduleRespawn();
     }
   }
@@ -147,7 +147,10 @@ export class StatsWorkerHost implements StatsHost {
     this.worker = null;
     if (this.disposed) return;
     // 非 dispose 的退出 = 崩溃 → 退避 respawn；spawn 后收到 'ready' 时若 started 自动重连（见 onWorkerMessage）。
-    this.opts.log?.('warn', `stats worker 退出(code=${code})，${this.respawnDelayMs}ms 后重启`);
+    this.opts.log?.(
+      'warn',
+      `stats worker exited (code=${code}), restarting in ${this.respawnDelayMs}ms`
+    );
     this.scheduleRespawn();
   }
 

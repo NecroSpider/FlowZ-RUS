@@ -172,11 +172,11 @@ export function MeshAccessEntry({
   return (
     <div className="flex flex-col gap-2.5">
       <div className="field-lbl nd-mesh-lbl">
-        {t('servers.meshAccessTitle', '接入组网')}
+        {t('servers.meshAccessTitle', 'Join Mesh')}
         <small>
           {t(
             'servers.meshAccessEntryHint',
-            'Tailscale / WARP 已接入可在此管理，WireGuard 可继续新增'
+            'Tailscale / WARP can be managed here once joined; WireGuard can keep being added'
           )}
         </small>
       </div>
@@ -198,7 +198,7 @@ export function MeshAccessEntry({
               <button
                 type="button"
                 className="nd-mesh-btn is-joined"
-                title={t('servers.meshWarpManageTitle', 'WARP 账户管理')}
+                title={t('servers.meshWarpManageTitle', 'WARP account management')}
               >
                 <span className="nd-mesh-ic">{WARP_ICON}</span>
                 <span className="nd-mesh-tx">
@@ -206,11 +206,11 @@ export function MeshAccessEntry({
                     <span className="nd-mesh-nm">WARP</span>
                     <span className="nd-mesh-joined-tag">
                       {JOINED_CHECK}
-                      {t('servers.meshJoinedTag', '已接入')}
+                      {t('servers.meshJoinedTag', 'Joined')}
                     </span>
                   </span>
                   <span className="nd-mesh-sub">
-                    {t('servers.meshWarpManageSub', '重新注册 / 注销设备')}
+                    {t('servers.meshWarpManageSub', 'Re-register / Deregister device')}
                   </span>
                 </span>
                 {MESH_CHEV}
@@ -219,13 +219,13 @@ export function MeshAccessEntry({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setWarpReRegisterOpen(true)}>
                 <Zap className="me-2 h-4 w-4" />
-                {t('servers.meshWarpReRegister', '重新注册')}
+                {t('servers.meshWarpReRegister', 'Re-register')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setWarpDeregisterOpen(true)}
                 className="text-destructive focus:text-destructive"
               >
-                {t('servers.meshWarpDeregister', '注销')}
+                {t('servers.meshWarpDeregister', 'Remove')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -236,7 +236,9 @@ export function MeshAccessEntry({
               <span className="nd-mesh-hd">
                 <span className="nd-mesh-nm">WARP</span>
               </span>
-              <span className="nd-mesh-sub">{t('servers.meshWarpAddSub', '注册匿名设备接入')}</span>
+              <span className="nd-mesh-sub">
+                {t('servers.meshWarpAddSub', 'Register an anonymous device to join')}
+              </span>
             </span>
           </button>
         )}
@@ -249,7 +251,7 @@ export function MeshAccessEntry({
               <span className="nd-mesh-nm">WireGuard</span>
             </span>
             <span className="nd-mesh-sub">
-              {t('servers.meshWgAddSub', '.conf 导入 / 手动填写')}
+              {t('servers.meshWgAddSub', '.conf import / manual entry')}
             </span>
           </span>
         </button>
@@ -265,8 +267,11 @@ export function MeshAccessEntry({
             setWgNameError(false);
           }
         }}
-        title={t('servers.meshAccessAddWg', '添加 WireGuard 节点')}
-        description={t('servers.meshAccessAddWgDesc', '手动填写或粘贴 wg-quick .conf 导入。')}
+        title={t('servers.meshAccessAddWg', 'Add WireGuard Node')}
+        description={t(
+          'servers.meshAccessAddWgDesc',
+          'Fill in manually or paste a wg-quick .conf to import.'
+        )}
         onSubmit={handleWgSubmit}
         submitLabel={t('servers.add')}
       >
@@ -290,7 +295,7 @@ export function MeshAccessEntry({
               />
               {wgNameError && (
                 <p className="text-[11px] text-[hsl(var(--err))]">
-                  {t('servers.meshAccessNameFirst', '请先填写节点名称')}
+                  {t('servers.meshAccessNameFirst', 'Enter a node name first')}
                 </p>
               )}
             </div>
@@ -303,10 +308,10 @@ export function MeshAccessEntry({
       <NodePanelDialog
         open={warpOpen}
         onOpenChange={setWarpOpen}
-        title={t('servers.meshAccessAddWarp', '添加 Cloudflare WARP')}
+        title={t('servers.meshAccessAddWarp', 'Add Cloudflare WARP')}
         description={t(
           'servers.meshAccessAddWarpDesc',
-          '一键注册匿名 WARP 设备并加入为 WireGuard 节点。'
+          'One click registers an anonymous WARP device and adds it as a WireGuard node.'
         )}
       >
         <div className="field">
@@ -330,19 +335,19 @@ export function MeshAccessEntry({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('servers.meshWarpReRegisterTitle', '重新注册 WARP？')}
+              {t('servers.meshWarpReRegisterTitle', 'Re-register WARP?')}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t(
                 'servers.meshWarpReRegisterDesc',
-                '确认后将立即注销当前 WARP 设备，再注册一台全新的匿名设备替换它。若随后取消注册，已注销的设备不会恢复。'
+                'Confirming immediately deregisters the current WARP device, then registers a fresh anonymous device to replace it. If you cancel the registration afterward, the deregistered device is not restored.'
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={() => void handleWarpReRegister()}>
-              {t('servers.meshWarpReRegister', '重新注册')}
+              {t('servers.meshWarpReRegister', 'Re-register')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -353,12 +358,12 @@ export function MeshAccessEntry({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('servers.meshWarpDeregisterTitle', '注销 WARP？')}
+              {t('servers.meshWarpDeregisterTitle', 'Remove WARP?')}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t(
                 'servers.meshWarpDeregisterDesc',
-                '将移除此 WARP 节点并在后台注销远端匿名设备，可随时重新接入。'
+                'Removes this WARP node and deregisters the remote anonymous device in the background. You can rejoin anytime.'
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -371,7 +376,7 @@ export function MeshAccessEntry({
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {t('servers.meshWarpDeregister', '注销')}
+              {t('servers.meshWarpDeregister', 'Remove')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

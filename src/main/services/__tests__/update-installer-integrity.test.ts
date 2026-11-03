@@ -98,7 +98,7 @@ describe('UpdateService 安装包完整性校验', () => {
     internals(svc).assetSha256ByUrl.set(URL, sha('good'));
     const file = writeFile('tampered.exe', 'evil');
 
-    await expect(internals(svc).verifyInstaller(file, URL)).rejects.toThrow('校验失败');
+    await expect(internals(svc).verifyInstaller(file, URL)).rejects.toThrow('verification failed');
 
     expect(fsSync.existsSync(file)).toBe(false);
     expect(internals(svc).verifiedInstallers.has(file)).toBe(false);
@@ -110,7 +110,7 @@ describe('UpdateService 安装包完整性校验', () => {
 
     await expect(
       internals(svc).verifyInstaller(file, 'https://example.com/FlowZ.exe')
-    ).rejects.toThrow('缺少官方 sha256 摘要');
+    ).rejects.toThrow('no official sha256 digest');
 
     expect(fsSync.existsSync(file)).toBe(false);
   });
@@ -141,8 +141,8 @@ describe('UpdateService 安装包完整性校验', () => {
 
   it('校验失败错误映射到本地化文案 updErrIntegrity', () => {
     const svc = new UpdateService(log);
-    expect(internals(svc).localizeDownloadError('安装包校验失败：sha256 不匹配')).toBe(
-      mt('updErrIntegrity')
-    );
+    expect(
+      internals(svc).localizeDownloadError('Installer verification failed: sha256 mismatch')
+    ).toBe(mt('updErrIntegrity'));
   });
 });

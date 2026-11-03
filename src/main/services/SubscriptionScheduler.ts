@@ -63,14 +63,14 @@ export class SubscriptionScheduler {
     this.startupTimer = setTimeout(() => {
       this.startupTimer = null;
       // 启动补更忽略陈旧阈值：开了「启动时更新」就应更新，而非"距上次≥12h才更"（仅守 10min 地板）
-      this.runDueUpdates('启动补更', { ignoreStaleness: true }).catch((e) => {
-        this.logManager.addLog('warn', `订阅启动补更异常: ${e}`, 'SubScheduler');
+      this.runDueUpdates('startup catch-up', { ignoreStaleness: true }).catch((e) => {
+        this.logManager.addLog('warn', `Subscription startup catch-up error: ${e}`, 'SubScheduler');
       });
     }, SubscriptionScheduler.STARTUP_DELAY_MS);
 
     this.tickTimer = setInterval(() => {
-      this.runDueUpdates('周期更新').catch((e) => {
-        this.logManager.addLog('warn', `订阅周期更新异常: ${e}`, 'SubScheduler');
+      this.runDueUpdates('periodic update').catch((e) => {
+        this.logManager.addLog('warn', `Subscription periodic update error: ${e}`, 'SubScheduler');
       });
     }, SubscriptionScheduler.TICK_MS);
   }
@@ -92,8 +92,12 @@ export class SubscriptionScheduler {
     // isRunning 时不清 flag：已有更新在途，保留挂起标记待后续触发，避免补更被静默吞掉
     if (!this.pendingProxyCatchup || this.isRunning) return;
     this.pendingProxyCatchup = false;
-    this.runDueUpdates('代理就绪补更', { ignoreStaleness: true }).catch((e) => {
-      this.logManager.addLog('warn', `代理就绪补更异常: ${e}`, 'SubScheduler');
+    this.runDueUpdates('proxy-ready catch-up', { ignoreStaleness: true }).catch((e) => {
+      this.logManager.addLog(
+        'warn',
+        `Subscription proxy-ready catch-up error: ${e}`,
+        'SubScheduler'
+      );
     });
   }
 
@@ -160,7 +164,7 @@ export class SubscriptionScheduler {
           this.pendingProxyCatchup = true;
           this.logManager.addLog(
             'info',
-            `订阅「${sub.name}」经代理更新但代理未运行，本轮跳过（待代理就绪后自动补更）`,
+            `Subscription "${sub.name}" updates via proxy but the proxy is not running; skipped this round (will catch up once the proxy is ready)`,
             'SubScheduler'
           );
           continue;
@@ -197,7 +201,7 @@ export class SubscriptionScheduler {
           const { failures, delayMs } = this.backoff.recordFailure(sub.id, now);
           this.logManager.addLog(
             'warn',
-            `[${reason}] 订阅 [${sub.name}] 更新失败(第 ${failures} 次)，${Math.round(delayMs / 60_000)} 分钟后重试: ${e?.message ?? e}`,
+            `[${reason}] Subscription [${sub.name}] update failed (attempt ${failures}), retrying in ${Math.round(delayMs / 60_000)} min: ${e?.message ?? e}`,
             'SubScheduler'
           );
         }
@@ -309,11 +313,11 @@ export class SubscriptionScheduler {
         }
         this.logManager.addLog(
           'info',
-          `[${reason}] 订阅自动更新完成：成功 ${updated}，失败 ${failed}` +
+          `[${reason}] Subscription auto-update done: ${updated} succeeded, ${failed} failed` +
             (selectedDelisted
-              ? '（选中节点已下架，重选出口并重启）'
+              ? ' (selected node was removed; re-selected exit and restarted)'
               : referencedAffected
-                ? '（被引用节点变更，重启对齐）'
+                ? ' (referenced nodes changed; restarted to sync)'
                 : ''),
           'SubScheduler'
         );

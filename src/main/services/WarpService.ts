@@ -75,7 +75,7 @@ export class WarpService {
           res.on('error', (e) => reject(e instanceof Error ? e : new Error(String(e))));
           res.on('data', (c) => {
             data += c;
-            if (data.length > 1_000_000) req.destroy(new Error('WARP 响应过大'));
+            if (data.length > 1_000_000) req.destroy(new Error('WARP response too large'));
           });
           res.on('end', () => {
             const status = res.statusCode || 0;
@@ -86,13 +86,13 @@ export class WarpService {
             try {
               resolve(JSON.parse(data));
             } catch {
-              reject(new Error('WARP API 返回非 JSON'));
+              reject(new Error('WARP API returned non-JSON'));
             }
           });
         }
       );
       req.on('error', reject);
-      req.on('timeout', () => req.destroy(new Error('WARP API 超时')));
+      req.on('timeout', () => req.destroy(new Error('WARP API timed out')));
       if (body) req.write(body);
       req.end();
     });
@@ -112,7 +112,7 @@ export class WarpService {
       Accept: 'application/json',
     };
     const body = JSON.stringify(buildRegisterBody(publicKey, new Date().toISOString()));
-    this.log('info', `WARP 注册中（version=${WARP_API_VERSION}）…`);
+    this.log('info', `Registering WARP (version=${WARP_API_VERSION})…`);
     const regJson = await this.request('POST', `${base}/reg`, headers, body);
     const result = parseRegisterResponse(regJson);
     const token = regJson?.token;
@@ -124,13 +124,16 @@ export class WarpService {
         result.warpPlus = acct.warpPlus;
         result.license = acct.license || result.license;
       } catch (e: any) {
-        this.log('warn', `WARP+ license 应用失败（降级免费版）: ${e?.message ?? e}`);
+        this.log(
+          'warn',
+          `Failed to apply WARP+ license (falling back to the free tier): ${e?.message ?? e}`
+        );
       }
     }
 
     this.log(
       'info',
-      `WARP 注册成功：${result.address}:${result.port}（warp_plus=${result.warpPlus}）`
+      `WARP registered: ${result.address}:${result.port} (warp_plus=${result.warpPlus})`
     );
     return {
       address: result.address,
@@ -164,9 +167,9 @@ export class WarpService {
     token: string,
     license: string
   ): Promise<{ warpPlus: boolean; license: string }> {
-    if (!deviceId || !token) throw new Error('缺少设备凭据（deviceId/token）');
+    if (!deviceId || !token) throw new Error('Missing device credentials (deviceId/token)');
     const key = license.trim();
-    if (!key) throw new Error('license 为空');
+    if (!key) throw new Error('License is empty');
     const base = `${WARP_API_BASE}/${WARP_API_VERSION}`;
     const headers = {
       'User-Agent': WARP_USER_AGENT,
@@ -182,7 +185,7 @@ export class WarpService {
       JSON.stringify({ license: key })
     );
     const warpPlus = !!acct?.warp_plus;
-    this.log('info', `WARP+ license 已应用（${deviceId.slice(0, 8)}…，warp_plus=${warpPlus}）`);
+    this.log('info', `WARP+ license applied (${deviceId.slice(0, 8)}…, warp_plus=${warpPlus})`);
     return { warpPlus, license: acct?.license || key };
   }
 
@@ -202,12 +205,15 @@ export class WarpService {
       // 须优先于 401/403 的 drop 判定走 retry。若只传 status，403+1020 会被误当「token 死」放弃 → 版本过期时
       // 全部设备注销被永久误放弃。body 作 err 文本喂 classifyDeregisterResult，使 1020 检测在注销路径真正生效。
       const result = classifyDeregisterResult(status, body || undefined);
-      this.log('info', `WARP 设备注销 ${idPrefix}… → HTTP ${status}（${result}）`);
+      this.log('info', `WARP device deregistration ${idPrefix}… → HTTP ${status} (${result})`);
       return result;
     } catch (e: any) {
       // 网络失败 / 超时：无 HTTP 状态 → retry（等网络恢复）。
       const result = classifyDeregisterResult(null, e);
-      this.log('info', `WARP 设备注销 ${idPrefix}… 网络异常（${result}）: ${e?.message ?? e}`);
+      this.log(
+        'info',
+        `WARP device deregistration ${idPrefix}… network error (${result}): ${e?.message ?? e}`
+      );
       return result;
     }
   }
@@ -246,13 +252,13 @@ export class WarpService {
             // 只保留前 512 字节（足够含 CF body code 如 1020），但与 request 一致对超大响应主动 destroy，
             // 防异常/恶意对端持续涌数据（timeout 是空闲超时、连续数据不触发）。
             if (body.length < 512) body += c;
-            if (total > 1_000_000) req.destroy(new Error('WARP 响应过大'));
+            if (total > 1_000_000) req.destroy(new Error('WARP response too large'));
           });
           res.on('end', () => resolve({ status: res.statusCode || 0, body: body.slice(0, 512) }));
         }
       );
       req.on('error', reject);
-      req.on('timeout', () => req.destroy(new Error('WARP API 超时')));
+      req.on('timeout', () => req.destroy(new Error('WARP API timed out')));
       req.end();
     });
   }

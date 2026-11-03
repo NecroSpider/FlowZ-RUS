@@ -98,9 +98,9 @@ describe('StatsSimulator 生命周期与激活 banner', () => {
 
   it('构造即打「模拟器激活」warn banner', () => {
     const { logs } = makeSim('1000,200,20');
-    const banner = logs.find((l) => l.level === 'warn' && l.message.includes('模拟器激活'));
+    const banner = logs.find((l) => l.level === 'warn' && l.message.includes('simulator active'));
     expect(banner).toBeDefined();
-    expect(banner!.message).toContain('仅用于泄漏定证');
+    expect(banner!.message).toContain('for leak verification only');
   });
 
   it('构造即启动 ticker：advance 一个 interval → onAggregate/onStats 各触发', () => {

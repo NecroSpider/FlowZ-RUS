@@ -89,7 +89,9 @@ export class DiagnosticService {
       // 给公开 issue 当附件用的，redactIdentifiers 只打码节点标识符、不碰路径。singbox_startup.log 在
       // Windows helper 路径下由 SYSTEM 创建、fixFilePermissions 又只修 darwin，是三个 tail 里最可能踩到
       // 非 ENOENT 失败的那个。
-      return e?.code === 'ENOENT' ? '(无日志文件)' : `(读取失败: ${e?.code ?? '未知错误'})`;
+      return e?.code === 'ENOENT'
+        ? '(no log file)'
+        : `(read failed: ${e?.code ?? 'unknown error'})`;
     }
   }
 
@@ -106,16 +108,16 @@ export class DiagnosticService {
     // isStartedViaHelper 反映最近一次启动走的路径（代理已停时即上一次），是此处能拿到的最准信息。
     const viaHelper = this.proxyManager.isStartedViaHelper();
     const writer = viaHelper
-      ? '写侧 helper 服务：核 stdout+stderr，只追加不截断'
+      ? 'Writer: helper service - core stdout+stderr, append-only (never truncated)'
       : process.platform === 'darwin'
-        ? '写侧 osascript wrapper：核 stdout+stderr，每次启动截断'
+        ? 'Writer: osascript wrapper - core stdout+stderr, truncated on every start'
         : process.platform === 'win32'
-          ? '写侧 UAC 看护脚本：核 stderr（-RedirectStandardError），每次起核截断；看护脚本自述行见下一段'
-          : '非 helper 路径（直起）：核输出走 app.log 管道，本文件不被写入';
+          ? 'Writer: UAC watchdog script - core stderr (-RedirectStandardError), truncated on every core start; lines written by the watchdog script itself are in the next section'
+          : 'Non-helper path (direct start): core output goes through the app.log pipe; this file is not written';
     try {
       const st = await fs.stat(getSingBoxStartupLogPath());
       const mb = (st.size / (1024 * 1024)).toFixed(2);
-      return `${writer} · ${mb} MB · 最后写入 ${st.mtime.toISOString()}`;
+      return `${writer} · ${mb} MB · last written ${st.mtime.toISOString()}`;
     } catch {
       return writer; // 文件缺失/不可读：tail 那边已给占位，此处不重复报错
     }
@@ -163,7 +165,7 @@ export class DiagnosticService {
         customSecretKeys
       );
     } catch (e: any) {
-      redactedSingbox = { error: `生成失败: ${e?.message ?? e}` };
+      redactedSingbox = { error: `generation failed: ${e?.message ?? e}` };
     }
 
     // 纵深防御：脱敏 UserConfig 也兜底（理论上 config 为 JSON 可序列化、redactDeep 无环不会抛，
@@ -172,7 +174,7 @@ export class DiagnosticService {
     try {
       redactedUserConfig = redactDeep(config);
     } catch (e: any) {
-      redactedUserConfig = { error: `脱敏失败: ${e?.message ?? e}` };
+      redactedUserConfig = { error: `redaction failed: ${e?.message ?? e}` };
     }
 
     let speedTestDiagnostics: DiagnosticReportInput['speedTestDiagnostics'];
@@ -183,7 +185,7 @@ export class DiagnosticService {
         try {
           redactedTempConfig = redactDeep(rawSpeedTestDiagnostics.tempConfig, customSecretKeys);
         } catch (e: any) {
-          redactedTempConfig = { error: `脱敏失败: ${e?.message ?? e}` };
+          redactedTempConfig = { error: `redaction failed: ${e?.message ?? e}` };
         }
       }
       speedTestDiagnostics = {
@@ -217,10 +219,14 @@ export class DiagnosticService {
       const s = await sampleCoreProcess(status.pid).catch(() => null);
       coreProcess = s
         ? { pid: s.pid, rssMb: s.rssMb, cpuPercent: s.cpuPercent }
-        : { unavailable: 'unavailable（核进程采样失败/平台不支持，如 Windows 本批未采）' };
+        : {
+            unavailable:
+              'unavailable (core process sampling failed or not supported on this platform, e.g. Windows)',
+          };
     } else {
       coreProcess = {
-        unavailable: 'unavailable（代理未运行，或核 PID 不可得，如 Linux helper 托管路径）',
+        unavailable:
+          'unavailable (proxy not running, or core PID not available, e.g. on the Linux helper-managed path)',
       };
     }
 
@@ -256,8 +262,8 @@ export class DiagnosticService {
     const levelForHint = runningLevel ?? effLevel;
     const logLevelField =
       runningLevel !== undefined
-        ? `${runningLevel}（运行中核实例）`
-        : `${effLevel}（配置值，核未运行或配置文件不可读）`;
+        ? `${runningLevel} (running core instance)`
+        : `${effLevel} (config value; core not running or config file unreadable)`;
     const captureActive = !!config.diagnosticCapture;
     const wantDeeper =
       levelForHint !== 'debug' &&
@@ -279,8 +285,8 @@ export class DiagnosticService {
         proxyRunning: status.running,
         startedViaHelper: this.proxyManager.isStartedViaHelper(),
         systemProxy: sysProxy?.enabled
-          ? sysProxy.httpProxy || sysProxy.httpsProxy || sysProxy.socksProxy || '(已启用)'
-          : '(未启用)',
+          ? sysProxy.httpProxy || sysProxy.httpsProxy || sysProxy.socksProxy || '(enabled)'
+          : '(disabled)',
         nodeDomainResolver: config.dnsConfig?.nodeDomainResolver || 'auto',
         logLevel: logLevelField,
         captureActive,
@@ -332,7 +338,7 @@ export class DiagnosticService {
       // issue #147：节点 outbound.server 已恒为域名（不再烧 IP），无额外预解析 IP 需补脱敏 → 仅扫 config.servers。
       nodeIdentifiers: collectNodeIdentifiers(config),
       hint: wantDeeper
-        ? `当前日志级别为 ${levelForHint}，未含 DNS 解析等连接详情，但日志中已出现连接/DNS 类错误。建议到 主页 → 日志 → 诊断 开启「诊断采集」，复现问题后再次导出可获得更完整的根因数据。`
+        ? `The current log level is ${levelForHint}, which omits connection details such as DNS resolution, but the log already shows connection/DNS errors. Go to Logs -> Diagnostics and start a diagnostic capture, reproduce the issue, then export again for more complete root-cause data.`
         : undefined,
     };
 

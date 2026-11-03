@@ -202,13 +202,13 @@ export function buildInbounds(
       if (win.carvedMeshCidrs.length > 0) {
         deps.log?.(
           'info',
-          `Windows bypassLAN 排除表已为 ${win.carvedMeshCidrs.length} 个生效组网段开洞（进 TUN 走组网，防架空）：${win.carvedMeshCidrs.join(', ')}`
+          `Windows bypassLAN exclusion list: carved holes for ${win.carvedMeshCidrs.length} active mesh CIDR(s) (they enter TUN and go via mesh instead of being bypassed): ${win.carvedMeshCidrs.join(', ')}`
         );
       }
       if (win.meshSkippedOwnLan.length > 0) {
         deps.log?.(
           'warn',
-          `Windows：${win.meshSkippedOwnLan.length} 个组网段与保护段（本机物理子网/回环/链路本地/多播）重叠，为保护它未开洞（仍绕过 TUN；本地访问不依赖 TUN，但该段经组网的远端对等将不可达）：${win.meshSkippedOwnLan.join(', ')}`
+          `Windows: ${win.meshSkippedOwnLan.length} mesh CIDR(s) overlap protected ranges (local physical subnet/loopback/link-local/multicast); not carved to protect them (they still bypass TUN; local access does not need TUN, but remote mesh peers in these ranges will be unreachable): ${win.meshSkippedOwnLan.join(', ')}`
         );
       }
       // W2（gap 1c）：Windows bypassLAN 段是内核层排除，落在其中的「非直连(走代理/拦截)」自定义规则会被静默架空
@@ -232,7 +232,7 @@ export function buildInbounds(
         if (conflict.length > 0) {
           deps.log?.(
             'warn',
-            `Windows：${conflict.length} 段「绕过局域网」清单条目与非直连（走代理/拦截）自定义规则段重叠——该段在内核层被排除、自定义规则不生效；如需生效请从「绕过局域网」清单移除该条目：${conflict.join(', ')}`
+            `Windows: ${conflict.length} "Bypass LAN" list entr(ies) overlap non-direct (proxy/block) custom rule ranges - they are excluded at the kernel level, so the custom rules have no effect; to apply them, remove these entries from the "Bypass LAN" list: ${conflict.join(', ')}`
           );
         }
       }
@@ -307,7 +307,7 @@ export function buildInbounds(
       // 会重新引入回归。忽略 + warn（§12/§12.7）；UI 已按平台提示。
       deps.log?.(
         'warn',
-        `Linux：服务端回包已由内核策略路由天然保护，「连入来源排除」不生效且会重新触发路由表分解引入回归，已忽略 ${userInboundCidrs.length} 条声明段。`
+        `Linux: server reply traffic is already protected by kernel policy routing; "TUN inbound-source exclusion" has no effect here and would re-trigger route-table splitting (a regression), so ${userInboundCidrs.length} declared range(s) were ignored.`
       );
     } else if (userInboundCidrs && userInboundCidrs.length > 0) {
       // 只减【engaged】组网段（复用上方 hoisted engagedMeshCidrs，与 route-builder 块 0c / Windows bypassLAN carve
@@ -324,19 +324,19 @@ export function buildInbounds(
       if (userExclude.droppedInvalid > 0) {
         deps.log?.(
           'warn',
-          `「连入来源排除」剔除 ${userExclude.droppedInvalid} 条非法/过宽网段（须合法 CIDR、不含 0.0.0.0/0 等过宽段）。`
+          `"TUN inbound-source exclusion": dropped ${userExclude.droppedInvalid} invalid/overly broad range(s) (must be valid CIDRs, no overly broad ranges like 0.0.0.0/0).`
         );
       }
       if (userExclude.droppedMeshOverlap.length > 0) {
         deps.log?.(
           'warn',
-          `「连入来源排除」${userExclude.droppedMeshOverlap.length} 段与生效组网(WG/Tailscale)路由段重叠，已跳过排除（该段经组网节点）：${userExclude.droppedMeshOverlap.join(', ')}`
+          `"TUN inbound-source exclusion": ${userExclude.droppedMeshOverlap.length} range(s) overlap active mesh (WG/Tailscale) routes; exclusion skipped (these ranges go via the mesh node): ${userExclude.droppedMeshOverlap.join(', ')}`
         );
       }
       if (userExclude.droppedOwnLanMac.length > 0) {
         deps.log?.(
           'warn',
-          `macOS：「连入来源排除」${userExclude.droppedOwnLanMac.length} 段与本机物理 LAN 相交，已跳过（排除物理 LAN 会触发 NetworkExtension 反向路由丢包）：${userExclude.droppedOwnLanMac.join(', ')}`
+          `macOS: "TUN inbound-source exclusion": ${userExclude.droppedOwnLanMac.length} range(s) intersect the local physical LAN; skipped (excluding the physical LAN triggers NetworkExtension reverse-route packet loss): ${userExclude.droppedOwnLanMac.join(', ')}`
         );
       }
       // 与非直连（走代理/拦截）自定义规则段重叠告警（双向语义副作用）：被排除的段出/入均绕过 TUN，若某 enabled 的
@@ -350,7 +350,7 @@ export function buildInbounds(
         if (conflict.length > 0) {
           deps.log?.(
             'warn',
-            `「连入来源排除」${conflict.length} 段与非直连（走代理/拦截）自定义规则段重叠：排除使其出/入均绕过 TUN 走直连，该自定义规则对这些段将不生效：${conflict.join(', ')}`
+            `"TUN inbound-source exclusion": ${conflict.length} range(s) overlap non-direct (proxy/block) custom rule ranges: exclusion makes them bypass TUN in both directions (direct), so those custom rules will not apply to them: ${conflict.join(', ')}`
           );
         }
       }
@@ -367,7 +367,7 @@ export function buildInbounds(
       if (meshOwnLanOverlap.length > 0) {
         deps.log?.(
           'warn',
-          `Linux：${meshOwnLanOverlap.length} 个组网段与本机接口网段重叠，本机侧按直连优先（远端组网对等仍经组网可达）：${meshOwnLanOverlap.join(', ')}`
+          `Linux: ${meshOwnLanOverlap.length} mesh CIDR(s) overlap local interface subnets; the local side prefers direct (remote mesh peers are still reachable via mesh): ${meshOwnLanOverlap.join(', ')}`
         );
       }
     }

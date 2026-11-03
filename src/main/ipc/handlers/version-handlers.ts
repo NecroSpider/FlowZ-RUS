@@ -33,7 +33,7 @@ export function registerVersionHandlers(coreUpdateService?: CoreUpdateService): 
         try {
           // About 页显示：force=false 读缓存（启动已预热）→ 避免每次进入 spawn 内核子进程致加载转圈。
           const version = await coreUpdateService.getCurrentVersion(false);
-          if (version && version !== '未知') {
+          if (version && version !== 'unknown') {
             currentSingBoxVersion = version;
           }
         } catch (error) {

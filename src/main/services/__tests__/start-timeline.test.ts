@@ -120,7 +120,7 @@ describe('StartTimeline — 上限与汇总', () => {
     tl.mark('killOrphans');
     tl.mark('coreVersion');
     expect(tl.summarize('ok')).toBe(
-      '起核阶段耗时 total=350ms outcome=ok | killOrphans=100 coreVersion=200'
+      'Core start timings total=350ms outcome=ok | killOrphans=100 coreVersion=200'
     );
   });
 
@@ -131,12 +131,12 @@ describe('StartTimeline — 上限与汇总', () => {
       t += 1;
       tl.mark(`p${i}`);
     }
-    expect(tl.summarize('failed')).toContain('(+3 格超限未记)');
+    expect(tl.summarize('failed')).toContain('(+3 phases over the limit, not recorded)');
   });
 
   it('一格没记时不留空尾巴 `| `（那是条零信息量的行，却每次 start 都进 app.log 与诊断报告）', () => {
     const tl = new StartTimeline({ now: fakeClock([0, 12]) });
-    expect(tl.summarize('superseded')).toBe('起核阶段耗时 total=12ms outcome=superseded');
+    expect(tl.summarize('superseded')).toBe('Core start timings total=12ms outcome=superseded');
   });
 });
 

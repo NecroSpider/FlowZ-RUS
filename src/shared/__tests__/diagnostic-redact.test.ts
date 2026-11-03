@@ -220,17 +220,17 @@ describe('buildDiagnosticReport', () => {
 
   it('含核心区块与脱敏 JSON', () => {
     const md = buildDiagnosticReport(base);
-    expect(md).toContain('# FlowZ 诊断报告');
-    expect(md).toContain('## 环境');
-    expect(md).toContain('## 运行态');
-    expect(md).toContain('## 生成的 sing-box 配置（脱敏）');
+    expect(md).toContain('# FlowZ Diagnostic Report');
+    expect(md).toContain('## Environment');
+    expect(md).toContain('## Runtime');
+    expect(md).toContain('## Generated sing-box config (redacted)');
     expect(md).toContain('"level": "info"');
     expect(md).toContain('line1\nline2');
   });
 
   it('空日志 tail 渲染为占位「(空)」', () => {
     const md = buildDiagnosticReport(base);
-    expect(md).toContain('(空)');
+    expect(md).toContain('(empty)');
   });
 
   // issue #367：这四条渲染分支是「刷新到底有没有发生过」的用户可见半段。判断顺序若写反
@@ -240,7 +240,7 @@ describe('buildDiagnosticReport', () => {
       buildDiagnosticReport({ ...base, runtime: { ...base.runtime, lastDnsFlush: f } });
 
     it('缺省 → 「本会话从未触发」（缺省本身即信息，如核从未成功起过）', () => {
-      expect(buildDiagnosticReport(base)).toContain('本会话从未触发');
+      expect(buildDiagnosticReport(base)).toContain('never triggered this session');
     });
 
     it('成功 → 含 context / 年龄 / detail', () => {
@@ -250,7 +250,9 @@ describe('buildDiagnosticReport', () => {
         context: 'start',
         ageSec: 12,
       });
-      expect(md).toContain('系统 DNS 缓存刷新：成功（start，12s 前，resolvectl flush-caches）');
+      expect(md).toContain(
+        'System DNS cache flush: succeeded (start, 12s ago, resolvectl flush-caches)'
+      );
     });
 
     it('失败 → 标「失败」+ 分类 + detail（**不得**出现「成功」字样）', () => {
@@ -261,10 +263,10 @@ describe('buildDiagnosticReport', () => {
         context: 'link-change',
         ageSec: 3,
       });
-      expect(md).toContain('**失败**');
+      expect(md).toContain('**failed**');
       expect(md).toContain('permission-denied');
       expect(md).toContain('Interactive authentication required.');
-      expect(md).not.toContain('系统 DNS 缓存刷新：成功');
+      expect(md).not.toContain('System DNS cache flush: succeeded');
     });
 
     it('skipped → 标「已跳过」，**不得**渲染成成功（skipped ≠ 刷新成功）', () => {
@@ -275,8 +277,8 @@ describe('buildDiagnosticReport', () => {
         context: 'start',
         ageSec: 1,
       });
-      expect(md).toContain('已跳过');
-      expect(md).not.toContain('系统 DNS 缓存刷新：成功');
+      expect(md).toContain('no such mechanism on this platform, skipped');
+      expect(md).not.toContain('System DNS cache flush: succeeded');
     });
 
     it('partial（macOS HUP 失败）→ 标「部分成功」，**不得**与真成功同 headline', () => {
@@ -287,9 +289,9 @@ describe('buildDiagnosticReport', () => {
         context: 'stop',
         ageSec: 5,
       });
-      expect(md).toContain('**部分成功**');
+      expect(md).toContain('**partially succeeded**');
       expect(md).toContain('killall-hup exit status 1');
-      expect(md).not.toContain('系统 DNS 缓存刷新：成功');
+      expect(md).not.toContain('System DNS cache flush: succeeded');
     });
   });
 
@@ -298,7 +300,7 @@ describe('buildDiagnosticReport', () => {
       ...base,
       startupLogTail: 'FATAL[0000] start service: initialize inbound/tun[tun-in]: boom',
     });
-    expect(md).toContain('## singbox_startup.log（近期）');
+    expect(md).toContain('## singbox_startup.log (recent)');
     expect(md).toContain('initialize inbound/tun[tun-in]: boom');
     // 排在 singbox.log 之后，保持「核自身日志 → 核启动日志」的阅读顺序
     expect(md.indexOf('## singbox_startup.log')).toBeGreaterThan(md.indexOf('## singbox.log'));
@@ -309,10 +311,10 @@ describe('buildDiagnosticReport', () => {
       ...base,
       startupLogTail: 'FlowZ watchdog starting...',
       startupLogSource:
-        '写侧 UAC 看护脚本：**仅看护脚本自述行，不含核输出** · 0.01 MB · 最后写入 2026-07-24T14:38:50.000Z',
+        'Writer: UAC watchdog script - **watchdog script lines only, no core output** · 0.01 MB · last written 2026-07-24T14:38:50.000Z',
     });
-    expect(md).toContain('## singbox_startup.log（近期 · 写侧 UAC 看护脚本');
-    expect(md).toContain('最后写入 2026-07-24T14:38:50.000Z');
+    expect(md).toContain('## singbox_startup.log (recent · Writer: UAC watchdog script');
+    expect(md).toContain('last written 2026-07-24T14:38:50.000Z');
   });
 
   it('无 startupLogTail 时不渲染该区块（老调用点不受影响）', () => {
@@ -321,7 +323,7 @@ describe('buildDiagnosticReport', () => {
 
   it('startupLogTail 为空串时仍渲染该区块（文件存在但空 ≠ 未提供）', () => {
     const md = buildDiagnosticReport({ ...base, startupLogTail: '' });
-    expect(md).toContain('## singbox_startup.log（近期）');
+    expect(md).toContain('## singbox_startup.log (recent)');
   });
 
   it('startupLogTail 同样经节点标识符打码（红线：零明文节点身份）', () => {
@@ -350,8 +352,8 @@ describe('buildDiagnosticReport', () => {
         ],
       },
     });
-    expect(md).toContain('## 进程内存');
-    expect(md).toContain('| 类型 | PID | 内存(MB) | 峰值(MB) | CPU(%) | 标识 | 创建时刻 |');
+    expect(md).toContain('## Process memory');
+    expect(md).toContain('| Type | PID | Memory (MB) | Peak (MB) | CPU (%) | Label | Created at |');
     expect(md).toContain('| Utility | 374035 | 2048 |  | 1 | flowz-stats |  |');
     expect(md).toContain('| Browser | 373944 | 300 |  | 0 |  |  |');
     expect(md).toContain('2348 MB');
@@ -359,7 +361,7 @@ describe('buildDiagnosticReport', () => {
 
   it('无 processMetrics 时不渲染进程内存区块（getAppMetrics 失败兜底）', () => {
     const md = buildDiagnosticReport(base);
-    expect(md).not.toContain('## 进程内存');
+    expect(md).not.toContain('## Process memory');
   });
 
   it('进程内存表不被节点标识符打码误伤（机场把节点命名成纯数字撞表内 PID/内存数字）', () => {
@@ -430,8 +432,8 @@ describe('buildDiagnosticReport', () => {
         { value: 'node.secret.example', placeholder: '<domain-1>' },
       ],
     });
-    expect(md).toContain('## 最近一次测速诊断');
-    expect(md).toContain('- 测速目标：http://www.gstatic.com/generate_204');
+    expect(md).toContain('## Last speed test diagnostics');
+    expect(md).toContain('- Speed test target: http://www.gstatic.com/generate_204');
     expect(md).toContain('| s1 | <node-1> | out-s1 | timeout |');
     expect(md).toContain(
       '| s1 | <node-1> | out-s1 | www.gstatic.com | dns-exit-s1 tcp/53 probe | 203.0.113.7 |  |'
@@ -459,7 +461,7 @@ describe('buildDiagnosticReport', () => {
         resolvedIpProbes: [],
       },
     });
-    expect(md).toContain('- 测速目标：https://probe.example.com/<redacted>');
+    expect(md).toContain('- Speed test target: https://probe.example.com/<redacted>');
     expect(md).not.toContain('token-abc');
     expect(md).not.toContain('token-xyz');
   });
@@ -500,7 +502,7 @@ describe('buildDiagnosticReport × issue #242 §6 观测随包新字段', () => 
         ],
       },
     });
-    expect(md).toContain('| 类型 | PID | 内存(MB) | 峰值(MB) | CPU(%) | 标识 | 创建时刻 |');
+    expect(md).toContain('| Type | PID | Memory (MB) | Peak (MB) | CPU (%) | Label | Created at |');
     expect(md).toContain(
       `| Utility | 100 | 2048 | 2200 | 5 | flowz-stats | ${new Date(Date.UTC(2026, 6, 2, 8, 0, 0)).toISOString()} |`
     );
@@ -517,10 +519,10 @@ describe('buildDiagnosticReport × issue #242 §6 观测随包新字段', () => 
         blinkResourceMb: 64,
       },
     });
-    expect(md).toContain('## 渲染进程堆分层');
-    expect(md).toContain('- V8 usedHeap：120 MB');
-    expect(md).toContain('- 进程 residentSet：2200 MB');
-    expect(md).toContain('- Blink 资源缓存(live)：64 MB');
+    expect(md).toContain('## Renderer heap breakdown');
+    expect(md).toContain('- V8 usedHeap: 120 MB');
+    expect(md).toContain('- Process residentSet: 2200 MB');
+    expect(md).toContain('- Blink resource cache (live): 64 MB');
   });
 
   it('渲染进程堆分层：unavailable 时只渲染原因行', () => {
@@ -528,7 +530,7 @@ describe('buildDiagnosticReport × issue #242 §6 观测随包新字段', () => 
       ...base,
       rendererHeap: { unavailable: 'unavailable（渲染进程内省超时 >2000ms，疑窗口卡死）' },
     });
-    expect(md).toContain('## 渲染进程堆分层');
+    expect(md).toContain('## Renderer heap breakdown');
     expect(md).toContain('内省超时');
     expect(md).not.toContain('V8 usedHeap');
   });
@@ -538,8 +540,8 @@ describe('buildDiagnosticReport × issue #242 §6 观测随包新字段', () => 
       ...base,
       coreProcess: { pid: 374000, rssMb: 180, cpuPercent: 53 },
     });
-    expect(ok).toContain('## sing-box 核进程');
-    expect(ok).toContain('PID 374000：RSS 180 MB，CPU 53%');
+    expect(ok).toContain('## sing-box core process');
+    expect(ok).toContain('PID 374000: RSS 180 MB, CPU 53%');
 
     const na = buildDiagnosticReport({
       ...base,
@@ -553,7 +555,7 @@ describe('buildDiagnosticReport × issue #242 §6 观测随包新字段', () => 
       ...base,
       memoryTimelineCsv: 't,label,pid,rssMb\n2026-07-02T00:00:00.000Z,Browser,100,300',
     });
-    expect(md).toContain('## 内存时间线');
+    expect(md).toContain('## Memory timeline');
     expect(md).toContain('```csv');
     expect(md).toContain('2026-07-02T00:00:00.000Z,Browser,100,300');
   });
@@ -563,18 +565,18 @@ describe('buildDiagnosticReport × issue #242 §6 观测随包新字段', () => 
       ...base,
       rendererWatchdog: { discardCount: 2, warnCount: 3, thresholdMb: 1536 },
     });
-    expect(md).toContain('## 渲染进程内存看护');
-    expect(md).toContain('- 阈值：1536 MB');
-    expect(md).toContain('- 隐藏态回收（discard）：2 次');
-    expect(md).toContain('- 可见态告警（warn）：3 次');
+    expect(md).toContain('## Renderer memory watchdog');
+    expect(md).toContain('- Threshold: 1536 MB');
+    expect(md).toContain('- Reclaimed while hidden (discard): 2');
+    expect(md).toContain('- Warnings while visible (warn): 3');
   });
 
   it('全部新字段缺省 → 不渲染任何观测新区块（向后兼容）', () => {
     const md = buildDiagnosticReport(base);
-    expect(md).not.toContain('## 渲染进程堆分层');
-    expect(md).not.toContain('## sing-box 核进程');
-    expect(md).not.toContain('## 内存时间线');
-    expect(md).not.toContain('## 渲染进程内存看护');
+    expect(md).not.toContain('## Renderer heap breakdown');
+    expect(md).not.toContain('## sing-box core process');
+    expect(md).not.toContain('## Memory timeline');
+    expect(md).not.toContain('## Renderer memory watchdog');
   });
 });
 

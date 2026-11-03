@@ -64,15 +64,23 @@ export class ErrorHandler {
   }
 
   private static isTrojanError(message: string): boolean {
-    const trojanKeywords = ['trojan', 'Trojan', '认证失败', '密码错误', 'TLS 握手失败'];
-    return trojanKeywords.some((keyword) => message.includes(keyword));
+    const trojanKeywords = [
+      'trojan',
+      'authentication failed',
+      'auth fail',
+      'wrong password',
+      'incorrect password',
+      'tls handshake',
+    ];
+    const lower = message.toLowerCase();
+    return trojanKeywords.some((keyword) => lower.includes(keyword));
   }
 
   private static isProtocolError(message: string): boolean {
     return (
-      message.includes('不支持的协议') ||
+      message.includes('Unsupported protocol') ||
       message.includes('Protocol') ||
-      message.includes('暂不支持')
+      message.includes('not supported yet')
     );
   }
 

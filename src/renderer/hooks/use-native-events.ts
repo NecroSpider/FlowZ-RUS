@@ -181,7 +181,7 @@ function handleProcessError(data: NativeEventData['processError']) {
       if (errText.includes('VLESS') || errText.includes('vless')) {
         category = ErrorCategory.Connection;
       }
-      if (errText.includes('不支持的协议') || errText.includes('Protocol')) {
+      if (errText.includes('Unsupported protocol') || errText.includes('Protocol')) {
         category = ErrorCategory.Config;
       }
     }
@@ -413,20 +413,20 @@ let helperUpgradeWarnedThisSession = false;
 function handleHelperUpgradeable(_data: NativeEventData['helperUpgradeable']) {
   if (helperUpgradeWarnedThisSession) return;
   helperUpgradeWarnedThisSession = true;
-  toast.warning(i18n.t('helper.upgradeTitle', '提权助手有新版本'), {
+  toast.warning(i18n.t('helper.upgradeTitle', 'Helper update available'), {
     description: i18n.t(
       'helper.upgradeDesc',
-      '新版修复了跨提权态的文件属主冲突（会导致 Tailscale / 启动异常）。建议升级，仅需授权一次。'
+      'The new version fixes a file-ownership conflict across privilege states (can break Tailscale / startup). Upgrade recommended — authorize once.'
     ),
     duration: Infinity,
     action: {
-      label: i18n.t('helper.upgradeAction', '升级'),
+      label: i18n.t('helper.upgradeAction', 'Upgrade'),
       onClick: () => {
         void api.helper.install();
       },
     },
     cancel: {
-      label: i18n.t('helper.upgradeDismiss', '不再提示'),
+      label: i18n.t('helper.upgradeDismiss', "Don't remind"),
       onClick: () => {
         void api.config.setValue('helperUpgradePromptDismissed', true);
       },
@@ -439,14 +439,17 @@ function handleHelperUpgradeable(_data: NativeEventData['helperUpgradeable']) {
 const meshLoginFallbackToastId = 'mesh-login-fallback';
 function handleMeshLoginFallback(data: NativeEventData['meshLoginFallback']) {
   if (data.engaged) {
-    toast.warning(i18n.t('servers.meshLoginFallbackTitle', '组网登录期已临时直连'), {
-      id: meshLoginFallbackToastId,
-      description: i18n.t(
-        'servers.meshLoginFallbackDesc',
-        '所选 Tailscale 出口尚未连接，登录/授权期间流量暂走直连；连接成功后自动切回该出口。'
-      ),
-      duration: 8000,
-    });
+    toast.warning(
+      i18n.t('servers.meshLoginFallbackTitle', 'Temporarily connecting directly (mesh login)'),
+      {
+        id: meshLoginFallbackToastId,
+        description: i18n.t(
+          'servers.meshLoginFallbackDesc',
+          "The selected Tailscale exit isn't connected yet, so traffic goes directly during login/authorization; it switches back to the exit automatically once connected."
+        ),
+        duration: 8000,
+      }
+    );
     return;
   }
   toast.dismiss(meshLoginFallbackToastId);

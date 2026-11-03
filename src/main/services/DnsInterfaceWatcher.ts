@@ -124,10 +124,10 @@ export class DnsInterfaceWatcher {
       } catch (e) {
         this.deps.onWarn(
           'warn',
-          `处理系统唤醒事件失败: ${e instanceof Error ? e.message : String(e)}`
+          `Failed to handle system resume event: ${e instanceof Error ? e.message : String(e)}`
         );
       }
-      this.scheduleReconcile('系统唤醒');
+      this.scheduleReconcile('system resume');
     };
   }
 
@@ -146,7 +146,7 @@ export class DnsInterfaceWatcher {
       // 子进程自身错误（route 不存在/被杀）best-effort：仅 warn，不抛、不影响 TUN（watcher 失效 ≠ 接管失效，
       // setDns 已接管的服务仍受控，只是热插补接管暂失能 —— 远好于阻断生命周期）。
       child?.on('error', (err) => {
-        this.deps.onWarn('warn', `DNS 接口 watcher 子进程错误: ${err.message}`);
+        this.deps.onWarn('warn', `DNS interface watcher child process error: ${err.message}`);
       });
       // 事件源终结（OOM / 被杀 / 自身崩溃 / spawn 失败）：此前会静默失效到下次核重启——该平台的修复形同
       // 关闭且不自曝。故 warn 留痕 + 降级到指纹轮询（覆盖面窄于事件流但有界，好过完全失明）。
@@ -157,7 +157,7 @@ export class DnsInterfaceWatcher {
         this.child = null;
         this.deps.onWarn(
           'warn',
-          `链路事件源已退出（code=${code ?? 'null'} signal=${signal ?? 'null'}），降级为指纹轮询`
+          `Link event source exited (code=${code ?? 'null'} signal=${signal ?? 'null'}), falling back to fingerprint polling`
         );
         this.degradeToPolling();
       });
@@ -168,7 +168,7 @@ export class DnsInterfaceWatcher {
       this.child = null;
       this.deps.onWarn(
         'warn',
-        `启动 DNS 接口 watcher 失败: ${e instanceof Error ? e.message : String(e)}`
+        `Failed to start DNS interface watcher: ${e instanceof Error ? e.message : String(e)}`
       );
     }
 
@@ -184,7 +184,7 @@ export class DnsInterfaceWatcher {
       } catch (e) {
         this.deps.onWarn(
           'warn',
-          `订阅系统唤醒事件失败: ${e instanceof Error ? e.message : String(e)}`
+          `Failed to subscribe to system resume events: ${e instanceof Error ? e.message : String(e)}`
         );
       }
     }
@@ -206,7 +206,7 @@ export class DnsInterfaceWatcher {
       } catch (e) {
         this.deps.onWarn(
           'warn',
-          `停止 DNS 接口 watcher 子进程失败: ${e instanceof Error ? e.message : String(e)}`
+          `Failed to stop DNS interface watcher child process: ${e instanceof Error ? e.message : String(e)}`
         );
       }
       this.child = null;
@@ -217,7 +217,7 @@ export class DnsInterfaceWatcher {
       } catch (e) {
         this.deps.onWarn(
           'warn',
-          `反注册系统唤醒事件失败: ${e instanceof Error ? e.message : String(e)}`
+          `Failed to unsubscribe from system resume events: ${e instanceof Error ? e.message : String(e)}`
         );
       }
     }
@@ -243,7 +243,7 @@ export class DnsInterfaceWatcher {
     this.lineBuffer = parts.pop() ?? ''; // 末段可能是半行，留回缓存等下个 chunk 补全。
     for (const line of parts) {
       if (this.deps.isTriggerLine(line)) {
-        this.scheduleReconcile('链路事件');
+        this.scheduleReconcile('link event');
         // 一个 burst 内多条触发行只需排一次去抖（schedule 会被 scheduleReconcile 合并），继续扫完本批即可。
       }
     }
@@ -255,7 +255,7 @@ export class DnsInterfaceWatcher {
     if (interval <= 0) return;
     this.pollHandle = this.deps.schedule(() => {
       this.pollHandle = null;
-      this.scheduleReconcile('定时轮询');
+      this.scheduleReconcile('periodic poll');
       if (this.started) this.schedulePoll();
     }, interval);
   }
@@ -279,14 +279,14 @@ export class DnsInterfaceWatcher {
           (r as Promise<void>).catch((e) =>
             this.deps.onWarn(
               'warn',
-              `链路变化处理失败（${reason}）: ${e instanceof Error ? e.message : String(e)}`
+              `Failed to handle link change (${reason}): ${e instanceof Error ? e.message : String(e)}`
             )
           );
         }
       } catch (e) {
         this.deps.onWarn(
           'warn',
-          `链路变化处理失败（${reason}）: ${e instanceof Error ? e.message : String(e)}`
+          `Failed to handle link change (${reason}): ${e instanceof Error ? e.message : String(e)}`
         );
       }
     }, this.deps.debounceMs);
@@ -324,7 +324,9 @@ export function createLinkChangeHandler(deps: LinkChangeHandlerDeps): () => Prom
       try {
         await deps.reconcile();
       } catch (e) {
-        deps.onWarn(`链路变化重灌 DNS 接管失败: ${e instanceof Error ? e.message : String(e)}`);
+        deps.onWarn(
+          `Failed to re-apply DNS takeover after link change: ${e instanceof Error ? e.message : String(e)}`
+        );
       }
     }
     const fingerprint = deps.readFingerprint();

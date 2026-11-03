@@ -835,7 +835,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (e instanceof CoreStartSupersededError) {
         this.lastStartSuperseded = true; // 供 attemptAutoRestart 判别，跳过让位时的多余 started 事件
         outcome = 'superseded';
-        this.logToManager('info', '启动已让位（检测到更新的启动/停止操作接管）');
+        this.logToManager('info', 'Start yielded (taken over by a newer start/stop operation)');
         return;
       }
       // 启动失败终态收口：① 清进程引用——否则 singboxProcess/pid 仍指向已死进程，下次 start 的内部 stop() 会对
@@ -899,7 +899,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // core-swap 手动轴门控：内核替换窗口中拒绝启动（防撞半替换核 FATAL）。须在 lifecycleGeneration++ 之前——
     // 被拒时不污染世代。updateCore/applyStagedNow 自身的 start 在 installCoreFromDir 返回后调用（coreSwapInProgress
     // 已清），不受此闸影响。
-    this.rejectIfCoreSwapInProgress('启动代理');
+    this.rejectIfCoreSwapInProgress('proxy start');
     // B1：清掉上一次 start 可能遗留的释放门预热（那次 start 若在首腿之前就抛错，promise 会没人消费）。
     //   必须在本方法**入口**清、且在下方重新 arm 之前——否则首腿会吃到一个早于本次 stop/killOrphans 的陈旧结论。
     this.pendingAdapterReleaseGate = null;
@@ -959,7 +959,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       try {
         this.singboxPath = await resourceManager.ensureWritableCore();
       } catch (err) {
-        this.logToManager('error', `Linux 核心准备失败: ${(err as Error).message}`);
+        this.logToManager('error', `Linux core preparation failed: ${(err as Error).message}`);
       }
     } else if (process.platform === 'darwin') {
       // B 块：受保护目录是 macOS 现役核单一真相，install-core 换核后路径不变、内容变；每次 start 重解析
@@ -992,7 +992,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.coreVersion = await this.getCoreVersion(true);
     // 每次 start 恒 force=true 重 spawn 45MB 内核（Windows 上还要过一遍 AV 扫描）——这一格就是量它值不值。
     this.markStart('coreVersion');
-    this.logToManager('info', `检测到 sing-box 核心版本: ${this.coreVersion}`);
+    this.logToManager('info', `Detected sing-box core version: ${this.coreVersion}`);
 
     // §5 核覆盖 reconcile + 最低版本守卫：内置核是种子（强制落位），决策只针对本机在用的【非内置】核。
     //  官方 <内置 → 内置替换（取更新随包核）；官方 ≥内置 → 保持（不降级用户装的官方核）；
@@ -1007,8 +1007,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       const coreKind = classifyCoreBuild(this.coreVersionLine || `version ${this.coreVersion}`);
       throw new Error(
         coreKind === 'official'
-          ? `当前 sing-box 内核版本 ${this.coreVersion} 低于所需的 1.14。请重新安装应用以获取随包内核，或在「设置 · 内核」更新到 1.14 及以上。`
-          : `当前使用的非官方内核 ${this.coreVersion} 低于所需的 1.14，与新版配置不兼容。请手动升级该内核到 ≥1.14，或在「设置 · 内核 · 重置到出厂」切回随包官方核。`
+          ? `The current sing-box core version ${this.coreVersion} is below the required 1.14. Reinstall the app to get the bundled core, or update to 1.14 or later in Settings > Advanced > Core Management.`
+          : `The unofficial core in use (${this.coreVersion}) is below the required 1.14 and is incompatible with the current config. Upgrade it manually to 1.14 or later, or switch back to the bundled official core via Settings > Advanced > Core Management > Reset core to factory.`
       );
     }
 
@@ -1072,7 +1072,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //   若 Windows 确需 IP 级兜底 → 应仅对 IP-literal 节点保留、域名节点不预解析。无 Windows 环境暂不擅改。
     const resolvedServerIps: Record<string, string> = {};
     if (isTunMode && (process.platform === 'win32' || process.platform === 'darwin')) {
-      this.logToManager('info', '正在预解析节点域名用于 TUN 防回流与 VPN 路由跟踪...');
+      this.logToManager(
+        'info',
+        'Pre-resolving node domains for TUN loop prevention and VPN route tracking...'
+      );
       const dns = require('dns').promises;
       const allServerIds = new Set([
         config.selectedServerId as string,
@@ -1142,7 +1145,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (this.lanResolverForDns) {
         this.logToManager(
           'info',
-          `DNS 接管：内网/captive 域名将经原 LAN 解析器 ${this.lanResolverForDns} 解析`
+          `DNS takeover: intranet/captive domains will be resolved via the original LAN resolver ${this.lanResolverForDns}`
         );
       }
     }
@@ -1181,14 +1184,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         this.workVpnEvaluateRejected = true;
         this.logToManager(
           'warn',
-          `工作 VPN：内核不接受内部域名自动识别规则，本次已关闭（${res.stderr.trim().split('\n').pop()}）`
+          `Work VPN: the core rejected the internal-domain auto-detection rules, disabled for this session (${res.stderr.trim().split('\n').pop()})`
         );
         singboxConfig = this.generateSingBoxConfig(config, resolvedServerIps);
         await this.writeSingBoxConfig(singboxConfig);
       }
     }
     this.markStart('configGen'); // 生成 + 写盘
-    this.logToManager('info', 'sing-box 配置文件已生成');
+    this.logToManager('info', 'sing-box config file generated');
 
     // 4.5 启动前配置校验 gate：剔除会致整体启动 FATAL 的坏节点后重写盘（插在写盘后、retry 前 →
     //     gate 抛错由 start() catch 收口，不进 retry；选中节点被剔/全部剔光/降级 → throw 不启动）。
@@ -1238,7 +1241,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           // issue #176：软化文案——多数是「起核较慢/争用」而非真失败，避免「启动失败」吓到用户（#176 即因此报 bug）。
           this.logToManager(
             'warn',
-            `sing-box 起核较慢，正在自动重试（第 ${attempt} 次）: ${error.message}`
+            `sing-box is slow to start, retrying automatically (attempt ${attempt}): ${error.message}`
           );
           // 端口被占（含探针端口在 osascript 授权窗口内被抢占）→ 重分配探针端口并重写配置。
           // retry 在 onRetry 后有 2s+ 退避，足够这段 ms 级异步完成。
@@ -1288,7 +1291,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
               } catch (e) {
                 this.logToManager(
                   'warn',
-                  `启动 gate 引用修正失败（将按现有配置重试）: ${(e as Error)?.message ?? e}`
+                  `Start gate reference fix failed (retrying with the current config): ${(e as Error)?.message ?? e}`
                 );
               }
             })();
@@ -1317,11 +1320,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         const loadDir = path.dirname(this.getSingBoxPath());
         this.logToManager(
           'warn',
-          `内核启动失败疑因 libcronet 缺失/损坏，正在强校验自愈（hash）后重启一次: ${msg}`
+          `Core start failed, likely due to a missing/corrupted libcronet; self-healing with strict (hash) verification and restarting once: ${msg}`
         );
         const heal = await resourceManager.ensureCronetHealthy(loadDir, { strong: true });
         if (heal.action === 'restored') {
-          this.logToManager('info', `libcronet 已从内置恢复，重启内核一次...`);
+          this.logToManager(
+            'info',
+            `libcronet restored from the bundled copy, restarting the core once...`
+          );
           try {
             await runStartWithRetry();
           } catch (e) {
@@ -1351,7 +1357,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
     this.lastStartReadyRetries = readyRetries;
     if (readyRetries > 0) {
-      this.logToManager('info', `sing-box 经 ${readyRetries} 次就绪重试后启动成功`);
+      this.logToManager('info', `sing-box started after ${readyRetries} readiness retries`);
     }
 
     // 出口路由托管：选中的全局出口 = TS System + 承载全隧道 → 在其内核接口装 exit 拆半默认路由
@@ -1384,12 +1390,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      this.logToManager('warn', `系统代理状态同步失败: ${msg}`);
+      this.logToManager('warn', `System proxy state sync failed: ${msg}`);
       // 非致命：核心已起但系统代理没设上 → UI 会显示「已连接」而流量实未走代理。发一条非终态提示告知用户
       // （enableProxy 内部已 fail-closed 关掉半残留，不会留死端口），避免「显示连上、实际没代理」的静默不一致（L-4）。
       if (config.proxyModeType === 'systemProxy') {
         this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
-          message: `系统代理设置失败：${msg}。核心已启动但流量可能未走代理，请检查系统网络权限后重试。`,
+          message: `Failed to set the system proxy: ${msg}. The core is running but traffic may not go through the proxy; check the system network permissions and retry.`,
           errorCode: ProxyErrorCode.SYSTEM_PROXY_FAILED,
           code: -3,
         });
@@ -1417,7 +1423,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     } catch (e) {
       this.logToManager(
         'warn',
-        `系统 DNS 接管状态同步失败: ${e instanceof Error ? e.message : String(e)}`
+        `System DNS takeover state sync failed: ${e instanceof Error ? e.message : String(e)}`
       );
     }
 
@@ -1471,7 +1477,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // 消除「核起→首帧」黑洞窗口）——不在此单独置 flag，避免 flag 与 selector 脱节（flag 只在 PUT 成功后置）。
       void this.reassertSelectorSelection(config).finally(() => {
         // S1：reassert 完成（selector 已校正回 config.selectedServerId 或放弃）→ 放行出口首探（whenSelectorSettled）。
-        this.markSelectorSettled('reassert 完成');
+        this.markSelectorSettled('reassert done');
         // F-C 解锁污染根治（契约收口）：reassert 可能实际翻转 selector（cache_file 复活旧选择 → 校正回 config 选中，
         // 含 rule-sel）。该翻转不经 switchMode、原**不在 unlock invalidate 契约内** → boot 窗口内起跑的解锁轮会经错出口
         // 探测、结果被当新鲜 commit 污染 store/cache（epoch 守卫失明）。此处补入契约：epoch 作废 boot 窗口轮，GAP-1
@@ -1484,7 +1490,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // P2a：启用代理 / 切接管模式后延迟一次连接 flush（见 scheduleConnectionFlush）——RST 泄漏成真实 IP 的旧连接
       // 逼其重连重解析（经 FakeIP 走代理），不重启内核；node 热切换不经 startInternal、由 interrupt 开关另管。
       // S1：无管理 API（<1.14）无 reassert 可等 → 立即放行出口首探（selector default 即用户意图，无缓存携带窗口）。
-      this.markSelectorSettled('无管理 API');
+      this.markSelectorSettled('no management API');
       this.scheduleConnectionFlush(config);
     }
   }
@@ -1510,7 +1516,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         // 旧选择（症状放大器）。A/C 落地后由 settle 对账重启收敛，此处保留观测日志。
         this.logToManager(
           'warn',
-          `selector 校正放弃：选中节点 ${String(targetId)} 不在运行核 tag 映射，待启动后对账收敛`
+          `Selector correction abandoned: selected node ${String(targetId)} is not in the running core's tag map; will reconcile after start`
         );
         break;
       }
@@ -1583,7 +1589,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private markSelectorSettled(reason: string): void {
     if (!this.selectorSettled) return;
     this.selectorSettled.resolve();
-    this.logToManager('debug', `selector-settled 放行出口首探（${reason}）`);
+    this.logToManager('debug', `selector-settled: releasing the first exit probe (${reason})`);
   }
 
   /**
@@ -1617,7 +1623,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       const gw = parseDefaultGateway(String(stdout));
       if (gw) {
         this.savedDefaultGateway = gw;
-        this.logToManager('info', `已记录系统默认路由网关 ${gw}（停核安全网）`);
+        this.logToManager(
+          'info',
+          `Recorded system default route gateway ${gw} (safety net for core stop)`
+        );
       }
     } catch {
       /* best-effort：读不到默认路由不阻塞起核，停核也就不补回 */
@@ -1657,7 +1666,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       await this.helperManager?.restoreDefaultRoute(gw);
       this.logToManager(
         'info',
-        `停核后系统默认路由缺失，经 helper 补回 ${gw}（当前网关；sing-tun setRoutes EEXIST 善后误删、unsetRoutes 不回填）`
+        `System default route missing after core stop; restored ${gw} via helper (current gateway; sing-tun setRoutes EEXIST cleanup deletes it by mistake and unsetRoutes does not put it back)`
       );
     } catch {
       /* best-effort：补回失败不阻塞停核拆除 */
@@ -1769,7 +1778,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     try {
       await this.stop({ quitting: true });
     } catch (e) {
-      this.logToManager('warn', `退出停止代理失败: ${e instanceof Error ? e.message : String(e)}`);
+      this.logToManager(
+        'warn',
+        `Failed to stop the proxy on quit: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
     if (process.platform === 'darwin') {
       // sing-box 由 root helper 托管（非 GUI 子进程）→ 显式让 helper 停 child + 扫孤儿（覆盖跨会话残留）。
@@ -1810,11 +1822,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     ).catch(() => ({ released: false, polls: 0 }));
     if (released) {
       // 仅在确实等过（>1 次探测）才记一行，避免无残留时刷无意义日志。
-      if (polls > 1) this.logToManager('info', `Windows TUN 适配器 ${name} 已释放，继续启动`);
+      if (polls > 1)
+        this.logToManager('info', `Windows TUN adapter ${name} released, continuing start`);
     } else {
       this.logToManager(
         'warn',
-        `Windows TUN 适配器 ${name} 释放等待超时，仍继续启动（如起核失败将自动重试）`
+        `Timed out waiting for Windows TUN adapter ${name} to be released; continuing start anyway (will retry automatically if the core fails to start)`
       );
     }
   }
@@ -1849,7 +1862,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (dismissed) return; // 静默落 osascript（与今天 dismissed 行为一致）
     const decision = await this.helperGate(hs, config).catch(() => 'proceed' as const);
     if (decision === 'abort') {
-      const err = new Error('用户取消了提权助手引导') as Error & { code?: string };
+      const err = new Error('User cancelled the privileged helper setup') as Error & {
+        code?: string;
+      };
       err.code = 'HELPER_GATE_ABORTED';
       throw err;
     }
@@ -1899,7 +1914,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       void this.switchMode(pendingSwitch).catch((e) =>
         this.logToManager(
           'warn',
-          `生命周期后配置重放失败: ${e instanceof Error ? e.message : String(e)}`
+          `Post-lifecycle config replay failed: ${e instanceof Error ? e.message : String(e)}`
         )
       );
     }
@@ -1944,7 +1959,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (!cfg) return;
       // helper gate abort / 其它错误内部消化（终态=停止），防 timer 回调 unhandled rejection
       void this.restart(cfg).catch((e) => {
-        this.logToManager('warn', `去抖重启结束: ${e instanceof Error ? e.message : String(e)}`);
+        this.logToManager(
+          'warn',
+          `Debounced restart ended: ${e instanceof Error ? e.message : String(e)}`
+        );
         // 去抖重启失败 → sing-box 未拉起，终态清掉曾指向我们的系统代理，避免死端口致全网断（marker 门控、幂等）。
         void this.ensureSystemProxyCleared();
       });
@@ -1975,12 +1993,15 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       void this.tailscaleApiClient
         ?.closeAllConnections()
         .then(() =>
-          this.logToManager('info', '启用后连接 flush：管理 API CloseAllConnections → ok')
+          this.logToManager(
+            'info',
+            'Post-enable connection flush: management API CloseAllConnections -> ok'
+          )
         )
         .catch((e) =>
           this.logToManager(
             'info',
-            `启用后连接 flush：管理 API CloseAllConnections 失败(${(e as Error)?.message ?? e})`
+            `Post-enable connection flush: management API CloseAllConnections failed (${(e as Error)?.message ?? e})`
           )
         );
     }, ProxyManager.CONNECTION_FLUSH_DELAY_MS);
@@ -2027,7 +2048,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           this.customRuleFilesDegraded = true;
           this.logToManager(
             'warn',
-            `外化规则文件写失败，已删旧副本回退 inline: ${name} (${e instanceof Error ? e.message : String(e)})`
+            `Failed to write externalized rule file, removed the old copy and fell back to inline: ${name} (${e instanceof Error ? e.message : String(e)})`
           );
         }
       }
@@ -2035,7 +2056,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       this.customRuleFilesDegraded = true;
       this.logToManager(
         'warn',
-        `落盘外化规则文件失败（回退 inline）: ${e instanceof Error ? e.message : String(e)}`
+        `Failed to persist externalized rule files (falling back to inline): ${e instanceof Error ? e.message : String(e)}`
       );
     }
   }
@@ -2057,7 +2078,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     } catch (e) {
       this.logToManager(
         'warn',
-        `热更外化规则文件失败，退回去抖重启: ${e instanceof Error ? e.message : String(e)}`
+        `Hot update of externalized rule files failed, falling back to a debounced restart: ${e instanceof Error ? e.message : String(e)}`
       );
       this.scheduleDebouncedRestart();
     }
@@ -2104,7 +2125,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    */
   async switchMode(newConfig: UserConfig): Promise<void> {
     // core-swap 手动轴门控：内核替换窗口中拒绝切模式/切节点——防 clash_api 打到半替换核、防重启式切换撞核。
-    this.rejectIfCoreSwapInProgress('切换代理模式');
+    this.rejectIfCoreSwapInProgress('proxy mode switch');
     // 丢失更新修复（bug#5）：start/stop/restart 在飞时**绝不能**走下面「未运行」早退丢弃——restart 的 stop→spawn
     // 空窗句柄为 null，早退会让变更对核永久丢失（且 startInternal 头会覆写 currentConfig）。暂存，settle 后由
     // endLifecycleOp 重放对账（H-1 pendingForceRestartConfig 同型）。**必须先于句柄判空**。
@@ -2189,7 +2210,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         void this.reconcileLoginFallback(this.selectedExitBackendState());
         return;
       }
-      this.logToManager('warn', '热切换失败，退回重启式切换');
+      this.logToManager('warn', 'Hot switch failed, falling back to a restart-based switch');
     }
 
     // 生成无关变更（仅 mainSessionViaProxy/ghProxyPrefix/订阅元数据/内置 geo 戳/未引用资源 等归一化字段，
@@ -2228,7 +2249,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     ) {
       this.logToManager(
         'info',
-        '仅新增未引用节点（订阅刷新等），免重启应用（新节点下次启动/被选中时生效）'
+        'Only unreferenced nodes were added (subscription refresh, etc.); applied without restart (new nodes take effect on next start or when selected)'
       );
       this.currentConfig = newConfig;
       // H-1：defer 更新 currentConfig 后同样刷新待决 force-restart 快照，防 timer 重启回退到旧节点（见热切腿说明）。
@@ -2241,7 +2262,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 其余变化（模式/端口/TUN/规则/选中或被引用节点集合/interrupt 开关 等需重生成配置的项）→ 重启应用。
     // 去抖合并：先把缓存更新到最新 newConfig（窗口内 hotSwitch/no-op/再次结构变更都对账到它），
     // 再调度 trailing 重启（~1.5s 内连改多条只重启一次，消除「连改 5 条规则=5 次断流」）。
-    this.logToManager('info', '配置已更改，调度去抖重启以应用...');
+    this.logToManager('info', 'Config changed, scheduling a debounced restart to apply it...');
     this.currentConfig = newConfig;
     // H-1：结构性重启用更新的完整 config → 超代任何待决 force-restart 快照（newer 胜，避免旧 force cfg 反 shadow 本次变更）。
     this.pendingForceRestartConfig = null;
@@ -2365,7 +2386,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (pairs.length === 0) return;
     const client = this.tailscaleApiClient;
     if (!client) {
-      this.logToManager('warn', '切换节点断连：管理 API 客户端未就绪，跳过');
+      this.logToManager(
+        'warn',
+        'Node switch disconnect: management API client not ready, skipping'
+      );
       return;
     }
     // 一次性订阅 Connections 流：首帧（reset）即内核当前全量连接。关掉命中 pair 的活连接（跳过 closedAt>0 死连接
@@ -2382,7 +2406,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       }
     };
     const guard = setTimeout(() => {
-      this.logToManager('warn', '切换节点断连：连接列表首帧超时，跳过');
+      this.logToManager(
+        'warn',
+        'Node switch disconnect: timed out waiting for the first connections frame, skipping'
+      );
       finish();
     }, 3000);
     stop = client.subscribeConnections(1_000_000_000, (events) => {
@@ -2402,7 +2429,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       const pairsDesc = pairs.map((p) => `${p.selectorTag}:${p.oldMemberTag}`).join(',');
       this.logToManager(
         'info',
-        `切换节点断连：关旧成员存量连接 ${closed} 条（pairs=${pairsDesc}）`
+        `Node switch disconnect: closed ${closed} existing connection(s) of the old member (pairs=${pairsDesc})`
       );
       finish();
     });
@@ -2793,7 +2820,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (!memberTag) return false;
     const client = this.tailscaleApiClient;
     if (!client) {
-      this.logToManager('warn', `管理 API 客户端未就绪，无法热切换 ${selectorTag}`);
+      this.logToManager(
+        'warn',
+        `Management API client not ready, cannot hot-switch ${selectorTag}`
+      );
       return false;
     }
     // gRPC SelectOutbound throws on error（与 clash_api 的 {ok,status} 不同）：catch 包成 false，退去抖重启兜底。
@@ -2802,11 +2832,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     } catch (e) {
       this.logToManager(
         'warn',
-        `管理 API 热切换 ${selectorTag} 失败：${(e as Error)?.message ?? e}`
+        `Management API hot switch of ${selectorTag} failed: ${(e as Error)?.message ?? e}`
       );
       return false;
     }
-    this.logToManager('info', `已热切换 ${selectorTag} → ${memberTag}（管理 API，无重启）`);
+    this.logToManager(
+      'info',
+      `Hot-switched ${selectorTag} -> ${memberTag} (management API, no restart)`
+    );
     return true;
   }
 
@@ -2946,7 +2979,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     } catch (e) {
       this.logToManager(
         'warn',
-        `TS 出口恢复腿异常: ${e instanceof Error ? e.message : e}`,
+        `TS exit recovery step error: ${e instanceof Error ? e.message : e}`,
         'sing-box'
       );
     } finally {
@@ -2976,7 +3009,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (!stableID) {
       this.logToManager(
         'debug',
-        `热重设 exit_node 跳过：peers 未解到 stableID（exitNode=${exitNode}）`,
+        `Hot reset of exit_node skipped: no stableID resolved from peers (exitNode=${exitNode})`,
         'sing-box'
       );
       return false;
@@ -2985,14 +3018,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       await client.setTailscaleExitNode(server.name, stableID);
       this.logToManager(
         'info',
-        `已热重设 TS exit_node → ${peer?.hostName || exitNode}（stableID=${stableID}）`,
+        `Hot-reset TS exit_node -> ${peer?.hostName || exitNode} (stableID=${stableID})`,
         'sing-box'
       );
       return true;
     } catch (e) {
       this.logToManager(
         'warn',
-        `热重设 exit_node 失败: ${e instanceof Error ? e.message : e}`,
+        `Hot reset of exit_node failed: ${e instanceof Error ? e.message : e}`,
         'sing-box'
       );
       return false;
@@ -3009,7 +3042,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       const name = this.currentConfig?.servers.find((s) => s.id === serverId)?.name;
       this.logToManager(
         'info',
-        `组网出口「${name ?? serverId}」尚未登录，登录期默认路由让位直连`,
+        `Mesh exit "${name ?? serverId}" is not logged in yet; the default route falls back to direct during login`,
         'sing-box'
       );
       this.sendEventToRenderer(IPC_CHANNELS.EVENT_MESH_LOGIN_FALLBACK, {
@@ -3068,7 +3101,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           // tag 缺失（罕见：核停/gate 剔除）→ 无法 PUT 回；清 flag 避免永卡，selector 由 reassert/planHotSwitch 兜底。
           this.logToManager(
             'warn',
-            `组网出口让位撤销：找不到出口 tag（${engagedId}），跳过 selector 切回`,
+            `Mesh exit fallback revoked: exit tag missing (${engagedId}), skipping the selector switch-back`,
             'sing-box'
           );
         }
@@ -3077,7 +3110,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         this.bootstrapFallbackServerId = null;
         this.logToManager(
           'info',
-          `组网出口「${name ?? engagedId}」让位撤销，默认路由切回该出口`,
+          `Mesh exit "${name ?? engagedId}" fallback revoked; the default route switched back to this exit`,
           'sing-box'
         );
         this.sendEventToRenderer(IPC_CHANNELS.EVENT_MESH_LOGIN_FALLBACK, {
@@ -3169,7 +3202,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     const { reseed, warn } = decideCoreOverride(coreKind, this.coreVersion, bundledCore);
     if (reseed) {
       const before = this.coreVersion;
-      this.logToManager('info', `官方内核 ${before} 旧于随包基线 ${bundledCore}，用随包核替换...`);
+      this.logToManager(
+        'info',
+        `Official core ${before} is older than the bundled baseline ${bundledCore}, replacing it with the bundled core...`
+      );
       let reseedError = '';
       try {
         // darwin helperManager 恒 HelperManager；linux 为注入的 LinuxServiceHelper（installCore 同签名 duck-typing）。
@@ -3186,18 +3222,18 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       const { version, applied } = classifyReseedResult(lineAfter, before, bundledCore);
       this.coreVersion = version;
       if (applied) {
-        this.logToManager('info', `内核已用随包版刷新至 ${this.coreVersion}`);
+        this.logToManager('info', `Core refreshed to the bundled version ${this.coreVersion}`);
       } else {
         this.logToManager(
           'warn',
-          `随包内核刷新未生效（仍为 ${this.coreVersion}，期望 ≥ ${bundledCore}）${reseedError ? `：${reseedError}` : ''}；请退出代理后在「设置 · 内核 · 重置到出厂」手动切回随包核`
+          `Bundled core refresh did not take effect (still ${this.coreVersion}, expected >= ${bundledCore})${reseedError ? `: ${reseedError}` : ''}; stop the proxy and switch back to the bundled core manually via Settings > Advanced > Core Management > Reset core to factory`
         );
       }
     }
     if (warn) {
       this.logToManager(
         'warn',
-        `检测到非官方内核 ${this.coreVersion} 低于随包基线 ${bundledCore}，可能与新版配置不兼容（连接异常/功能缺失）；建议手动升级内核或在「设置 · 内核 · 重置到出厂」切回随包官方核`
+        `Detected unofficial core ${this.coreVersion} below the bundled baseline ${bundledCore}; it may be incompatible with the current config (connection issues/missing features). Upgrade the core manually or switch back to the bundled official core via Settings > Advanced > Core Management > Reset core to factory`
       );
       if (opts.emitRendererEvents) {
         this.sendEventToRenderer(IPC_CHANNELS.EVENT_CORE_BASELINE_WARNING, {
@@ -3237,7 +3273,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         classifyCoreBuild(this.coreVersionLine || `version ${this.coreVersion}`) === 'official';
       return { needsMacElevatedReseed, bundledVersion };
     } catch (e) {
-      this.logToManager('warn', `启动期随包核对齐异常: ${(e as Error)?.message ?? String(e)}`);
+      this.logToManager(
+        'warn',
+        `Startup bundled-core alignment error: ${(e as Error)?.message ?? String(e)}`
+      );
       return { needsMacElevatedReseed: false, bundledVersion };
     }
   }
@@ -3293,7 +3332,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       this.coreVersionFingerprint = fingerprint;
       return detected;
     } catch (error) {
-      this.logToManager('error', `获取核心版本失败: ${(error as any).message}`);
+      this.logToManager('error', `Failed to get the core version: ${(error as any).message}`);
       return coreManifest.bundledCoreVersion; // 不写 'unknown' 缓存，下次仍可重试
     }
   }
@@ -3347,7 +3386,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     } catch (error) {
       // 仅影响 classifyCoreBuild（fork 判定）的最佳努力细节；主版本检测（getCoreVersion）有独立错误日志。
       // 命令偶发失败常自恢复（下次 start force 重取），降 debug 避免误导（曾在真机日志刷 warn 但版本已正常检测）。
-      this.logToManager('debug', `获取核心版本行失败: ${(error as any).message}`);
+      this.logToManager('debug', `Failed to get the core version line: ${(error as any).message}`);
       this.coreVersionLine = null;
       return '';
     }
@@ -3372,7 +3411,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       const cfg = this.generateSingBoxConfig(this.currentConfig);
       return JSON.stringify(cfg, null, 2);
     } catch (e) {
-      this.logToManager('warn', `预检配置生成失败: ${(e as any)?.message ?? e}`);
+      this.logToManager('warn', `Preflight config generation failed: ${(e as any)?.message ?? e}`);
       return null;
     } finally {
       this.coreVersion = savedVersion;
@@ -3516,30 +3555,30 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     };
     let p = await probe();
     if (!p.bindBusy && !p.listening) {
-      this.logToManager('info', `[clash_api] 端口空闲，正常继续`);
+      this.logToManager('info', `[clash_api] port is free, continuing`);
       return;
     }
     this.logToManager(
       'warn',
-      `[clash_api] 仍被占用(bindBusy=${p.bindBusy} listening=${p.listening})，进入清理（helper=${!!this.helperManager}）`
+      `[clash_api] still in use (bindBusy=${p.bindBusy} listening=${p.listening}), starting cleanup (helper=${!!this.helperManager})`
     );
 
     // ② 有活监听者（孤儿/外部/旧路径 sing-box）→ 按端口提权杀（freePort 零提权 / osascript 带超时）
     if (p.listening) {
       if (this.helperManager && (await this.helperManager.isReady())) {
-        this.logToManager('info', `[clash_api] helper 就绪 → freePort 按端口清理`);
+        this.logToManager('info', `[clash_api] helper ready -> freePort cleanup by port`);
         const r = await this.helperManager.freePort(PORT);
-        this.logToManager('info', `[clash_api] freePort 结果: ${JSON.stringify(r)}`);
+        this.logToManager('info', `[clash_api] freePort result: ${JSON.stringify(r)}`);
         if (r.foreign) throw this.clashPortError('FOREIGN', r.foreign);
       }
       p = await probe();
       if (p.listening && this.startInteractive && process.platform === 'darwin') {
         this.logToManager(
           'warn',
-          `[clash_api] freePort 未清净 → osascript 按端口清理（带超时，弹前置顶窗口）`
+          `[clash_api] freePort did not clear the port -> osascript cleanup by port (with timeout, window brought to front first)`
         );
         const res = await this.osascriptFreePort(PORT);
-        this.logToManager('info', `[clash_api] osascript 按端口清理结果: ${res}`);
+        this.logToManager('info', `[clash_api] osascript cleanup-by-port result: ${res}`);
         if (res === 'cancelled') throw this.clashPortError('AUTH_CANCELLED');
         if (res === 'foreign') throw this.clashPortError('FOREIGN');
         p = await probe();
@@ -3553,12 +3592,15 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         // M5：Windows helper 就绪但首次 freePort 未清净（可能竞态/刚退 TIME_WAIT 转监听）→ 再试一次。
         // 注：Windows 无 osascript 等价的零提权清理；helper 未装=设计现状（可选加速层），
         // 不冒险加 RunAs taskkill（按映像名杀会误杀用户其他 sing-box 进程）。
-        this.logToManager('info', `[clash_api] Windows helper freePort 首次未清净，重试一次`);
+        this.logToManager(
+          'info',
+          `[clash_api] Windows helper freePort did not clear the port on the first try, retrying once`
+        );
         await this.helperManager.freePort(PORT);
         p = await probe();
       }
       if (!p.bindBusy && !p.listening) {
-        this.logToManager('info', `[clash_api] 活监听者已清掉，端口空闲`);
+        this.logToManager('info', `[clash_api] live listener cleared, port is free`);
         return;
       }
       if (p.listening) {
@@ -3566,11 +3608,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           const ready = this.helperManager && (await this.helperManager.isReady());
           this.logToManager(
             'error',
-            `[clash_api] Windows 活监听者仍在 → 终态 BUSY：${ready ? 'helper freePort 重试后仍未清净' : '未装 helper，无零提权清理手段（建议安装 Windows 提权 helper）'}`
+            `[clash_api] Windows live listener still present -> terminal BUSY: ${ready ? 'helper freePort still did not clear it after a retry' : 'helper not installed, no way to clean up without elevation (installing the Windows privileged helper is recommended)'}`
           );
         } else {
           // 仍有活监听者没杀掉（非交互/取消/外部）
-          this.logToManager('error', `[clash_api] 活监听者仍在 → 终态 BUSY`);
+          this.logToManager('error', `[clash_api] live listener still present -> terminal BUSY`);
         }
         throw this.clashPortError('BUSY');
       }
@@ -3587,17 +3629,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (this.needsOsascript()) {
         this.logToManager(
           'info',
-          `[clash_api] TIME_WAIT 残留，本次以 root 启动 sing-box（SO_REUSEADDR 复用同 uid 残留）→ 跳过等待直接放行`
+          `[clash_api] TIME_WAIT leftover; sing-box starts as root this time (SO_REUSEADDR reuses same-uid leftovers) -> skipping the wait`
         );
         return;
       }
       this.logToManager(
         'warn',
-        `[clash_api] 端口处于回收中(TIME_WAIT)，等待系统释放（≤35s，无需结束进程）...`
+        `[clash_api] port is being reclaimed (TIME_WAIT), waiting for the OS to release it (<=35s, no need to kill any process)...`
       );
       this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
         message:
-          '上一会话的 clash_api 端口正在回收（约 30 秒），请稍候自动重试或片刻后再启动，无需手动结束进程。',
+          'The clash_api port from the previous session is being reclaimed (about 30 seconds). Wait for the automatic retry or start again shortly; no need to kill any process.',
         errorCode: ProxyErrorCode.CLASH_API_PORT_RECYCLING,
         code: -5,
       });
@@ -3606,17 +3648,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         await new Promise((r) => setTimeout(r, 1000));
         p = await probe();
         if (!p.bindBusy && !p.listening) {
-          this.logToManager('info', `[clash_api] TIME_WAIT 已回收，端口空闲`);
+          this.logToManager('info', `[clash_api] TIME_WAIT reclaimed, port is free`);
           return;
         }
         if (p.listening) break; // 期间又冒出活监听者 → 跳出走 BUSY 终态（罕见）
       }
       if (p.bindBusy && !p.listening) {
-        this.logToManager('error', `[clash_api] TIME_WAIT 35s 未回收 → 终态`);
+        this.logToManager('error', `[clash_api] TIME_WAIT not reclaimed within 35s -> terminal`);
         throw this.clashPortError('BUSY_TIMEWAIT');
       }
     }
-    this.logToManager('error', `[clash_api] 清理后仍被占用 → 终态 BUSY`);
+    this.logToManager('error', `[clash_api] still in use after cleanup -> terminal BUSY`);
     throw this.clashPortError('BUSY');
   }
 
@@ -3653,17 +3695,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     let msg: string;
     let code: string;
     if (kind === 'FOREIGN') {
-      msg = `clash_api 端口 ${PORT} 被${occupant ? `「${occupant}」` : '非 sing-box 进程'}占用，请手动结束该进程后重试`;
+      msg = `clash_api port ${PORT} is in use by ${occupant ? `"${occupant}"` : 'a non-sing-box process'}; end that process manually and retry`;
       code = 'CLASH_API_PORT_BUSY_FOREIGN';
     } else if (kind === 'AUTH_CANCELLED') {
-      msg = `清理占用 clash_api 端口 ${PORT} 的进程需要授权，已取消`;
+      msg = `Clearing the process holding clash_api port ${PORT} requires authorization, which was cancelled`;
       code = 'CLASH_API_PORT_BUSY_AUTH_CANCELLED';
     } else if (kind === 'BUSY_TIMEWAIT') {
       // TIME_WAIT 无进程可杀，提示「稍候重试」而非「结束进程」（避免误导用户去杀不存在的进程）
-      msg = `clash_api 端口 ${PORT} 仍在系统回收中（上一会话残留的 TIME_WAIT，约 30 秒），请稍候片刻再启动，无需手动结束进程`;
+      msg = `clash_api port ${PORT} is still being reclaimed by the OS (TIME_WAIT left over from the previous session, about 30 seconds); wait a moment and start again, no need to kill any process`;
       code = 'CLASH_API_PORT_BUSY';
     } else {
-      msg = `clash_api 端口 ${PORT} 被占用（残留 sing-box 未释放或被外部进程占用），请手动结束占用进程后重试`;
+      msg = `clash_api port ${PORT} is in use (a leftover sing-box did not release it, or another process holds it); end the process holding it manually and retry`;
       code = 'CLASH_API_PORT_BUSY';
     }
     const err = new Error(msg) as Error & { code?: string };
@@ -3721,7 +3763,10 @@ done
       };
       // 硬超时：授权框被遮挡/无人应答 120s → 杀 osascript 按取消处理，绝不让 start() 永挂（修卡死诱因）。
       const timer = setTimeout(() => {
-        this.logToManager('warn', `[clash_api] osascript 授权框 120s 未应答，按取消处理`);
+        this.logToManager(
+          'warn',
+          `[clash_api] osascript auth dialog got no response in 120s, treating it as cancelled`
+        );
         try {
           proc.kill('SIGKILL');
         } catch {
@@ -3733,7 +3778,10 @@ done
       proc.on('close', (code) => {
         const k = out.match(/KILLED(.+)/);
         if (k)
-          this.logToManager('info', `已提权按端口清掉占用 ${port} 的 sing-box: ${k[1].trim()}`);
+          this.logToManager(
+            'info',
+            `Killed the sing-box holding port ${port} with elevation: ${k[1].trim()}`
+          );
         if (code !== 0)
           finish('cancelled'); // 用户取消授权(-128) 等
         else finish(out.includes('FOREIGN') ? 'foreign' : 'freed');
@@ -3765,7 +3813,7 @@ done
       isRunning: () => this.getStatus().running && !!this.tailscaleApiClient,
       selectSlot: (k: number, tag: string): Promise<void> => {
         const client = this.tailscaleApiClient;
-        if (!client) return Promise.reject(new Error('管理 API 客户端未就绪'));
+        if (!client) return Promise.reject(new Error('Management API client not ready'));
         return client.selectOutbound(`probe-selector-${k}`, tag);
       },
       tagOf: (id: string): string => this.currentIdToTagMap?.get(id) ?? id,
@@ -3823,13 +3871,13 @@ done
       this.raceUpstreamIps = ups.directIps; // §E.1：自定义上游 route 直连放行（内置已在 bootstrap-direct，重复无害）
       this.logToManager(
         'info',
-        `节点域名 race 解析就绪：127.0.0.1:${this.raceServerPort}（Tier1 ${ups.tier1.length} / Tier2 ${ups.tier2.length}）`
+        `Node domain race resolver ready: 127.0.0.1:${this.raceServerPort} (Tier1 ${ups.tier1.length} / Tier2 ${ups.tier2.length})`
       );
     } catch (e) {
       this.raceServerPort = 0;
       this.logToManager(
         'warn',
-        `race server 启动失败，降级单上游(dns-bootstrap): ${(e as Error)?.message ?? e}`
+        `Race server failed to start, falling back to a single upstream (dns-bootstrap): ${(e as Error)?.message ?? e}`
       );
     }
   }
@@ -3902,7 +3950,7 @@ done
     this.workVpnSnapshot = snap;
     this.workVpnFingerprint = workVpnFingerprint(snap);
     const summary = describeWorkVpn(snap);
-    if (summary) this.logToManager('info', `检测到工作 VPN：${summary}`);
+    if (summary) this.logToManager('info', `Work VPN detected: ${summary}`);
   }
 
   /** 把工作 VPN 的路由 / DNS / 服务器直连注入生成的配置，并记下 TUN 排除段供下次识别。 */
@@ -3931,7 +3979,7 @@ done
       if (res.tunExcludes.length > 0) {
         this.logToManager(
           'info',
-          `工作 VPN：${res.tunExcludes.length} 个网段/服务器绕过 FlowZ TUN：${res.tunExcludes.join(', ')}`
+          `Work VPN: ${res.tunExcludes.length} subnet(s)/server(s) bypass the FlowZ TUN: ${res.tunExcludes.join(', ')}`
         );
       }
     }
@@ -3960,7 +4008,7 @@ done
     if (!snap?.interfaces.some((it) => it.dnsServers.length > 0)) return;
     this.logToManager(
       'warn',
-      `工作 VPN 已连接（${describeWorkVpn(snap)}）：重新生成配置以关闭 strict_route，避免与 VPN 的 DNS 防泄漏互相封死`
+      `Work VPN connected (${describeWorkVpn(snap)}): regenerating the config with strict_route off to avoid deadlocking with the VPN's DNS leak protection`
     );
     this.scheduleDebouncedRestart();
   }
@@ -3995,7 +4043,7 @@ done
     if (hijacked.length > 0 && config.proxyModeType === 'tun') {
       this.logToManager(
         'warn',
-        `工作 VPN 接口 ${hijacked.join(', ')} 已被 FlowZ 自家 TUN 占用（起核时 VPN 正在重连），重新生成配置`
+        `Work VPN interface ${hijacked.join(', ')} was taken by FlowZ's own TUN (the VPN was reconnecting when the core started), regenerating the config`
       );
       this.scheduleDebouncedRestart();
       return;
@@ -4005,7 +4053,7 @@ done
       this.workVpnLastLoggedFingerprint = fp;
       this.logToManager(
         'info',
-        `工作 VPN 变化：${describeWorkVpn(snap) || '已断开'}（不重启 FlowZ；下次连接时应用规则）`
+        `Work VPN changed: ${describeWorkVpn(snap) || 'disconnected'} (FlowZ not restarted; rules apply on the next connect)`
       );
     }
   }
@@ -4060,7 +4108,7 @@ done
       } catch (error) {
         this.logToManager(
           'warn',
-          `macOS TUN 上游接口探测失败(${target})，回退自动检测: ${(error as Error)?.message ?? error}`
+          `macOS TUN upstream interface probe failed (${target}), falling back to auto-detect: ${(error as Error)?.message ?? error}`
         );
         return null;
       }
@@ -4069,12 +4117,15 @@ done
     if (interfaces.size !== 1) {
       this.logToManager(
         'warn',
-        `macOS TUN 节点分属多个出口接口(${Array.from(interfaces).join(', ')})，回退自动检测`
+        `macOS TUN nodes use multiple egress interfaces (${Array.from(interfaces).join(', ')}), falling back to auto-detect`
       );
       return null;
     }
     const iface = interfaces.values().next().value as string;
-    this.logToManager('info', `macOS TUN 上游接口按节点实际路由选择: ${iface}`);
+    this.logToManager(
+      'info',
+      `macOS TUN upstream interface chosen from the node's actual route: ${iface}`
+    );
     return iface;
   }
 
@@ -4262,7 +4313,7 @@ done
 
     this.logToManager(
       'debug',
-      `配置已生成: inbounds=${singboxConfig.inbounds.length}, outbounds=${singboxConfig.outbounds.length}, rule_set=${singboxConfig.route?.rule_set?.length || 0}`
+      `Config generated: inbounds=${singboxConfig.inbounds.length}, outbounds=${singboxConfig.outbounds.length}, rule_set=${singboxConfig.route?.rule_set?.length || 0}`
     );
 
     return singboxConfig;
@@ -4282,11 +4333,11 @@ done
     try {
       // 清空日志文件（截断为空）
       await fs.writeFile(logFilePath, '', 'utf-8');
-      this.logToManager('info', 'sing-box 日志文件已清空');
+      this.logToManager('info', 'sing-box log file cleared');
     } catch (error: any) {
       // 文件不存在，忽略
       if (error.code !== 'ENOENT') {
-        this.logToManager('error', `清空 sing-box 日志文件失败: ${error.message}`);
+        this.logToManager('error', `Failed to clear the sing-box log file: ${error.message}`);
       }
     }
   }
@@ -4301,12 +4352,12 @@ done
   private naiveUnavailableReason(server: ServerConfig): string {
     const status = resourceManager.getCronetLibStatus();
     if (status === 'copy-failed') {
-      return `选中的节点「${server.name}」是 NaiveProxy：libcronet 核心库已内置，但拷贝到核心目录失败（可能是权限/磁盘空间/杀软占用）。请重启应用重试或检查目录权限；如仍失败，请改用其它协议的节点。`;
+      return `The selected node "${server.name}" is NaiveProxy: the libcronet library is bundled, but copying it to the core directory failed (possibly permissions, disk space, or antivirus locking the file). Restart the app and retry, or check the directory permissions; if it still fails, use a node with a different protocol.`;
     }
     if (process.platform === 'darwin') {
-      return `选中的节点「${server.name}」是 NaiveProxy，但当前 macOS 核心未内置 cronet（暂无官方预编译库）。请选择其它协议的节点。`;
+      return `The selected node "${server.name}" is NaiveProxy, but the current macOS core does not include cronet (no official prebuilt library yet). Choose a node with a different protocol.`;
     }
-    return `选中的节点「${server.name}」是 NaiveProxy，但未找到 libcronet 核心库。请选择其它协议的节点。`;
+    return `The selected node "${server.name}" is NaiveProxy, but the libcronet library is missing. Choose a node with a different protocol.`;
   }
 
   /**
@@ -4445,7 +4496,11 @@ done
       if (r.ok) result = { ok: true };
       // failOpen（核缺失/超时/慢盘）≠ 不兼容 → indeterminate，渲染端给中性「无法判定」而非红色「不支持」。
       else if (r.failOpen)
-        result = { ok: false, indeterminate: true, error: '内核不可用或超时，无法判定兼容性' };
+        result = {
+          ok: false,
+          indeterminate: true,
+          error: 'Core unavailable or timed out; cannot determine compatibility',
+        };
       else result = { ok: false, error: (r.stderr || 'check failed').slice(0, 300) };
     } catch (e: any) {
       result = { ok: false, error: String(e?.message ?? e) };
@@ -4490,7 +4545,7 @@ done
       if (res.failOpen) {
         this.logToManager(
           'warn',
-          '启动前配置校验跳过（核心不可执行/校验超时），按现有配置直接启动'
+          'Pre-start config check skipped (core not executable / check timed out); starting with the current config'
         );
         break;
       }
@@ -4499,7 +4554,9 @@ done
       const firstLine = stderr.split('\n')[0]?.trim() || stderr.trim();
 
       if (prunes >= maxPrunes) {
-        throw new Error(`配置校验失败：已剔除 ${prunes} 个非法节点仍无法通过校验（${firstLine}）`);
+        throw new Error(
+          `Config validation failed: still failing after removing ${prunes} invalid node(s) (${firstLine})`
+        );
       }
 
       // 先按 outbounds[N] 反查；未命中再按 endpoints[N]（自定义 endpoint 用不兼容 type → endpoints[N] 报错，
@@ -4513,7 +4570,7 @@ done
         flagged = singboxConfig.endpoints![epIdx];
       }
       if (!flagged) {
-        throw new Error(`配置校验失败：${firstLine}`);
+        throw new Error(`Config validation failed: ${firstLine}`);
       }
       // 命中非节点出站（内置出站/探针）→ 不是坏节点问题，降级不启动（避免误剔内置出站致更大故障）。
       const NON_NODE_TYPES = new Set(['selector', 'urltest', 'direct', 'block']);
@@ -4523,7 +4580,7 @@ done
         flagged.tag === 'probe-direct-in' ||
         flagged.tag === 'probe-proxy-in';
       if (isProbeOrBuiltin) {
-        throw new Error(`配置校验失败：${firstLine}`);
+        throw new Error(`Config validation failed: ${firstLine}`);
       }
 
       // tag 反查 serverId：shadowtls 外层出站 tag 形如 `stls-out-<id>`，截前缀；其余经 idToTagMap 反查。
@@ -4540,11 +4597,13 @@ done
       }
       // 反查不到 serverId（理论不应发生）→ 降级不启动，不盲剔。
       if (!serverId) {
-        throw new Error(`配置校验失败：${firstLine}`);
+        throw new Error(`Config validation failed: ${firstLine}`);
       }
       // 决策①：选中节点被标中 → 报错让用户换，不自动回退到其它节点。
       if (serverId === config.selectedServerId) {
-        throw new Error(`选中节点「${flagged.tag}」配置无效，无法启动，请更换节点后重试`);
+        throw new Error(
+          `Selected node "${flagged.tag}" is misconfigured and cannot start; switch to another node and retry`
+        );
       }
 
       // 级联剔除该节点（含 detour 引用方、shadow-tls 配对）+ 重写盘后进入下一轮 check。
@@ -4554,7 +4613,10 @@ done
     }
 
     if (prunes > 0) {
-      this.logToManager('warn', `启动前配置校验剔除了 ${prunes} 个非法节点，已用剩余节点启动`);
+      this.logToManager(
+        'warn',
+        `Pre-start config check removed ${prunes} invalid node(s); started with the remaining nodes`
+      );
     }
     // 空数组也发：清除上次启动遗留的标灰（节点修好/换核复活后 UI 即恢复）。
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_INVALID_NODES, [
@@ -4621,7 +4683,9 @@ done
       ? this.currentIdToTagMap?.get(config.selectedServerId)
       : undefined;
     if (selectedTag && toRemove.has(selectedTag)) {
-      throw new Error(`选中节点「${selectedTag}」配置无效或其代理链依赖无效节点，请更换节点后重试`);
+      throw new Error(
+        `Selected node "${selectedTag}" is misconfigured or its proxy chain depends on an invalid node; switch to another node and retry`
+      );
     }
 
     // ② 删 outbound（含 endpoint）。
@@ -4635,7 +4699,9 @@ done
       if ((ob.type === 'selector' || ob.type === 'urltest') && Array.isArray(ob.outbounds)) {
         ob.outbounds = ob.outbounds.filter((t) => !toRemove.has(t));
         if (ob.tag === 'proxy-selector' && ob.outbounds.length === 0) {
-          throw new Error('没有可用的代理节点出站（全部节点未通过启动前配置校验）');
+          throw new Error(
+            'No usable proxy node outbounds (all nodes failed the pre-start config check)'
+          );
         }
         if (ob.default && toRemove.has(ob.default)) {
           ob.default = prunedSelectorDefault(ob.tag, ob.outbounds);
@@ -4654,14 +4720,14 @@ done
         if (!this.gateInvalidNodes.has(sid)) {
           const reason =
             origin === 'detour'
-              ? '代理链依赖的前置节点无效（detour 引用不存在）'
+              ? 'An upstream node in the proxy chain is invalid (the detour reference does not exist)'
               : seedTags.has(tag)
-                ? '配置无法通过 sing-box 校验'
-                : '所依赖的节点被剔除（级联）';
+                ? 'The config does not pass sing-box validation'
+                : 'A node it depends on was removed (cascade)';
           this.gateInvalidNodes.set(sid, { id: sid, tag, reason });
         }
       }
-      this.logToManager('warn', `启动前配置校验已剔除非法出站「${tag}」`);
+      this.logToManager('warn', `Pre-start config check removed invalid outbound "${tag}"`);
     }
   }
 
@@ -4726,8 +4792,8 @@ done
     if (dropped.length > 0) {
       this.logToManager(
         'warn',
-        `规则资源：${dropped.length} 个远程规则集在源上不存在(404)，已停用相关规则以避免代理启动失败：` +
-          `${dropped.join(', ')}（应用分流仍按进程名等其余规则生效）`
+        `Rule resources: ${dropped.length} remote rule set(s) do not exist at the source (404); the related rules were disabled to keep the proxy from failing to start: ` +
+          `${dropped.join(', ')} (app routing still works via process name and the other rules)`
       );
     }
   }
@@ -4831,7 +4897,7 @@ done
    */
   private async ensureLinuxTunCapabilities(): Promise<void> {
     if (!this.privilegeService)
-      throw new Error('privilegeService 未注入：ensureLinuxTunCapabilities 不可用');
+      throw new Error('privilegeService not injected: ensureLinuxTunCapabilities unavailable');
     return this.privilegeService.ensureCapabilities();
   }
 
@@ -4870,7 +4936,7 @@ done
           const stats = fsSync.statSync(filePath);
           // 检查文件是否属于 root (uid 0)
           if (stats.uid === 0) {
-            this.logToManager('info', `修复文件权限: ${filePath}`);
+            this.logToManager('info', `Fixing file permissions: ${filePath}`);
             // 使用 chown 修改文件所有权为当前用户
             const currentUser = process.env.USER || process.env.LOGNAME;
             if (currentUser) {
@@ -4881,11 +4947,11 @@ done
                 // 如果 chown 失败，尝试删除文件让 sing-box 重新创建
                 try {
                   fsSync.unlinkSync(filePath);
-                  this.logToManager('info', `已删除需要重新创建的文件: ${filePath}`);
+                  this.logToManager('info', `Deleted file so it can be recreated: ${filePath}`);
                 } catch {
                   this.logToManager(
                     'warn',
-                    `无法修复文件权限: ${filePath}，请手动删除或运行: sudo chown ${currentUser} "${filePath}"`
+                    `Cannot fix file permissions: ${filePath}; delete it manually or run: sudo chown ${currentUser} "${filePath}"`
                   );
                 }
               }
@@ -4923,7 +4989,7 @@ done
       return;
     }
     const script = `#!/bin/bash
-# FlowZ 看护脚本（osascript 以 root 执行）；勿手改。
+# FlowZ watchdog script (run as root via osascript); do not edit by hand.
 SB="$1"; CFG="$2"; LOG="$3"; PIDFILE="$4"; STOPFLAG="$5"; PARENT="$6"; FWD="$7"
 if [ "$FWD" = "1" ]; then sysctl -w net.inet.ip.forwarding=1 >/dev/null 2>&1; sysctl -w net.inet6.ip6.forwarding=1 >/dev/null 2>&1; fi
 "$SB" run -c "$CFG" > "$LOG" 2>&1 &
@@ -4988,20 +5054,20 @@ rm -f "$STOPFLAG"
     const helper = this.helperManager!;
     const fs = require('fs');
     if (!fs.existsSync(this.singboxPath)) {
-      throw new Error(`找不到 sing-box 可执行文件: ${this.singboxPath}`);
+      throw new Error(`sing-box executable not found: ${this.singboxPath}`);
     }
     const pidFile = getSingBoxPidPath();
     const startupLogFile = getSingBoxStartupLogPath();
     const forward = !!this.currentConfig?.allowLan;
     this.logToManager(
       'info',
-      `TUN 模式经提权 helper 启动 sing-box（免授权）${forward ? '，并开启 IP 转发' : ''}...`
+      `TUN mode: starting sing-box via privileged helper (no auth prompt)${forward ? ', with IP forwarding enabled' : ''}...`
     );
 
     const res = await helper.startCore(this.configPath, startupLogFile, forward);
     this.markStartLeg(startGen, 'spawn'); // 管道 RPC 往返 + helper 侧 CreateProcess 返回，**不含**核自身初始化
     if (!res.ok || !res.pid) {
-      throw new Error(res.error || 'helper 启动 sing-box 失败');
+      throw new Error(res.error || 'Helper failed to start sing-box');
     }
 
     this.singboxPid = res.pid;
@@ -5020,7 +5086,7 @@ rm -f "$STOPFLAG"
 
     if (!this.processExistsNoSpawn(res.pid)) {
       this.cleanup();
-      throw new Error('helper 报告已启动但进程不存在');
+      throw new Error('Helper reported a successful start but the process does not exist');
     }
     // B6：这一格 = 一次**零 spawn** 的存在性判定。
     //   改前它是 `isProcessAlive`（execSync → cmd.exe + tasklist），真机实测**这一格 2018–2584ms**，
@@ -5042,7 +5108,7 @@ rm -f "$STOPFLAG"
       pid: res.pid,
       startTime: this.startTime,
     });
-    this.logToManager('info', 'sing-box 已由提权 helper 启动成功（免授权）');
+    this.logToManager('info', 'sing-box started via privileged helper (no auth prompt)');
   }
 
   /**
@@ -5161,7 +5227,7 @@ rm -f "$STOPFLAG"
         // 探测链路全程 unknown（杀软拦 PS 等）→ fail-open 放行，绝不据此判失败（对齐 #159 反向门 fail-open 纪律）。
         this.logToManager(
           'warn',
-          `Windows TUN 适配器 ${adapterName} 存在性无法确认（探测失败），fail-open 继续`
+          `Cannot confirm that Windows TUN adapter ${adapterName} exists (probe failed), continuing fail-open`
         );
         return;
       }
@@ -5170,7 +5236,7 @@ rm -f "$STOPFLAG"
       recordPresence('absent');
       await this.helperManager?.stopCore().catch(() => {});
       throw new CoreStartRetryError(
-        `sing-box 已就绪但 TUN 适配器 ${adapterName} 未建立，正在自动重试`
+        `sing-box is ready but TUN adapter ${adapterName} was not created, retrying automatically`
       );
     }
 
@@ -5207,8 +5273,8 @@ rm -f "$STOPFLAG"
       // 第 1 腿撞地址冲突、第 2 腿因别的原因死且没写 FATAL 时，终态转化会拿着陈旧的地址冲突结论下判断。
       if (!superseded) this.lastStartupFatal = fatal;
       if (fatal) {
-        this.logToManager('error', `sing-box 启动失败：${fatal.message}`);
-        this.logToManager('debug', `sing-box FATAL 原文：${fatal.raw}`);
+        this.logToManager('error', `sing-box failed to start: ${fatal.message}`);
+        this.logToManager('debug', `sing-box FATAL raw: ${fatal.raw}`);
       }
       // issue #324 A3：dead 分支文案细分——win32+TUN 且探测可用（probeEverConclusive）却全程未见适配器 → 疑 wintun 被拦/
       //   驱动异常（非瞬态释放竞态）。否则（曾见适配器=瞬态，或探测全 unknown 无从判定）保持原「TUN 初始化未完成」文案。
@@ -5217,13 +5283,17 @@ rm -f "$STOPFLAG"
       const inferenceContradicted = !!fatal && fatal.kind !== 'tun-adapter-create';
       if (obs && isPersistentTunFailure(obs) && !inferenceContradicted) {
         throw new CoreStartRetryError(
-          'sing-box 启动期退出（TUN 适配器从未创建，疑 wintun 被拦/驱动异常），正在自动重试'
+          'sing-box exited during startup (TUN adapter was never created, likely wintun blocked or a driver failure), retrying automatically'
         );
       }
-      throw new CoreStartRetryError('sing-box 启动期退出（TUN 初始化未完成），正在自动重试');
+      throw new CoreStartRetryError(
+        'sing-box exited during startup (TUN initialization incomplete), retrying automatically'
+      );
     }
     // issue #176：软化文案——「未绑定」多因 Windows 重启争用下 wintun 适配器未及时释放致起核慢，非真失败。
-    throw new CoreStartRetryError('sing-box 起核较慢（管理接口尚未就绪），正在自动重试');
+    throw new CoreStartRetryError(
+      'sing-box is slow to start (management API not ready yet), retrying automatically'
+    );
   }
 
   /**
@@ -5276,15 +5346,15 @@ rm -f "$STOPFLAG"
     // 期间新 start B 接管后会改写 startupLogOffset、复位 startedViaWrapper、清空 lastStartupFatal——本腿此刻
     // 再读会错锚、写会污染 B，甚至对着 B 的会话发一张终态诊断卡。被接管就退回原始语义，不读不写不发事件。
     if (this.lifecycleGeneration !== startGen) {
-      return new Error('启动 sing-box 进程失败：无法获取进程 PID');
+      return new Error('Failed to start the sing-box process: could not get the process PID');
     }
     const fatal = this.readLastStartupFatal();
     this.lastStartupFatal = fatal;
     if (fatal) {
-      this.logToManager('error', `sing-box 启动失败：${fatal.message}`);
-      this.logToManager('debug', `sing-box FATAL 原文：${fatal.raw}`);
+      this.logToManager('error', `sing-box failed to start: ${fatal.message}`);
+      this.logToManager('debug', `sing-box FATAL raw: ${fatal.raw}`);
     }
-    const error = '启动 sing-box 进程失败：无法获取进程 PID';
+    const error = 'Failed to start the sing-box process: could not get the process PID';
     this.logToManager('error', error);
     // 地址冲突是确定性失败（重试一万次也不会好）→ 直接给终态，跳过外层 retry 预算。其余情况保持原有普通
     // Error 语义不变（交 runStartWithRetry 按既有规则判重试）。
@@ -5303,9 +5373,9 @@ rm -f "$STOPFLAG"
     // 文案只承诺当前真能做到的动作：TUN 地址尚未开放配置（P1-1 未落地），故引导「移除/禁用占用方网卡」，
     // 不写「到设置里改地址」——UI 上没有那个入口，那是把用户支到死路。
     const terminal = new CoreStartTunPersistentError(
-      `${fatal.message}请断开或禁用占用该地址的网卡（其它 VPN/TUN 客户端的残留适配器），然后重试。`
+      `${fatal.message} Disconnect or disable the network adapter using this address (a leftover adapter from another VPN/TUN client), then retry.`
     );
-    this.logToManager('error', `TUN 地址冲突，停止重试：${fatal.raw}`);
+    this.logToManager('error', `TUN address conflict, stopping retries: ${fatal.raw}`);
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
       message: terminal.message,
       errorCode: ProxyErrorCode.TUN_INIT_PERSISTENT,
@@ -5345,7 +5415,10 @@ rm -f "$STOPFLAG"
         throw e;
       }
       this.tunAddressAvoidanceArmed = true;
-      this.logToManager('warn', 'TUN 地址冲突：正在探测可用地址并重试一次...');
+      this.logToManager(
+        'warn',
+        'TUN address conflict: probing for a free address and retrying once...'
+      );
       this.markStart('tunAddrConflictRetry');
       await this.startInternal(config, options);
     }
@@ -5402,24 +5475,30 @@ rm -f "$STOPFLAG"
     if (!pick) return;
     this.effectiveTunInet4Address = pick.address;
     const describe = (c: TunAddressPick['skipped'][number]['cause']): string =>
-      c === 'in-use' ? '已被本机接口占用' : c === 'own-lan' ? '与本机网段重叠' : '探测不可用';
+      c === 'in-use'
+        ? 'in use by a local interface'
+        : c === 'own-lan'
+          ? 'overlaps a local subnet'
+          : 'probe unavailable';
     if (pick.reason === 'fallback') {
       this.logToManager(
         'warn',
-        `TUN 地址冲突已避让：${pick.skipped
-          .map((s) => `${s.address}（${describe(s.cause)}）`)
+        `TUN address conflict avoided: ${pick.skipped
+          .map((s) => `${s.address} (${describe(s.cause)})`)
           .join(
-            '、'
-          )} → 本次改用 ${pick.address}。占用方常是其它 VPN/TUN 客户端的残留网卡（可能已断开或隐藏，设备管理器默认不显示）`
+            ', '
+          )} -> using ${pick.address} this time. The occupant is usually a leftover adapter from another VPN/TUN client (possibly disconnected or hidden; Device Manager does not show it by default)`
       );
     } else if (pick.reason === 'exhausted') {
       // 逐条列出淘汰原因：只报「全部不可用」而回落到其中一个，读起来自相矛盾，也丢掉了「备选是探测不可用
       // 而非确证冲突」这个关键区别。
       this.logToManager(
         'warn',
-        `TUN 地址候选池无一可用（${pick.skipped
+        `No TUN address candidate is usable (${pick.skipped
           .map((s) => `${s.address}=${describe(s.cause)}`)
-          .join('、')}），回落默认 ${pick.address}——若起核失败请检查本机是否有占用该网段的残留网卡`
+          .join(
+            ', '
+          )}), falling back to the default ${pick.address} - if the core fails to start, check for a leftover adapter using this subnet`
       );
     }
   }
@@ -5527,7 +5606,7 @@ rm -f "$STOPFLAG"
     const terminal = new CoreStartTunPersistentError();
     this.logToManager(
       'error',
-      `Windows TUN 适配器（${resolveWinTunInterfaceName(this.currentConfig as UserConfig)}）持续未建立，起核重试预算耗尽 → 终态诊断，停止无谓重试（常见 wintun 被拦/驱动异常/冲突 VPN，亦可能配置/端口/内核致起核失败——开诊断采集看日志拍板）`
+      `Windows TUN adapter (${resolveWinTunInterfaceName(this.currentConfig as UserConfig)}) was never created and the core start retry budget is exhausted -> terminal diagnosis, stopping pointless retries (commonly wintun blocked / driver failure / a conflicting VPN; config, port, or core issues are also possible - enable Diagnostic Capture and check the logs to confirm)`
     );
     // 经既有 EVENT_PROXY_ERROR 通道上渲染端（携结构化 code 驱动诊断卡）；start() 收口的 invoke rejection 另设 proxyError。
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
@@ -5589,7 +5668,7 @@ rm -f "$STOPFLAG"
       if (st?.backgroundDisabled) {
         this.logToManager(
           'warn',
-          'helper「允许在后台」被系统关闭：本次走 osascript 看护脚本（不依赖 BTM，避免 daemon 被系统收割）。请在「系统设置 > 通用 > 登录项与扩展」重新打开开关以恢复免授权启停'
+          'Helper "Allow in the Background" is turned off by the system: using the osascript watchdog script this time (it does not depend on BTM, so the system will not reap the daemon). Turn the toggle back on in System Settings > General > Login Items & Extensions to restore prompt-free start/stop'
         );
       } else if (await this.helperManager.isReady()) {
         try {
@@ -5599,11 +5678,14 @@ rm -f "$STOPFLAG"
           if (e instanceof CoreStartRetryError || e instanceof CoreStartSupersededError) throw e;
           this.logToManager(
             'warn',
-            `helper 启动失败，回退 osascript 看护脚本: ${e instanceof Error ? e.message : String(e)}`
+            `Helper start failed, falling back to the osascript watchdog script: ${e instanceof Error ? e.message : String(e)}`
           );
         }
       } else if (st?.installed) {
-        this.logToManager('warn', 'helper 已安装但未就绪，本次回退 osascript 授权路径');
+        this.logToManager(
+          'warn',
+          'Helper installed but not ready; falling back to the osascript auth path this time'
+        );
       }
     }
 
@@ -5620,7 +5702,7 @@ rm -f "$STOPFLAG"
         if (e instanceof CoreStartRetryError || e instanceof CoreStartSupersededError) throw e;
         this.logToManager(
           'warn',
-          `helper 服务启动失败，回退 UAC 路径: ${e instanceof Error ? e.message : String(e)}`
+          `Helper service start failed, falling back to the UAC path: ${e instanceof Error ? e.message : String(e)}`
         );
       }
     }
@@ -5630,7 +5712,7 @@ rm -f "$STOPFLAG"
     // 停止终态，待用户手动经 start gate 重新安装/修复 helper。交互式启动（按钮/托盘/切模式）不受影响。
     if (this.needsOsascript() && !this.startInteractive) {
       throw new Error(
-        '提权助手不可用，已跳过非交互（崩溃自动重启）的管理员权限授权——请手动重启代理以经引导安装/修复 helper'
+        'Privileged helper unavailable; skipped the administrator permission prompt for a non-interactive start (crash auto-restart). Restart the proxy manually to install or repair the helper via the setup prompt'
       );
     }
 
@@ -5644,7 +5726,7 @@ rm -f "$STOPFLAG"
         if (e instanceof CoreStartRetryError || e instanceof CoreStartSupersededError) throw e;
         this.logToManager(
           'warn',
-          `helper 启动失败，回退 setcap 路径: ${e instanceof Error ? e.message : String(e)}`
+          `Helper start failed, falling back to the setcap path: ${e instanceof Error ? e.message : String(e)}`
         );
       }
     }
@@ -5660,7 +5742,7 @@ rm -f "$STOPFLAG"
       try {
         const fs = require('fs');
         if (!fs.existsSync(this.singboxPath)) {
-          const error = new Error(`找不到 sing-box 可执行文件: ${this.singboxPath}`);
+          const error = new Error(`sing-box executable not found: ${this.singboxPath}`);
           this.logToManager('error', error.message);
           reject(error);
           return;
@@ -5730,7 +5812,7 @@ rm -f "$STOPFLAG"
           }
           this.logToManager(
             'info',
-            `TUN 模式需要管理员权限${this.currentConfig?.allowLan ? '及开启 IP 转发' : ''}，正在请求（仅此一次，后续启停免授权）...`
+            `TUN mode requires administrator permission${this.currentConfig?.allowLan ? ' and IP forwarding' : ''}, requesting it (only once; later start/stop needs no prompt)...`
           );
         } else if (launchViaWindowsUAC) {
           // Windows TUN 模式：UAC 一次授权 → 以管理员跑「看护脚本」托管 sing-box（镜像 macOS
@@ -5821,9 +5903,9 @@ rm -f "$STOPFLAG"
           }
           this.logToManager(
             'info',
-            `TUN 模式需要管理员权限${
-              this.currentConfig?.allowLan ? '及开启 IP 转发' : ''
-            }，正在请求 UAC 授权（仅启动这一次，停止/退出免授权）...`
+            `TUN mode requires administrator permission${
+              this.currentConfig?.allowLan ? ' and IP forwarding' : ''
+            }, requesting UAC authorization (only for this start; stop/quit needs no prompt)...`
           );
         } else {
           // 系统代理模式或 Linux：直接运行
@@ -5855,9 +5937,9 @@ rm -f "$STOPFLAG"
         // macOS/Windows TUN 模式下，这个 PID 是 osascript/PowerShell 的 PID，不是 sing-box 的
         // 实际的 sing-box PID 会在 waitForPidFile 中从 PID 文件读取
         if (launchViaOsascript || launchViaWindowsUAC) {
-          this.logToManager('info', `正在启动 sing-box（权限提升进程 PID: ${this.pid}）...`);
+          this.logToManager('info', `Starting sing-box (elevated process PID: ${this.pid})...`);
         } else {
-          this.logToManager('info', `正在启动 sing-box 进程 (PID: ${this.pid})...`);
+          this.logToManager('info', `Starting the sing-box process (PID: ${this.pid})...`);
         }
 
         if (this.singboxProcess.stdout) {
@@ -5912,7 +5994,9 @@ rm -f "$STOPFLAG"
               // 还会多收 AUTO_RESTARTING + 自动重启失败 串扰，H2）。置 startupResolved 让 setTimeout 干净跳过。
               startupResolved = true;
               const errorMessage =
-                code === 1 ? '用户取消了管理员权限请求' : `启动失败，退出码: ${code}`;
+                code === 1
+                  ? 'User cancelled the administrator permission request'
+                  : `Start failed, exit code: ${code}`;
               this.logToManager('error', errorMessage);
               reject(new Error(errorMessage));
               return;
@@ -5931,7 +6015,9 @@ rm -f "$STOPFLAG"
               // 不调 handleProcessExit（同 osascript 分支，避免双启动流 + 取消授权后的自动重启串扰，H2）。
               startupResolved = true;
               const errorMessage =
-                code === 1 ? '用户取消了管理员权限请求' : `UAC 授权失败，退出码: ${code}`;
+                code === 1
+                  ? 'User cancelled the administrator permission request'
+                  : `UAC authorization failed, exit code: ${code}`;
               this.logToManager('error', errorMessage);
               reject(new Error(errorMessage));
               return;
@@ -5948,7 +6034,7 @@ rm -f "$STOPFLAG"
             const errorMessage =
               code !== null && code !== 0
                 ? this.parseStartupError(code, this.lastErrorOutput)
-                : `sing-box 启动期退出 (code=${code}, signal=${signal})`;
+                : `sing-box exited during startup (code=${code}, signal=${signal})`;
             this.logToManager('error', errorMessage);
             reject(new Error(errorMessage));
             return;
@@ -5985,7 +6071,7 @@ rm -f "$STOPFLAG"
                 pid: this.singboxPid,
                 startTime: this.startTime,
               });
-              this.logToManager('info', 'sing-box 进程启动成功');
+              this.logToManager('info', 'sing-box process started');
               startupResolved = true;
               resolve();
             } else {
@@ -6007,11 +6093,12 @@ rm -f "$STOPFLAG"
                 pid: this.pid,
                 startTime: this.startTime,
               });
-              this.logToManager('info', 'sing-box 进程启动成功');
+              this.logToManager('info', 'sing-box process started');
               startupResolved = true;
               resolve();
             } else {
-              const error = '启动 sing-box 进程失败：进程未能正常启动';
+              const error =
+                'Failed to start the sing-box process: the process did not start properly';
               this.logToManager('error', error);
               // 启动失败，清理状态
               this.cleanup();
@@ -6021,7 +6108,10 @@ rm -f "$STOPFLAG"
         }, 1000);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        this.logToManager('error', `启动 sing-box 进程时发生异常: ${errorMessage}`);
+        this.logToManager(
+          'error',
+          `Exception while starting the sing-box process: ${errorMessage}`
+        );
         // 异常时也要清理状态
         this.cleanup();
         reject(error);
@@ -6047,8 +6137,10 @@ rm -f "$STOPFLAG"
       if (r.deleted.length > 0 || r.chowned.length > 0) {
         this.logToManager(
           'info',
-          `已归一 tailscale state 属主（删 ${r.deleted.length} / chown ${r.chowned.length}）杜绝跨提权态权限冲突` +
-            (r.deleted.length > 0 ? '；若该 Tailscale 节点登录态被清，需重新登录' : '')
+          `Normalized tailscale state ownership (deleted ${r.deleted.length} / chowned ${r.chowned.length}) to prevent permission conflicts across privilege modes` +
+            (r.deleted.length > 0
+              ? "; if this Tailscale node's login state was cleared, log in again"
+              : '')
         );
       }
       // 删了某节点 state（<userData>/tailscale/<serverId>/...）→ 该节点登录态已失效。通知渲染端清登录缓存，
@@ -6075,13 +6167,13 @@ rm -f "$STOPFLAG"
 
     switch (errorCode) {
       case 'ENOENT':
-        return '找不到 sing-box 可执行文件，请检查安装是否完整';
+        return 'sing-box executable not found; check that the installation is complete';
       case 'EACCES':
-        return 'sing-box 可执行文件没有执行权限，请检查文件权限';
+        return 'sing-box executable lacks execute permission; check the file permissions';
       case 'EPERM':
-        return '权限不足，无法启动 sing-box 进程。TUN 模式需要管理员权限';
+        return 'Insufficient permission to start the sing-box process. TUN mode requires administrator permission';
       default:
-        return `启动 sing-box 进程失败: ${error.message}`;
+        return `Failed to start the sing-box process: ${error.message}`;
     }
   }
 
@@ -6095,13 +6187,13 @@ rm -f "$STOPFLAG"
         // state、登录用户跑读不了)，已由启动前 reconcileRuntimeOwnershipBeforeStart 兜底；它**不是** TUN 设备
         // 提权问题，误报「以管理员运行」会把排查带偏(真机踩坑根因)。给准确提示 + 引导重试。
         if (/logpolicy|tailscaled|tailscale|state_directory/i.test(errorOutput)) {
-          return `Tailscale 状态文件权限异常（跨提权态属主冲突），已尝试自动归一，请重试启动 [${errorOutput}]`;
+          return `Tailscale state file permission error (ownership conflict across privilege modes); tried to fix ownership automatically, please start again [${errorOutput}]`;
         }
-        return `TUN 模式需要管理员权限，请以管理员身份运行应用 [${errorOutput}]`;
+        return `TUN mode requires administrator permission; run the app as administrator [${errorOutput}]`;
       }
 
       if (lowerOutput.includes('address already in use') || lowerOutput.includes('bind')) {
-        return `端口已被占用，请在设置中更换其他端口或关闭占用端口的程序 [${errorOutput}]`;
+        return `Port already in use; change the port in Settings or close the program using it [${errorOutput}]`;
       }
 
       if (
@@ -6109,36 +6201,36 @@ rm -f "$STOPFLAG"
         lowerOutput.includes('parse') ||
         lowerOutput.includes('json')
       ) {
-        return `sing-box 配置文件格式错误，请检查服务器配置 [${errorOutput}]`;
+        return `Invalid config file format for sing-box; check the server settings [${errorOutput}]`;
       }
 
       if (lowerOutput.includes('connection refused') || lowerOutput.includes('dial')) {
-        return `无法连接到代理服务器，请检查服务器地址和端口 [${errorOutput}]`;
+        return `Cannot connect to the proxy server; check the server address and port [${errorOutput}]`;
       }
 
       if (lowerOutput.includes('certificate') || lowerOutput.includes('x509')) {
-        return `TLS 证书验证失败，请检查服务器 TLS 配置 [${errorOutput}]`;
+        return `TLS certificate verification failed; check the server TLS settings [${errorOutput}]`;
       }
 
       // 如果有具体的错误信息，翻译后返回
       const friendlyMessage = this.translateErrorMessage(errorOutput);
       if (friendlyMessage !== errorOutput) {
-        return `sing-box 启动失败: ${friendlyMessage}`;
+        return `sing-box failed to start: ${friendlyMessage}`;
       }
     }
 
     // 根据退出码返回通用错误信息
     switch (exitCode) {
       case 1:
-        return 'sing-box 启动失败，请检查配置文件和服务器设置';
+        return 'sing-box failed to start; check the config file and server settings';
       case 2:
-        return 'sing-box 配置文件格式错误，请检查服务器配置';
+        return 'Invalid config file format for sing-box; check the server settings';
       case 126:
-        return 'sing-box 可执行文件没有执行权限';
+        return 'sing-box executable lacks execute permission';
       case 127:
-        return '找不到 sing-box 可执行文件';
+        return 'sing-box executable not found';
       default:
-        return `sing-box 启动失败，退出码: ${exitCode}`;
+        return `sing-box failed to start, exit code: ${exitCode}`;
     }
   }
 
@@ -6172,19 +6264,25 @@ rm -f "$STOPFLAG"
       // supported=false），故 Windows 的 winHelper 停止必须在 ProxyManager（持 winHelper）处理，**不能**委托 stopElevated。
       if (this.startedViaHelper && this.helperManager) {
         const pidToKill = this.singboxPid;
-        this.logToManager('info', `正在经提权服务停止 sing-box (PID: ${pidToKill})（免 UAC）...`);
+        this.logToManager(
+          'info',
+          `Stopping sing-box (PID: ${pidToKill}) via the privileged service (no UAC)...`
+        );
         if (this.isProcessAlive(pidToKill)) {
           await this.helperManager.stopCore();
           // 覆盖 helper terminateChild 的「CTRL_BREAK→等≤2s→TerminateProcess」+ 收割余量。
           await this.waitForProcessExit(pidToKill, opts?.quitting ? 3000 : 8000);
         }
         if (!this.isProcessAlive(pidToKill)) {
-          this.logToManager('info', 'sing-box 已由提权服务停止（免 UAC）');
+          this.logToManager('info', 'sing-box stopped by the privileged service (no UAC)');
           this.finishStop();
           return;
         }
         // helper 停未生效（极少）→ 落下方提权兜底（退出语境 stopElevated 内部跳过 UAC）。
-        this.logToManager('warn', 'helper 服务停止未生效，回退提权路径');
+        this.logToManager(
+          'warn',
+          'Helper service stop did not take effect, falling back to the elevated path'
+        );
       }
       // T16 子 commit 3：实现迁入 PlatformPrivilegeService.stopElevated（win32 分支），此处 delegate（同上）。
       if (this.privilegeService) {
@@ -6206,14 +6304,20 @@ rm -f "$STOPFLAG"
       this.helperManager
     ) {
       const pidToKill = this.singboxPid;
-      this.logToManager('info', `正在经提权 helper 停止 sing-box (PID: ${pidToKill})（免提权）...`);
+      this.logToManager(
+        'info',
+        `Stopping sing-box (PID: ${pidToKill}) via privileged helper (no elevation)...`
+      );
       if (this.isProcessAlive(pidToKill)) {
         await this.helperManager.stopCore();
         await this.waitForProcessExit(pidToKill, opts?.quitting ? 3000 : 8000);
       }
       if (this.isProcessAlive(pidToKill)) {
         // helper 停未生效（极少）→ 同 uid 直接 TERM→KILL 兜底（核以登录用户跑，无需提权）。
-        this.logToManager('warn', 'helper 停止未生效，回退同 uid 直接终止');
+        this.logToManager(
+          'warn',
+          'Helper stop did not take effect, falling back to a direct same-uid kill'
+        );
         try {
           process.kill(pidToKill, 'SIGTERM');
         } catch {
@@ -6226,7 +6330,7 @@ rm -f "$STOPFLAG"
           /* 已退出 */
         }
       }
-      this.logToManager('info', 'sing-box 已停止（helper 路径）');
+      this.logToManager('info', 'sing-box stopped (helper path)');
       this.finishStop();
       return;
     }
@@ -6243,7 +6347,10 @@ rm -f "$STOPFLAG"
       proc.signalCode !== null ||
       (proc.pid != null && !this.isProcessAlive(proc.pid))
     ) {
-      this.logToManager('info', 'sing-box 进程已退出，直接收尾（不等 exit 事件）');
+      this.logToManager(
+        'info',
+        'sing-box process has exited, finishing up without waiting for the exit event'
+      );
       this.cleanup();
       return;
     }
@@ -6269,7 +6376,10 @@ rm -f "$STOPFLAG"
 
       // 硬上限：无论如何 8s 内必 settle（绝不允许 stop 永挂拖死 start/退出链）
       const hardCap = setTimeout(() => {
-        this.logToManager('warn', 'stop 等待进程退出超时（8s），强制收尾');
+        this.logToManager(
+          'warn',
+          'Timed out waiting for the process to exit on stop (8s), forcing cleanup'
+        );
         done();
       }, 8000);
 
@@ -6291,7 +6401,10 @@ rm -f "$STOPFLAG"
 
     // helper 路径：经 socket 让 root daemon 停 sing-box，零提权（PR-M2）。
     if (this.startedViaHelper && this.helperManager) {
-      this.logToManager('info', `正在经提权 helper 停止 sing-box (PID: ${pidToKill})（免授权）...`);
+      this.logToManager(
+        'info',
+        `Stopping sing-box (PID: ${pidToKill}) via privileged helper (no auth prompt)...`
+      );
       if (this.isProcessAlive(pidToKill)) {
         await this.helperManager.stopCore();
         // 8s（非退出）覆盖 helper terminateChild 的「TERM→等≤5s→KILL」完整窗口 + 收割余量：
@@ -6301,14 +6414,20 @@ rm -f "$STOPFLAG"
       if (this.isProcessAlive(pidToKill)) {
         if (opts?.quitting) {
           // 退出语境零弹框：helper 未生效也不弹 osascript，交由 teardownForQuit 的 helper.cleanup() 兜底回收
-          this.logToManager('warn', 'helper 停止未生效，退出语境跳过提权弹框（cleanup 兜底）');
+          this.logToManager(
+            'warn',
+            'Helper stop did not take effect; skipping the elevation prompt while quitting (cleanup will handle it)'
+          );
         } else {
           // 极少触发：helper 未生效 → 退回 osascript 强杀（一次授权）。取消授权(进程仍活) → 不谎报已停止。
-          this.logToManager('warn', 'helper 停止未生效，退回提权强制终止');
+          this.logToManager(
+            'warn',
+            'Helper stop did not take effect, falling back to an elevated force kill'
+          );
           if (!(await this.forceKillOrReportCancelled(pidToKill))) return;
         }
       } else {
-        this.logToManager('info', 'sing-box 已由提权 helper 停止（免授权）');
+        this.logToManager('info', 'sing-box stopped by privileged helper (no auth prompt)');
       }
       this.finishStop();
       return;
@@ -6316,20 +6435,26 @@ rm -f "$STOPFLAG"
 
     // M1-a：进程已不在 → 直接收尾，免一次提权授权框
     if (!this.isProcessAlive(pidToKill)) {
-      this.logToManager('info', 'sing-box 进程已不在，跳过提权终止');
+      this.logToManager('info', 'sing-box process already gone, skipping elevated kill');
       this.finishStop();
       return;
     }
 
     // M1-b：写 stopflag，由 root 看护脚本自杀 sing-box —— 停止无需再次提权
-    this.logToManager('info', `正在停止 sing-box (PID: ${pidToKill})，通知看护脚本...`);
+    this.logToManager(
+      'info',
+      `Stopping sing-box (PID: ${pidToKill}), notifying the watchdog script...`
+    );
     try {
       require('fs').writeFileSync(this.getStopFlagPath(), '');
     } catch (e) {
-      this.logToManager('warn', `写 stopflag 失败: ${e instanceof Error ? e.message : String(e)}`);
+      this.logToManager(
+        'warn',
+        `Failed to write stopflag: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
     if (await this.waitForProcessExit(pidToKill, opts?.quitting ? 3000 : 8000)) {
-      this.logToManager('info', 'sing-box 已由看护脚本停止（无需提权）');
+      this.logToManager('info', 'sing-box stopped by the watchdog script (no elevation needed)');
       this.finishStop();
       return;
     }
@@ -6337,11 +6462,17 @@ rm -f "$STOPFLAG"
     // Fallback：看护脚本未在预期内收口（异常/旧式直起）→ 退回 osascript 提权终止
     if (opts?.quitting) {
       // 退出语境零弹框：跳过 osascript，残留 sing-box 由下次启动的 killOrphanedProcessesMac 清扫
-      this.logToManager('warn', '看护脚本未及时停止，退出语境跳过提权弹框（下次启动清扫孤儿）');
+      this.logToManager(
+        'warn',
+        'Watchdog script did not stop in time; skipping the elevation prompt while quitting (orphans are cleaned up on next launch)'
+      );
       this.finishStop();
       return;
     }
-    this.logToManager('warn', '看护脚本未及时停止 sing-box，退回提权终止');
+    this.logToManager(
+      'warn',
+      'Watchdog script did not stop sing-box in time, falling back to an elevated kill'
+    );
     return new Promise((resolve) => {
       const killProcess = spawn('/usr/bin/osascript', [
         '-e',
@@ -6353,13 +6484,16 @@ rm -f "$STOPFLAG"
         if (code === 0) {
           await this.waitForProcessExit(pidToKill, 3000);
           if (this.isProcessAlive(pidToKill)) {
-            this.logToManager('warn', '进程未响应 SIGTERM，尝试强制终止...');
+            this.logToManager('warn', 'Process did not respond to SIGTERM, trying a force kill...');
             ok = await this.forceKillOrReportCancelled(pidToKill);
           } else {
-            this.logToManager('info', 'sing-box 进程已停止');
+            this.logToManager('info', 'sing-box process stopped');
           }
         } else {
-          this.logToManager('warn', `停止 sing-box 进程可能失败，退出码: ${code}`);
+          this.logToManager(
+            'warn',
+            `Stopping the sing-box process may have failed, exit code: ${code}`
+          );
           ok = await this.forceKillOrReportCancelled(pidToKill);
         }
         if (ok) this.finishStop(); // 取消授权(进程仍活) → 不谎报已停止（M3）
@@ -6367,7 +6501,7 @@ rm -f "$STOPFLAG"
       });
 
       killProcess.on('error', async (error) => {
-        this.logToManager('error', `停止 sing-box 进程失败: ${error.message}`);
+        this.logToManager('error', `Failed to stop the sing-box process: ${error.message}`);
         await this.forceKillProcess(pidToKill);
         this.cleanup();
         resolve();
@@ -6392,21 +6526,27 @@ rm -f "$STOPFLAG"
 
     // 进程已不在 → 直接收尾，免一次 UAC（镜像 macOS M1-a）
     if (!this.isProcessAlive(pidToKill)) {
-      this.logToManager('info', 'sing-box 进程已不在，跳过提权终止');
+      this.logToManager('info', 'sing-box process already gone, skipping elevated kill');
       this.finishStop();
       return;
     }
 
     // 主路径：写 stopflag，由提权看护脚本收割 sing-box —— 停止无需再次 UAC
-    this.logToManager('info', `正在停止 sing-box (PID: ${pidToKill})，通知看护脚本...`);
+    this.logToManager(
+      'info',
+      `Stopping sing-box (PID: ${pidToKill}), notifying the watchdog script...`
+    );
     try {
       require('fs').writeFileSync(this.getStopFlagPath(), '');
     } catch (e) {
-      this.logToManager('warn', `写 stopflag 失败: ${e instanceof Error ? e.message : String(e)}`);
+      this.logToManager(
+        'warn',
+        `Failed to write stopflag: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
     // 看护脚本 1s 轮询 + Stop-Process，5s 覆盖足够；退出语境压到 3s（cleanupResources 8s 预算内）
     if (await this.waitForProcessExit(pidToKill, opts?.quitting ? 3000 : 5000)) {
-      this.logToManager('info', 'sing-box 已由看护脚本停止（无需 UAC）');
+      this.logToManager('info', 'sing-box stopped by the watchdog script (no UAC needed)');
       this.finishStop();
       return;
     }
@@ -6417,13 +6557,16 @@ rm -f "$STOPFLAG"
       // 确无看护时残留交下次启动的提权清扫（watchdog 步骤 a）。stopflag 留给看护消费/下次启动清理。
       this.logToManager(
         'warn',
-        `看护脚本未及时停止 sing-box（PID ${pidToKill}），退出语境跳过 UAC 弹框（父死看护/下次启动清扫兜底）`
+        `Watchdog script did not stop sing-box (PID ${pidToKill}) in time; skipping the UAC prompt while quitting (the watchdog exits with its parent / next launch cleans up)`
       );
       this.finishStop();
       return;
     }
 
-    this.logToManager('warn', '看护脚本未及时停止 sing-box，退回提权 taskkill（需要 UAC 授权）...');
+    this.logToManager(
+      'warn',
+      'Watchdog script did not stop sing-box in time, falling back to an elevated taskkill (requires UAC)...'
+    );
     return new Promise((resolve) => {
       // RunAs taskkill 兜底：覆盖旧版直起（无看护）与看护异常两种情形，一次 UAC（与旧版语义一致）。
       // /FI "IMAGENAME eq sing-box.exe" 防 PID 复用误杀（值含空格→ -ArgumentList 元素须内嵌双引号；VM 实测通过）。
@@ -6446,10 +6589,10 @@ rm -f "$STOPFLAG"
 
       killProcess.on('exit', (code) => {
         if (code === 0) {
-          this.logToManager('info', 'sing-box 进程已停止');
+          this.logToManager('info', 'sing-box process stopped');
         } else {
           // 非零退出码可能是进程已退出或用户取消 UAC
-          this.logToManager('warn', `停止进程结果: code=${code}`);
+          this.logToManager('warn', `Stop process result: code=${code}`);
         }
 
         // 兜底路径无看护脚本消费 stopflag → 主动清掉，防下次会话看护误触发
@@ -6464,7 +6607,7 @@ rm -f "$STOPFLAG"
       });
 
       killProcess.on('error', (error) => {
-        this.logToManager('error', `停止 sing-box 进程失败: ${error.message}`);
+        this.logToManager('error', `Failed to stop the sing-box process: ${error.message}`);
         this.cleanup();
         resolve();
       });
@@ -6532,9 +6675,13 @@ rm -f "$STOPFLAG"
    * 原 forceKillOrReportCancelled 保留兜底版（privilegeService 未注入时），内部改调本方法去重。
    */
   notifyStopAuthCancelled(): void {
-    this.logToManager('error', '强制终止被取消，sing-box 仍在运行（下次启动会自动清理占用端口）');
+    this.logToManager(
+      'error',
+      'Force kill cancelled; sing-box is still running (the port will be cleaned up automatically on next start)'
+    );
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
-      message: '停止被取消授权，代理仍在运行。请重试停止或在下次启动时自动清理。',
+      message:
+        'Stop authorization was cancelled; the proxy is still running. Try stopping again, or it will be cleaned up automatically on next start.',
       errorCode: ProxyErrorCode.STOP_AUTH_CANCELLED,
       code: -4,
     });
@@ -6668,9 +6815,9 @@ rm -f "$STOPFLAG"
         const { exec } = require('child_process');
         exec('dscacheutil -flushcache; killall -HUP mDNSResponder', (error: Error | null) => {
           if (error) {
-            this.logToManager('debug', `刷新 DNS 缓存失败: ${error.message}`);
+            this.logToManager('debug', `Failed to flush the DNS cache: ${error.message}`);
           } else {
-            this.logToManager('debug', 'DNS 缓存已刷新');
+            this.logToManager('debug', 'DNS cache flushed');
           }
         });
       } catch {
@@ -6779,7 +6926,7 @@ rm -f "$STOPFLAG"
       void this.performHealthCheck().catch(() => {});
     }, ProxyManager.HEALTH_CHECK_INTERVAL);
 
-    this.logToManager('debug', '已启动进程健康检查');
+    this.logToManager('debug', 'Process health check started');
   }
 
   private stopHealthCheck(): void {
@@ -6812,7 +6959,7 @@ rm -f "$STOPFLAG"
       .join('; ');
     this.logToManager(
       'warn',
-      `进程内存偏高（阈值 ${thresholdMb}MB/进程）：${detail}；疑内存泄漏，建议「设置→关于→报告问题」导出诊断报告查看逐进程内存`,
+      `High process memory (threshold ${thresholdMb}MB per process): ${detail}; possible memory leak - export a diagnostic report via Settings > About > Report an issue to see per-process memory`,
       'ProxyManager'
     );
   }
@@ -6885,7 +7032,7 @@ rm -f "$STOPFLAG"
       const exitInfo = this.getProcessExitInfo();
       this.logToManager(
         'error',
-        `检测到 sing-box 进程 (PID: ${activePid}) 已意外退出${exitInfo ? `，${exitInfo}` : ''}`
+        `sing-box process (PID: ${activePid}) exited unexpectedly${exitInfo ? `, ${exitInfo}` : ''}`
       );
 
       // issue #324 H2：**这里才是 wrapper（Windows UAC 看护 / macOS osascript）路径核死于 'started' 之后的
@@ -6897,8 +7044,8 @@ rm -f "$STOPFLAG"
       const exitFatal = this.readLastStartupFatal();
       if (exitFatal) {
         this.lastStartupFatal = exitFatal;
-        this.logToManager('error', `sing-box 退出原因：${exitFatal.message}`);
-        this.logToManager('debug', `sing-box FATAL 原文：${exitFatal.raw}`);
+        this.logToManager('error', `sing-box exit reason: ${exitFatal.message}`);
+        this.logToManager('debug', `sing-box FATAL raw: ${exitFatal.raw}`);
       }
 
       // 清理资源（但不停止健康检查，因为可能要重启）
@@ -6934,12 +7081,14 @@ rm -f "$STOPFLAG"
       } else {
         // 无法自动重启，通知用户
         this.emit('error', {
-          message: 'sing-box 进程意外退出，已达到最大重启次数，请手动重启',
+          message:
+            'sing-box process exited unexpectedly and the maximum restart count was reached; restart it manually',
           code: -1,
         });
 
         this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
-          message: 'sing-box 进程多次异常退出，请检查网络或服务器配置后手动重启',
+          message:
+            'sing-box process exited abnormally several times; check the network or server settings and restart it manually',
           errorCode: ProxyErrorCode.RESTART_LIMIT_REACHED,
           code: -1,
         });
@@ -6997,8 +7146,13 @@ rm -f "$STOPFLAG"
    */
   private rejectIfCoreSwapInProgress(action: string): void {
     if (this.coreSwapInProgress) {
-      this.logToManager('warn', `内核更新进行中，已拒绝手动${action}（防撞半替换核）`);
-      const err = new Error('内核更新进行中，请稍候再试') as Error & { code?: ProxyErrorCode };
+      this.logToManager(
+        'warn',
+        `Core update in progress; rejected manual ${action} (to avoid hitting a half-replaced core)`
+      );
+      const err = new Error('Core update in progress, please try again shortly') as Error & {
+        code?: ProxyErrorCode;
+      };
       err.code = ProxyErrorCode.CORE_UPDATE_IN_PROGRESS;
       throw err;
     }
@@ -7040,12 +7194,12 @@ rm -f "$STOPFLAG"
     const backoffMs = this.restartCount <= 1 ? 2000 : this.restartCount === 2 ? 5000 : 15000;
     this.logToManager(
       'warn',
-      `正在尝试自动重启 sing-box (第 ${this.restartCount}/${ProxyManager.MAX_RESTART_COUNT} 次，${Math.round(backoffMs / 1000)}s 后)...`
+      `Trying to auto-restart sing-box (attempt ${this.restartCount}/${ProxyManager.MAX_RESTART_COUNT}, in ${Math.round(backoffMs / 1000)}s)...`
     );
 
     // 通知前端正在重启
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
-      message: `sing-box 进程异常退出，正在自动重启 (${this.restartCount}/${ProxyManager.MAX_RESTART_COUNT})...`,
+      message: `sing-box process exited abnormally, auto-restarting (${this.restartCount}/${ProxyManager.MAX_RESTART_COUNT})...`,
       errorCode: ProxyErrorCode.AUTO_RESTARTING,
       errorParams: { attempt: this.restartCount, max: ProxyManager.MAX_RESTART_COUNT },
       code: -2, // 特殊代码表示正在重启
@@ -7072,7 +7226,10 @@ rm -f "$STOPFLAG"
         if (recover) {
           // 接管会话在本腿退避期内崩溃、其崩溃信号被本腿 isRestarting dedup 吞掉 → 无人恢复 → 补发一次自动重启
           // 兜底，避免 limbo/死端口断网（M-2′-G1）。schedGen + refs 守卫：补发前若又被新操作接管/已起来则不补。
-          this.logToManager('warn', '接管会话在退避期内崩溃，补发一次自动重启兜底');
+          this.logToManager(
+            'warn',
+            'The takeover session crashed during backoff; issuing one extra fallback auto-restart'
+          );
           const schedGen = this.lifecycleGeneration;
           setTimeout(() => {
             if (this.lifecycleGeneration !== schedGen) return; // 已被更新的 start/stop 接管
@@ -7080,7 +7237,10 @@ rm -f "$STOPFLAG"
             void this.attemptAutoRestart();
           }, 0);
         } else {
-          this.logToManager('info', '自动重启已让位（检测到更新的启动/停止操作接管）');
+          this.logToManager(
+            'info',
+            'Auto-restart yielded (taken over by a newer start/stop operation)'
+          );
         }
         return; // finally 复位 isRestarting
       }
@@ -7091,11 +7251,14 @@ rm -f "$STOPFLAG"
       // issue #176：本腿 start 在就绪等待期被用户手动 start/stop 接管 → start() 已静默让位返回（未真起核），
       //   不能误报「自动重启成功」+ 发陈旧 started 事件（接管方会自己发终态）。让位时直接退场，finally 复位 isRestarting。
       if (this.lastStartSuperseded) {
-        this.logToManager('info', '自动重启已让位（start 期被更新的启动/停止操作接管）');
+        this.logToManager(
+          'info',
+          'Auto-restart yielded (taken over by a newer start/stop operation during start)'
+        );
         return;
       }
 
-      this.logToManager('info', 'sing-box 自动重启成功');
+      this.logToManager('info', 'sing-box auto-restart succeeded');
 
       // 通知前端重启成功
       this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_STARTED, {
@@ -7105,7 +7268,7 @@ rm -f "$STOPFLAG"
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logToManager('error', `自动重启失败: ${errorMessage}`);
+      this.logToManager('error', `Auto-restart failed: ${errorMessage}`);
 
       // 不可恢复（helper 不可用 / 权限 / gate 取消）或已达上限 → 立即终态；否则退避后再试。
       // 修 limbo：原实现 count<MAX 时什么都不做，而 performHealthCheck 因 pid 已清空永不再触发 →
@@ -7143,7 +7306,7 @@ rm -f "$STOPFLAG"
     this.crashWhileSuperseded = false; // 用户已停止 → 不需补发，清陈旧标记（M-2′-G1 防陈旧）
     // 注：重复 emit stopped 幂等无害（渲染端 stopProxy 还有 IPC resolve 兜底），不加「已干净则跳过」守卫——
     // 否则 M3「退避期停止、marker 已被前置清理、refs 已 null」会被守卫吞掉这次必要的 stopped 事件。
-    this.logToManager('info', '自动重启已取消（用户主动停止）');
+    this.logToManager('info', 'Auto-restart cancelled (stopped by the user)');
     this.emit('stopped');
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_STOPPED, {});
     void this.ensureSystemProxyCleared();
@@ -7156,9 +7319,9 @@ rm -f "$STOPFLAG"
    */
   private async giveUpAutoRestart(errorMessage: string): Promise<void> {
     this.crashWhileSuperseded = false; // 已终态放弃 → 清陈旧补发标记（M-2′-G1 防陈旧）
-    this.emit('error', { message: `自动重启失败: ${errorMessage}`, code: -1 });
+    this.emit('error', { message: `Auto-restart failed: ${errorMessage}`, code: -1 });
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
-      message: `自动重启失败，请手动重启: ${errorMessage}`,
+      message: `Auto-restart failed, restart it manually: ${errorMessage}`,
       errorCode: ProxyErrorCode.AUTO_RESTART_FAILED,
       code: -1,
     });
@@ -7195,15 +7358,15 @@ rm -f "$STOPFLAG"
   private isUnrecoverableRestartError(message: string): boolean {
     const m = message.toLowerCase();
     return (
-      m.includes('权限') ||
       m.includes('permission') ||
+      m.includes('privileges') ||
       m.includes('helper_gate_aborted') ||
-      m.includes('提权助手不可用') ||
-      m.includes('提权助手引导') ||
+      m.includes('privileged helper unavailable') ||
+      m.includes('privileged helper setup') ||
       m.includes('root_orphan_blocked') ||
-      m.includes('root 残留') ||
+      m.includes('root orphan') ||
       m.includes('clash_api_port_busy') ||
-      m.includes('clash_api 端口')
+      m.includes('clash_api port')
     );
   }
 
@@ -7244,7 +7407,10 @@ rm -f "$STOPFLAG"
       if (stillOurs) {
         // 系统代理仍指向我们的（已死的）端口 → disable：内部 restore 原始（已被 stripSelf 置 null → 简单关）+ 删 marker
         await mgr.disableProxy();
-        this.logToManager('info', '终态已清除系统代理（曾指向 FlowZ，避免死端口致全网断）');
+        this.logToManager(
+          'info',
+          'Cleared the system proxy at the terminal state (it pointed to FlowZ; avoids a dead port cutting off all traffic)'
+        );
       } else {
         // 已关 / 用户手改指向别处 → 仅清失真 marker；但若期间已被新一轮 enable 写了新 marker（host:port 变了）
         // 则保留，防误删新会话 marker 致其兜底全瞎（C1 的 marker 删除竞态防护）。
@@ -7254,7 +7420,7 @@ rm -f "$STOPFLAG"
     } catch (e) {
       this.logToManager(
         'warn',
-        `终态清除系统代理失败: ${e instanceof Error ? e.message : String(e)}`
+        `Failed to clear the system proxy at the terminal state: ${e instanceof Error ? e.message : String(e)}`
       );
     } finally {
       this.clearingSystemProxy = false;
@@ -7280,13 +7446,13 @@ rm -f "$STOPFLAG"
       if ([status.httpProxy, status.httpsProxy, status.socksProxy].some((p) => p === ownHostPort)) {
         this.logToManager(
           'warn',
-          `系统代理仍指向 FlowZ 自身(${proxy})但清理未净——非外部残留，跳过提示，下个终态点重试清理`
+          `System proxy still points to FlowZ itself (${proxy}) but cleanup was incomplete - not an external leftover, skipping the prompt; will retry cleanup at the next terminal point`
         );
         return;
       }
       this.logToManager(
         'warn',
-        `TUN 模式下检测到非 FlowZ 设置的系统代理仍开启(${proxy || '未知地址'})，已提示用户（不自动清，避免误伤其它代理软件）`
+        `In TUN mode a system proxy not set by FlowZ is still on (${proxy || 'unknown address'}); notified the user (not cleared automatically to avoid breaking other proxy software)`
       );
       this.sendEventToRenderer(IPC_CHANNELS.EVENT_SYSTEM_PROXY_RESIDUAL, { proxy });
     } catch {
@@ -7300,7 +7466,7 @@ rm -f "$STOPFLAG"
    */
   async clearSystemProxyManually(): Promise<void> {
     await this.systemProxyManager?.disableProxy();
-    this.logToManager('info', '已按用户请求关闭系统代理（TUN 残留提示）');
+    this.logToManager('info', 'System proxy turned off at user request (TUN leftover prompt)');
   }
 
   /**
@@ -7330,7 +7496,7 @@ rm -f "$STOPFLAG"
     } catch (e) {
       this.logToManager(
         'warn',
-        `终态还原系统 DNS 失败: ${e instanceof Error ? e.message : String(e)}`
+        `Failed to restore the system DNS at the terminal state: ${e instanceof Error ? e.message : String(e)}`
       );
     } finally {
       this.clearingSystemDns = false;
@@ -7403,8 +7569,8 @@ rm -f "$STOPFLAG"
             this.linkChangeFlushSuppressed = true;
             this.logToManager(
               'info',
-              `系统 DNS 缓存刷新连续失败（${result.reason ?? 'unknown'}），链路变化后不再尝试；` +
-                '下次成功刷新即自动恢复'
+              `System DNS cache flush failed repeatedly (${result.reason ?? 'unknown'}); no more attempts after link changes; ` +
+                'resumes automatically after the next successful flush'
             );
           }
         }
@@ -7494,7 +7660,7 @@ rm -f "$STOPFLAG"
 
           this.logToManager(
             'info',
-            `检测到 VPN 上游接口变化: ${this.tunDefaultInterface ?? 'auto'} → ${actualInterface}，自动重连 FlowZ`
+            `VPN upstream interface changed: ${this.tunDefaultInterface ?? 'auto'} -> ${actualInterface}, reconnecting FlowZ automatically`
           );
           this.scheduleDebouncedRestart();
         },
@@ -7525,13 +7691,13 @@ rm -f "$STOPFLAG"
       this.dnsInterfaceWatcher.start();
       this.logToManager(
         'info',
-        '链路变化 watcher 已启动（热插/换网/唤醒 → 重灌 DNS + 复查 VPN 路由 + 刷缓存）'
+        'Link change watcher started (hot-plug/network switch/wake -> reapply DNS + recheck VPN routes + flush cache)'
       );
     } catch (e) {
       this.dnsInterfaceWatcher = null;
       this.logToManager(
         'warn',
-        `启动链路变化 watcher 失败: ${e instanceof Error ? e.message : String(e)}`
+        `Failed to start the link change watcher: ${e instanceof Error ? e.message : String(e)}`
       );
     }
   }
@@ -7550,7 +7716,7 @@ rm -f "$STOPFLAG"
     } catch (e) {
       this.logToManager(
         'warn',
-        `停止 DNS 接口 watcher 失败: ${e instanceof Error ? e.message : String(e)}`
+        `Failed to stop the DNS interface watcher: ${e instanceof Error ? e.message : String(e)}`
       );
     } finally {
       this.dnsInterfaceWatcher = null;
@@ -7559,7 +7725,7 @@ rm -f "$STOPFLAG"
 
   setAutoRestartEnabled(enabled: boolean): void {
     this.autoRestartEnabled = enabled;
-    this.logToManager('info', `自动重启已${enabled ? '启用' : '禁用'}`);
+    this.logToManager('info', `Auto-restart ${enabled ? 'enabled' : 'disabled'}`);
   }
 
   private resetRestartCount(): void {
@@ -7589,7 +7755,7 @@ rm -f "$STOPFLAG"
             lowerLine.includes('panic') ||
             lowerLine.includes('failed')
           ) {
-            info.push(`日志: ${line.substring(0, 200)}`);
+            info.push(`Log: ${line.substring(0, 200)}`);
           }
         }
       }
@@ -7604,7 +7770,7 @@ rm -f "$STOPFLAG"
             { encoding: 'utf-8', timeout: 3000 }
           ).trim();
           if (sysLog) {
-            info.push(`系统日志: ${sysLog.substring(0, 300)}`);
+            info.push(`System log: ${sysLog.substring(0, 300)}`);
           }
         } catch {
           // 忽略系统日志查询失败
@@ -7633,7 +7799,7 @@ rm -f "$STOPFLAG"
           if (this.isProcessAlive(pid)) {
             this.singboxPid = pid;
             this.pid = pid;
-            this.logToManager('info', `sing-box 后台进程 PID: ${pid}`);
+            this.logToManager('info', `sing-box background process PID: ${pid}`);
             return;
           }
         }
@@ -7643,7 +7809,7 @@ rm -f "$STOPFLAG"
       await new Promise((resolve) => setTimeout(resolve, checkInterval));
     }
 
-    this.logToManager('warn', 'PID 文件等待超时');
+    this.logToManager('warn', 'Timed out waiting for the PID file');
   }
 
   /**
@@ -7675,7 +7841,7 @@ rm -f "$STOPFLAG"
       await seedBuiltinRuleSets();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logToManager('error', `内置规则补种失败: ${errorMessage}`);
+      this.logToManager('error', `Failed to reseed built-in rules: ${errorMessage}`);
     }
   }
 
@@ -7918,7 +8084,7 @@ rm -f "$STOPFLAG"
       url,
       serverId: server?.id,
     });
-    this.logToManager('info', `Tailscale 节点「${nodeName}」需要登录授权`, 'sing-box');
+    this.logToManager('info', `Tailscale node "${nodeName}" requires login`, 'sing-box');
     // 登录成功不再靠 state 目录轮询（stateExists 误判未认证为已登录是 #132 根因，已剥离）：主核 endpoint
     // 的登录成功由 api STATUS 流（backendState→Running）反映，驱动渲染端登录态点亮 + dismiss 登录 toast。
   }
@@ -7969,7 +8135,7 @@ rm -f "$STOPFLAG"
     authUrl?: string;
   }> {
     if (!server || server.protocol?.toLowerCase() !== 'tailscale') {
-      throw new Error('startTailscaleLogin: 非 Tailscale 节点');
+      throw new Error('startTailscaleLogin: not a Tailscale node');
     }
     // 已登录（authKey 配置即免交互登录）→ 无需登录。注意：不再以 stateExists 短路（#132 根因——未认证的
     // 残留 state 会被误判已登录）；有 state 也起瞬态核，让其 STATUS 秒回 Running 验真（valid → loggedIn=true 无浏览器）。
@@ -7992,7 +8158,7 @@ rm -f "$STOPFLAG"
     }
 
     if (!require('fs').existsSync(this.singboxPath)) {
-      throw new Error(`找不到 sing-box 可执行文件: ${this.singboxPath}`);
+      throw new Error(`sing-box executable not found: ${this.singboxPath}`);
     }
 
     // 瞬态核管理 API：独立空闲端口（排除主核 api 端口 this.tailscaleApiPort 避 bind 冲突）+ 每次随机 secret。
@@ -8031,7 +8197,7 @@ rm -f "$STOPFLAG"
       handle.timeoutTimer = setTimeout(() => {
         this.logToManager(
           'info',
-          `Tailscale 节点「${server.name}」登录超时，已停止登录进程`,
+          `Tailscale node "${server.name}" login timed out, login process stopped`,
           'sing-box'
         );
         // 超时=登录未完成：杀核 → proc 'exit' → finalize 统一发空 authUrl 清渲染端缓存（退出「登录中」回「需登录」）。
@@ -8094,7 +8260,11 @@ rm -f "$STOPFLAG"
 
     // spawn 失败：只 emit 'error'（无后续 'exit'）→ 直接 finalize 兜底，否则 cfg + Map 泄漏。
     proc.on('error', (e) => {
-      this.logToManager('error', `Tailscale 登录进程启动失败: ${e.message}`, 'sing-box');
+      this.logToManager(
+        'error',
+        `Tailscale login process failed to start: ${e.message}`,
+        'sing-box'
+      );
       finalize();
     });
     // 进程退出（正常被杀 / 自行崩溃 / 核拒绝 config）：finalize 清 timer/cfg/Map/apiClient（幂等）。
@@ -8114,7 +8284,7 @@ rm -f "$STOPFLAG"
 
     this.logToManager(
       'info',
-      `Tailscale 节点「${server.name}」开始登录（已启动登录进程）`,
+      `Tailscale node "${server.name}" login started (login process launched)`,
       'sing-box'
     );
 
@@ -8158,7 +8328,7 @@ rm -f "$STOPFLAG"
     // 安全：URL 取自内核日志正则捕获，openExternal 前限定 http(s)，杜绝 file:///javascript: 等危险 scheme。
     const safeUrl = safeHttpUrl(url);
     if (!safeUrl) {
-      this.logToManager('warn', `Tailscale 登录 URL 非法已忽略: ${url}`, 'sing-box');
+      this.logToManager('warn', `Ignored invalid Tailscale login URL: ${url}`, 'sing-box');
       return;
     }
     // ① 自动开浏览器
@@ -8178,13 +8348,17 @@ rm -f "$STOPFLAG"
       transient: true,
       serverId: server.id,
     });
-    this.logToManager('info', `Tailscale 节点「${server.name}」已打开浏览器登录页`, 'sing-box');
+    this.logToManager(
+      'info',
+      `Tailscale node "${server.name}": opened the login page in the browser`,
+      'sing-box'
+    );
   }
 
   /** 取消某节点登录（用户手动取消，IPC 入口）。杀在飞瞬态核（若有）+ 恒清渲染端登录态。 */
   cancelTailscaleLogin(serverId: string): void {
     if (this.tailscaleLoginCores.has(serverId)) {
-      this.logToManager('info', `已取消 Tailscale 节点登录`, 'sing-box');
+      this.logToManager('info', `Tailscale node login cancelled`, 'sing-box');
     }
     this.killTailscaleLogin(serverId);
     // 缺陷2：always-emit 路径下 endpoint 在主核里、Map 无瞬态核项 → killTailscaleLogin 是 no-op、finalize 不触发，
@@ -8316,7 +8490,7 @@ rm -f "$STOPFLAG"
         await this.tailscaleApiClient.logout(server.name).catch((e) => {
           this.logToManager(
             'warn',
-            `Tailscale api 登出失败（已回退清 state 目录）: ${e?.message ?? e}`,
+            `Tailscale API logout failed (fell back to clearing the state directory): ${e?.message ?? e}`,
             'sing-box'
           );
         });
@@ -8325,7 +8499,7 @@ rm -f "$STOPFLAG"
     await require('fs')
       .promises.rm(tailscaleStateDir(serverId), { recursive: true, force: true })
       .catch(() => {});
-    this.logToManager('info', `Tailscale 节点已退出登录`, 'sing-box');
+    this.logToManager('info', `Tailscale node logged out`, 'sing-box');
     return { runningNeedsRestart: inRunningCore };
   }
 
@@ -8624,23 +8798,23 @@ rm -f "$STOPFLAG"
 
     // 常见错误模式匹配
     if (lowerMessage.includes('report handshake success: connection refused')) {
-      return `目标连接被拒绝：代理节点已连接，但目标服务器拒绝了连接（可能是节点限制或失效） [${message}]`;
+      return `Target connection refused: the proxy node is connected, but the target server refused the connection (node restriction, or the node no longer works) [${message}]`;
     }
 
     if (
       lowerMessage.includes('connection refused') ||
       lowerMessage.includes('connect: connection refused')
     ) {
-      return `连接被拒绝：无法连接到代理服务器，请检查服务器地址和端口是否正确 [${message}]`;
+      return `Connection refused: cannot connect to the proxy server; check that the server address and port are correct [${message}]`;
     }
 
     // #57：DNS lookup 失败须先于通用 timeout 分支（`lookup x: i/o timeout` 属 DNS 失败而非连接超时）。
     const dnsLookup = this.matchDnsLookupFailure(lowerMessage);
     if (dnsLookup === 'node') {
-      return `节点域名解析失败：无法解析代理节点域名（可能是当前 DNS 对该域名返回 SERVFAIL）。可在 设置→网络 切换节点域名解析器为 DNSPod 或系统 DNS 后重试 [${message}]`;
+      return `Node domain resolution failed: cannot resolve the proxy node domain (the current DNS may return SERVFAIL for it). Switch the node resolver to DNSPod or System DNS in Settings > Network and retry [${message}]`;
     }
     if (dnsLookup === 'generic') {
-      return `DNS 解析失败：无法解析服务器域名，请检查 DNS 设置 [${message}]`;
+      return `DNS resolution failed: cannot resolve the server domain; check the DNS settings [${message}]`;
     }
 
     if (lowerMessage.includes('timeout') || lowerMessage.includes('timed out')) {
@@ -8651,36 +8825,38 @@ rm -f "$STOPFLAG"
       if (target && /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/.test(target)) {
         return ''; // 返回空字符串，后续会被过滤
       }
-      return target ? `连接超时: ${target}` : '连接超时：服务器响应超时';
+      return target
+        ? `Connection timed out: ${target}`
+        : 'Connection timed out: the server did not respond';
     }
 
     if (lowerMessage.includes('dns') && lowerMessage.includes('fail')) {
-      return `DNS 解析失败：无法解析服务器域名，请检查 DNS 设置 [${message}]`;
+      return `DNS resolution failed: cannot resolve the server domain; check the DNS settings [${message}]`;
     }
 
     if (lowerMessage.includes('certificate') || lowerMessage.includes('x509')) {
       // 仅在真实证书错误时标注（要求 certificate/x509 关键字）：translateErrorMessage 对每条 sing-box 日志行都调用，
       // 原先裸 tls/ssl 匹配会把正常的 `router: sniffed protocol: tls, domain: X` 调试行误标为「证书错误」（满屏误报）。
-      return `TLS 证书错误：服务器证书验证失败 [${message}]`;
+      return `TLS certificate error: server certificate verification failed [${message}]`;
     }
 
     if (lowerMessage.includes('authentication failed') || lowerMessage.includes('auth fail')) {
-      return `认证失败：用户名或密码错误，请检查服务器配置 [${message}]`;
+      return `Authentication failed: wrong username or password; check the server settings [${message}]`;
     }
 
     if (lowerMessage.includes('permission denied') || lowerMessage.includes('access denied')) {
-      return `权限不足：需要管理员权限才能启动 TUN 模式 [${message}]`;
+      return `Insufficient permission: administrator permission is required to start TUN mode [${message}]`;
     }
 
     if (
       lowerMessage.includes('address already in use') ||
       lowerMessage.includes('bind: address already in use')
     ) {
-      return `端口已被占用：请更换其他端口或关闭占用端口的程序 [${message}]`;
+      return `Port already in use: change the port or close the program using it [${message}]`;
     }
 
     if (lowerMessage.includes('invalid config') || lowerMessage.includes('config error')) {
-      return `配置错误：sing-box 配置文件格式不正确 [${message}]`;
+      return `Config error: malformed sing-box config file [${message}]`;
     }
 
     // 如果没有匹配到特定错误，返回原始消息
@@ -8828,7 +9004,7 @@ rm -f "$STOPFLAG"
     if (code !== null && code !== 0 && signal !== 'SIGTERM' && signal !== 'SIGKILL') {
       const errorMessage = this.parseExitError(code);
 
-      this.logToManager('error', `sing-box异常退出: ${errorMessage}`);
+      this.logToManager('error', `sing-box exited abnormally: ${errorMessage}`);
 
       // 崩溃恢复主导：原地重启同节点（与健康检查复用同一内部机制，单一计数器 + 上限 + 冷却）。
       // 仅当 shouldAutoRestart 放行（未被核心更新校验窗口抑制、未达上限）时重启；否则下沉到 error 上报，
@@ -8882,12 +9058,12 @@ rm -f "$STOPFLAG"
 
   private parseExitReason(code: number | null, signal: NodeJS.Signals | null): string {
     if (signal) {
-      return `信号 ${signal}`;
+      return `signal ${signal}`;
     }
     if (code !== null) {
-      return `退出码 ${code}`;
+      return `exit code ${code}`;
     }
-    return '未知原因';
+    return 'unknown reason';
   }
 
   private parseExitError(code: number): string {
@@ -8902,19 +9078,19 @@ rm -f "$STOPFLAG"
     // 根据退出码返回通用错误信息
     switch (code) {
       case 1:
-        return 'sing-box 启动失败，请检查配置文件';
+        return 'sing-box failed to start; check the config file';
       case 2:
-        return 'sing-box 配置文件格式错误';
+        return 'Invalid config file format for sing-box';
       case 126:
-        return 'sing-box 可执行文件没有执行权限';
+        return 'sing-box executable lacks execute permission';
       case 127:
-        return '找不到 sing-box 可执行文件';
+        return 'sing-box executable not found';
       case 137:
-        return 'sing-box 进程被强制终止';
+        return 'sing-box process was force-killed';
       case 143:
-        return 'sing-box 进程被正常终止';
+        return 'sing-box process was terminated normally';
       default:
-        return `sing-box 异常退出，退出码: ${code}`;
+        return `sing-box exited abnormally, exit code: ${code}`;
     }
   }
 
@@ -8939,11 +9115,14 @@ rm -f "$STOPFLAG"
     const loadDir = path.dirname(this.getSingBoxPath());
     const r = await resourceManager.ensureCronetHealthy(loadDir);
     if (r.action === 'restored') {
-      this.logToManager('info', `启动前 libcronet 自愈：已从内置恢复到 ${loadDir}`);
+      this.logToManager(
+        'info',
+        `Pre-start libcronet self-heal: restored from the bundled copy to ${loadDir}`
+      );
     } else if (r.action === 'failed') {
       this.logToManager(
         'warn',
-        `启动前 libcronet 自愈失败：${r.reason ?? ''}（naive 节点可能不可用）`
+        `Pre-start libcronet self-heal failed: ${r.reason ?? ''} (naive nodes may be unavailable)`
       );
     }
   }

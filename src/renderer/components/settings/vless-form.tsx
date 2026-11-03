@@ -342,7 +342,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
             disabled={form.watch('flow') === 'xtls-rprx-vision'}
             disabledReason={t(
               'servers.multiplexVisionConflict',
-              'Multiplex 与 xtls-rprx-vision flow 不兼容，已禁用。'
+              'Multiplex is incompatible with the xtls-rprx-vision flow and has been disabled.'
             )}
           />
         </FormSection>

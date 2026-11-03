@@ -10,10 +10,10 @@ OUT_NAME="com.flowz.helper"
 
 if ! command -v go >/dev/null 2>&1; then
   if [ -n "${REQUIRE_HELPER:-}" ]; then
-    echo "[build-helper] REQUIRE_HELPER 已设但未找到 go 工具链 —— 提权 helper 是发布必需组件，终止以避免静默发布无 helper 的包" >&2
+    echo "[build-helper] REQUIRE_HELPER is set but the Go toolchain was not found — the privileged helper is a required release component; aborting to avoid silently publishing a package without the helper" >&2
     exit 1
   fi
-  echo "[build-helper] 未找到 go 工具链，跳过 helper 构建（提权 helper 不打包，运行时回退 osascript 看护脚本；发布构建经 setup-go 保证可用）" >&2
+  echo "[build-helper] Go toolchain not found, skipping helper build (the privileged helper will not be bundled; at runtime the app falls back to the osascript watchdog script; release builds guarantee Go via setup-go)" >&2
   exit 0
 fi
 

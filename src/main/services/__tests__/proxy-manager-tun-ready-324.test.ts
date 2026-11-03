@@ -205,7 +205,7 @@ describe('issue #324 — waitForCoreReadyOrThrow 正向 TUN 就绪门（win32+TU
     svc.adapterPresenceProbe = async () => 'absent' as AdapterPresence; // 探测可用、始终无网卡
 
     const p = svc.waitForCoreReadyOrThrow(1234, svc.lifecycleGeneration);
-    const assertion = expect(p).rejects.toThrow(/从未创建/);
+    const assertion = expect(p).rejects.toThrow(/never created/);
     await jest.advanceTimersByTimeAsync(20000);
     await assertion;
     expect(svc.helperManager.stopCore).toHaveBeenCalled();
@@ -220,7 +220,7 @@ describe('issue #324 — waitForCoreReadyOrThrow 正向 TUN 就绪门（win32+TU
     svc.adapterPresenceProbe = seqProbe(['present']);
 
     const p = svc.waitForCoreReadyOrThrow(1234, svc.lifecycleGeneration);
-    const assertion = expect(p).rejects.toThrow(/TUN 初始化未完成/);
+    const assertion = expect(p).rejects.toThrow(/TUN initialization incomplete/);
     await jest.advanceTimersByTimeAsync(20000);
     await assertion;
     expect(obs.adapterEverSeen).toBe(true);
@@ -474,7 +474,7 @@ describe('issue #324 P0-1 — dead 分支从 stderr 捞 FATAL 真因', () => {
     expect(svc.lastStartupFatal?.kind).toBe('tun-address-conflict');
     // 真因进日志（用户在日志面板立刻可见）。
     const errLine = logs.find(([lv]) => lv === 'error')?.[1] ?? '';
-    expect(errLine).toContain('已被本机其它网络接口占用');
+    expect(errLine).toContain('already in use by another network interface');
     // **硬约束**：FATAL 原文绝不能拼进 CoreStartRetryError.message。
     expect(err.message).not.toContain('The object already exists');
   });
@@ -527,7 +527,7 @@ describe('issue #324 P0-1 — dead 分支从 stderr 捞 FATAL 真因', () => {
     writeStartupLog(svc, ADDR_CONFLICT_FATAL);
 
     const p = svc.waitForCoreReadyOrThrow(1234, svc.lifecycleGeneration);
-    const assertion = expect(p).rejects.toThrow(/TUN 初始化未完成/);
+    const assertion = expect(p).rejects.toThrow(/TUN initialization incomplete/);
     await jest.advanceTimersByTimeAsync(30000);
     await assertion;
     // 变异「删 inferenceContradicted 判定」→ 文案变回「疑 wintun 被拦」，上面的正则失败。
@@ -542,7 +542,7 @@ describe('issue #324 P0-1 — dead 分支从 stderr 捞 FATAL 真因', () => {
     writeStartupLog(svc, 'FATAL[0000] configure tun interface: create adapter: Access is denied.');
 
     const p = svc.waitForCoreReadyOrThrow(1234, svc.lifecycleGeneration);
-    const assertion = expect(p).rejects.toThrow(/疑 wintun 被拦/);
+    const assertion = expect(p).rejects.toThrow(/likely wintun blocked/);
     await jest.advanceTimersByTimeAsync(30000);
     await assertion;
   });
@@ -582,7 +582,7 @@ describe('issue #324 P0-1 — 地址冲突转终态（maybeToTunPersistentError�
     expect(out).toBeInstanceOf(CoreStartTunPersistentError);
     expect((out as Error).message).toContain('172.19.0.1');
     // 文案只能引导当前真做得到的动作（TUN 地址尚未开放配置）。
-    expect((out as Error).message).not.toContain('设置');
+    expect((out as Error).message).not.toContain('Settings');
   });
 
   it('地址冲突判定跨平台：非 win32（obs=null）同样转终态', () => {
@@ -772,7 +772,7 @@ describe('issue #324 H2 — wrapper 路径的 FATAL 真因与终态', () => {
 
     const err = svc.buildWrapperStartFailure(svc.lifecycleGeneration);
     expect(err).not.toBeInstanceOf(CoreStartTunPersistentError);
-    expect(err.message).toContain('无法获取进程 PID');
+    expect(err.message).toContain('could not get the process PID');
   });
 
   it('非 TUN 模式不转终态', () => {
@@ -1525,7 +1525,7 @@ describe('B6：零 spawn 探活 + pidFile 单独一格', () => {
       throw e;
     });
 
-    await expect(svc.startViaHelper(svc.lifecycleGeneration)).rejects.toThrow('进程不存在');
+    await expect(svc.startViaHelper(svc.lifecycleGeneration)).rejects.toThrow('process does not exist');
     expect(svc.cleanup).toHaveBeenCalled();
   });
 });

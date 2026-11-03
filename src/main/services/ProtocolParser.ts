@@ -100,7 +100,7 @@ export class ProtocolParser implements IProtocolParser {
 
   parseUrl(url: string): ServerConfig {
     if (!this.isSupported(url)) {
-      throw new Error(`不支持的协议: ${url.split('://')[0]}`);
+      throw new Error(`Unsupported protocol: ${url.split('://')[0]}`);
     }
 
     try {
@@ -158,10 +158,10 @@ export class ProtocolParser implements IProtocolParser {
         return this.parseHttp(urlObj);
       }
 
-      throw new Error(`不支持的协议: ${protocol}`);
+      throw new Error(`Unsupported protocol: ${protocol}`);
     } catch (error) {
       if (error instanceof Error) {
-        throw new Error(`URL 解析失败: ${error.message}`);
+        throw new Error(`Failed to parse URL: ${error.message}`);
       }
       throw error;
     }
@@ -196,7 +196,7 @@ export class ProtocolParser implements IProtocolParser {
     const { address, port, params, name } = this.parseBase(url);
 
     if (!uuid) {
-      throw new Error('VLESS URL 缺少 UUID');
+      throw new Error('VLESS URL missing UUID');
     }
 
     const config: ServerConfig = {
@@ -226,7 +226,7 @@ export class ProtocolParser implements IProtocolParser {
         config.realitySettings = this.parseRealitySettings(params);
         if (!config.realitySettings) {
           // 缺 pbk 的 reality 节点无法握手（builder 不生成 reality tls 块 → 退化裸 TCP 假节点），整节点拒绝。
-          throw new Error('Reality 节点缺少 pbk（public key）参数');
+          throw new Error('Reality node missing pbk (public key) parameter');
         }
       }
     }
@@ -265,7 +265,7 @@ export class ProtocolParser implements IProtocolParser {
       config.realitySettings = this.parseRealitySettings(params);
       if (!config.realitySettings) {
         // 缺 pbk 的 reality 节点无法握手（builder 不生成 reality tls 块 → 退化裸 TCP 假节点），整节点拒绝。
-        throw new Error('Reality 节点缺少 pbk（public key）参数');
+        throw new Error('Reality node missing pbk (public key) parameter');
       }
     }
 
@@ -281,7 +281,7 @@ export class ProtocolParser implements IProtocolParser {
     const { address, port, params, name } = this.parseBase(url);
 
     if (!password) {
-      throw new Error('Hysteria2 URL 缺少密码');
+      throw new Error('Hysteria2 URL missing password');
     }
 
     const config: ServerConfig = {
@@ -319,12 +319,12 @@ export class ProtocolParser implements IProtocolParser {
     } else if (obfs === 'salamander') {
       // 声明 salamander 即服务端强制混淆，缺 obfs-password 剥离后裸连必死（假节点）——
       // 与 reality 缺 pbk 同判据（凭据残缺=整节点拒绝）。
-      throw new Error('Hysteria2 obfs=salamander 缺少 obfs-password');
+      throw new Error('Hysteria2 obfs=salamander missing obfs-password');
     } else if (obfs) {
       // 非 salamander 值（sing-box hy2 无对应混淆类型/参数噪声）：剥离 + warn 留痕。
       this.log(
         'warn',
-        `Hysteria2 节点 "${name}" 的 obfs 参数（${obfs}）不受支持，已忽略混淆配置`
+        `Hysteria2 node "${name}": obfs parameter (${obfs}) is not supported, obfuscation ignored`
       );
     }
 
@@ -360,7 +360,7 @@ export class ProtocolParser implements IProtocolParser {
     const password = passwordParts.join(':');
 
     if (!uuid || !password) {
-      throw new Error('TUIC 协议缺少 uuid 或 password');
+      throw new Error('TUIC missing uuid or password');
     }
 
     const config: ServerConfig = {
@@ -426,7 +426,7 @@ export class ProtocolParser implements IProtocolParser {
     const { address, port, params, name } = this.parseBase(url);
 
     if (!password) {
-      throw new Error('AnyTLS URL 缺少密码');
+      throw new Error('AnyTLS URL missing password');
     }
 
     const config: ServerConfig = {
@@ -466,7 +466,7 @@ export class ProtocolParser implements IProtocolParser {
         config.realitySettings = this.parseRealitySettings(params);
         if (!config.realitySettings) {
           // 缺 pbk 的 reality 节点无法握手（builder 不生成 reality tls 块 → 退化裸 TCP 假节点），整节点拒绝。
-          throw new Error('Reality 节点缺少 pbk（public key）参数');
+          throw new Error('Reality node missing pbk (public key) parameter');
         }
       }
     } else {
@@ -493,12 +493,12 @@ export class ProtocolParser implements IProtocolParser {
 
     if (!psk.trim()) {
       // trim 语义与 completeness 闸门（password?.trim()）对齐。
-      throw new Error('Snell URL 缺少 psk');
+      throw new Error('Snell URL missing psk');
     }
     const rawVersion = params.get('version') ?? params.get('v') ?? '4';
     const version = parseInt(rawVersion, 10);
     if (version !== 4 && version !== 6) {
-      throw new Error(`Snell 版本不受支持（sing-box 仅支持 4/6）: ${rawVersion}`);
+      throw new Error(`Snell version not supported (sing-box supports only 4/6): ${rawVersion}`);
     }
 
     const snell: SnellSettings = { version };
@@ -510,7 +510,7 @@ export class ProtocolParser implements IProtocolParser {
         if (host) snell.obfsHost = host;
       } else {
         // v4 tls 混淆（Surge 旧形态）/ v6 带 obfs：sing-box snell 无对应能力。
-        throw new Error(`Snell obfs 不受支持: ${obfs}`);
+        throw new Error(`Snell obfs not supported: ${obfs}`);
       }
     }
     if (version === 6) {
@@ -588,16 +588,18 @@ export class ProtocolParser implements IProtocolParser {
             method = decodeURIComponent(userInfo.substring(0, colonIndex)).trim();
             password = decodeURIComponent(userInfo.substring(colonIndex + 1)).trim();
           } else {
-            throw new Error('无法解析加密方法和密码：既不是 Base64 编码，也不是明文格式');
+            throw new Error(
+              'Cannot parse cipher and password: neither Base64-encoded nor plain text'
+            );
           }
         }
 
         // 验证 method 和 password 是否存在
         if (!method) {
-          throw new Error('加密方法为空');
+          throw new Error('Cipher is empty');
         }
         if (!password) {
-          throw new Error('密码为空');
+          throw new Error('Password is empty');
         }
 
         if (config.shadowsocksSettings) {
@@ -606,10 +608,10 @@ export class ProtocolParser implements IProtocolParser {
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        throw new Error(`Shadowsocks URL 格式错误: ${errorMessage}`);
+        throw new Error(`Malformed Shadowsocks URL: ${errorMessage}`);
       }
     } else {
-      throw new Error('Shadowsocks URL 缺少加密信息');
+      throw new Error('Shadowsocks URL missing cipher info');
     }
 
     // 解析查询参数
@@ -685,7 +687,7 @@ export class ProtocolParser implements IProtocolParser {
           }
         }
       } catch (e) {
-        this.log('error', `解析 shadow-tls Base64 JSON 参数失败: ${e}`);
+        this.log('error', `Failed to parse shadow-tls Base64 JSON parameter: ${e}`);
       }
     }
 
@@ -699,7 +701,7 @@ export class ProtocolParser implements IProtocolParser {
     const { address, port, params, name } = this.parseBase(urlObj);
 
     if (!username || !password) {
-      throw new Error('NaiveProxy URL 缺少用户名或密码');
+      throw new Error('NaiveProxy URL missing username or password');
     }
 
     const config: ServerConfig = {
@@ -742,7 +744,7 @@ export class ProtocolParser implements IProtocolParser {
       const name = vmessData.ps || `${address}:${port}`;
 
       if (!address || !port || !uuid) {
-        throw new Error('VMess 配置信息不完整');
+        throw new Error('VMess config is incomplete');
       }
 
       const config: ServerConfig = {
@@ -786,7 +788,7 @@ export class ProtocolParser implements IProtocolParser {
       } else {
         // kcp/quic（V2Ray mKCP·QUIC 传输）/xhttp 等 sing-box 不支持——入库也连不上，
         // 整节点拒绝（与 vless/trojan 统一口径，订阅逐行 catch 聚合告警）。
-        throw new Error(`不支持的传输层类型: ${net}`);
+        throw new Error(`Unsupported transport type: ${net}`);
       }
 
       if (vmessData.tls === 'tls') {
@@ -814,7 +816,7 @@ export class ProtocolParser implements IProtocolParser {
       return config;
     } catch (error) {
       if (error instanceof Error) {
-        throw new Error(`VMess URL 解析失败: ${error.message}`);
+        throw new Error(`Failed to parse VMess URL: ${error.message}`);
       }
       throw error;
     }
@@ -917,7 +919,7 @@ export class ProtocolParser implements IProtocolParser {
         config.network = 'tcp'; // TCP 不需要额外配置
         break;
       default:
-        throw new Error(`不支持的传输层类型: ${network}`);
+        throw new Error(`Unsupported transport type: ${network}`);
     }
   }
 
@@ -1058,7 +1060,7 @@ export class ProtocolParser implements IProtocolParser {
     } else if (protocol === 'http') {
       return this.generateHttpUrl(config);
     }
-    throw new Error(`不支持的协议: ${config.protocol}`);
+    throw new Error(`Unsupported protocol: ${config.protocol}`);
   }
 
   /** 分享名编码：config.name 缺省回落 address:port（与各 parse 的 name 缺省对称）。 */
@@ -1304,7 +1306,7 @@ export class ProtocolParser implements IProtocolParser {
 
   private generateShadowsocksUrl(config: ServerConfig): string {
     if (!config.shadowsocksSettings) {
-      throw new Error('Shadowsocks 配置不完整');
+      throw new Error('Shadowsocks config is incomplete');
     }
 
     const { method, password, plugin, pluginOptions } = config.shadowsocksSettings;

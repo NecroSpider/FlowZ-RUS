@@ -326,7 +326,9 @@ export function NetworkSettings() {
       <div className="card set-card">
         <div className="set-h">
           <b>{t('settings.advanced.dnsSettings')}</b>
-          <small>{t('settings.network.dnsCardSub', '域名解析、FakeIP 与节点解析器')}</small>
+          <small>
+            {t('settings.network.dnsCardSub', 'Domain resolution, FakeIP and node resolver')}
+          </small>
         </div>
         <Srow
           stacked
@@ -400,11 +402,11 @@ export function NetworkSettings() {
           </AlertDialogContent>
         </AlertDialog>
 
-        <Collapse summary={t('settings.network.advancedDns', '高级 DNS')}>
+        <Collapse summary={t('settings.network.advancedDns', 'Advanced DNS')}>
           <Srow
             label={
               <>
-                {t('settings.advanced.fakeIpFilter', 'FakeIP 例外域名')}
+                {t('settings.advanced.fakeIpFilter', 'FakeIP exception domains')}
                 <InfoTooltip content={t('settings.advanced.fakeIpFilterDescFull')} />
               </>
             }
@@ -426,11 +428,11 @@ export function NetworkSettings() {
               }
               placeholder={t(
                 'settings.advanced.fakeIpFilterPlaceholder',
-                '每行一个域名，例如：\ntime.example.com\nstun.example.com'
+                'One domain per line, e.g.:\ntime.example.com\nstun.example.com'
               )}
               hint={t(
                 'settings.advanced.fakeIpFilterEditHint',
-                '每行一个域名；可增删，恢复默认回到内置清单。'
+                'One domain per line; add or remove, restore defaults to reset.'
               )}
             />
           )}
@@ -439,7 +441,7 @@ export function NetworkSettings() {
           <Srow
             label={
               <>
-                {t('settings.advanced.resolveDestination', '拨号前解析目标域名')}
+                {t('settings.advanced.resolveDestination', 'Resolve destination before dialing')}
                 <InfoTooltip content={t('settings.advanced.resolveDestinationDescFull')} />
               </>
             }
@@ -474,7 +476,7 @@ export function NetworkSettings() {
           <Srow
             label={
               <>
-                {t('settings.advanced.takeoverSystemDns', 'TUN 接管系统 DNS')}
+                {t('settings.advanced.takeoverSystemDns', 'Take over system DNS in TUN')}
                 <InfoTooltip
                   content={t(
                     isMac
@@ -502,7 +504,7 @@ export function NetworkSettings() {
           <Srow
             label={
               <>
-                {t('settings.advanced.optimisticCache', '乐观 DNS 缓存')}
+                {t('settings.advanced.optimisticCache', 'Optimistic DNS cache')}
                 <InfoTooltip content={t('settings.advanced.optimisticCacheDescFull')} />
               </>
             }
@@ -516,7 +518,7 @@ export function NetworkSettings() {
           <Srow
             label={
               <>
-                {t('settings.advanced.dnsTimeout', 'DNS 查询超时')}
+                {t('settings.advanced.dnsTimeout', 'DNS query timeout')}
                 <InfoTooltip
                   content={t('settings.advanced.dnsTimeoutDescFull', {
                     min: DNS_TIMEOUT_MIN_MS,
@@ -538,7 +540,7 @@ export function NetworkSettings() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur();
               }}
-              placeholder={t('settings.advanced.dnsTimeoutPlaceholder', '默认')}
+              placeholder={t('settings.advanced.dnsTimeoutPlaceholder', 'Default')}
             />
           </Srow>
         </Collapse>
@@ -548,13 +550,15 @@ export function NetworkSettings() {
       {(isMac || isWin) && (
         <div className="card set-card">
           <div className="set-h">
-            <b>{t('settings.workVpn.title', '工作 VPN')}</b>
-            <small>{t('settings.workVpn.sub', 'OpenVPN、Cisco 等与 FlowZ 同时运行')}</small>
+            <b>{t('settings.workVpn.title', 'Work VPN')}</b>
+            <small>
+              {t('settings.workVpn.sub', 'Run OpenVPN, Cisco and other VPNs alongside FlowZ')}
+            </small>
           </div>
           <Srow
             label={
               <>
-                {t('settings.workVpn.enabled', '与工作 VPN 共存')}
+                {t('settings.workVpn.enabled', 'Work VPN compatibility')}
                 <InfoTooltip content={t('settings.workVpn.enabledDescFull')} />
               </>
             }
@@ -567,7 +571,7 @@ export function NetworkSettings() {
               <Srow
                 label={
                   <>
-                    {t('settings.workVpn.autoDetect', '自动识别内部域名')}
+                    {t('settings.workVpn.autoDetect', 'Auto-detect internal domains')}
                     <InfoTooltip content={t('settings.workVpn.autoDetectDescFull')} />
                   </>
                 }
@@ -579,7 +583,7 @@ export function NetworkSettings() {
                 />
               </Srow>
               <Srow
-                label={t('settings.workVpn.domains', '内部域名')}
+                label={t('settings.workVpn.domains', 'Internal domains')}
                 desc={t('settings.workVpn.domainsDesc')}
               />
               <ExceptionList
@@ -598,13 +602,15 @@ export function NetworkSettings() {
 
       <div className="card set-card">
         <div className="set-h">
-          <b>{t('settings.advanced.localProxyLan', '本地代理 / 局域网')}</b>
-          <small>{t('settings.network.localProxyLanSub', '端口、LAN 共享与 TUN 排除')}</small>
+          <b>{t('settings.advanced.localProxyLan', 'Local proxy & LAN')}</b>
+          <small>
+            {t('settings.network.localProxyLanSub', 'Port, LAN sharing and TUN exclusions')}
+          </small>
         </div>
         <Srow
           label={
             <>
-              {t('settings.advanced.localPort', '本地端口')}
+              {t('settings.advanced.localPort', 'Local port')}
               <InfoTooltip content={t('settings.advanced.localPortDescFull')} />
             </>
           }
@@ -640,13 +646,13 @@ export function NetworkSettings() {
             }
             placeholder={t(
               'settings.advanced.bypassCidrPlaceholder',
-              '每行一个 IP 段，例如：\n192.168.0.0/16\n10.0.0.0/8'
+              'One IP range per line, e.g.:\n192.168.0.0/16\n10.0.0.0/8'
             )}
             hint={
               isWin && isTunMode
                 ? t(
                     'settings.advanced.bypassLANEditHintWinTun',
-                    'Windows TUN 下此清单为内核级排除：自定义规则无法覆盖。需让某段走代理请从此清单移除该段（组网路由段已自动放行进 TUN）。'
+                    'On Windows TUN this list is a kernel-level exclusion: custom rules cannot override it. To proxy a range, remove it from this list (mesh routes are auto-allowed into the TUN).'
                   )
                 : undefined
             }
@@ -661,26 +667,26 @@ export function NetworkSettings() {
             <Srow
               label={
                 <>
-                  {t('settings.advanced.tunInboundExclude', 'TUN 连入来源排除')}
-                  <span className="pill region">{t('settings.network.onlyTun', '仅 TUN')}</span>
+                  {t('settings.advanced.tunInboundExclude', 'TUN inbound-source exclusion')}
+                  <span className="pill region">{t('settings.network.onlyTun', 'TUN only')}</span>
                   <InfoTooltip
                     content={t(
                       'settings.advanced.tunInboundExcludeDescFull',
-                      '区别于「绕过局域网」：后者是分流直连偏好、不影响是否进 TUN；本项直接把网段排除出 TUN 捕获。注意这是**双向**的——被排除的段出/入两个方向都绕过 TUN 走直连，故这些段也不再经代理/自定义规则出网。与组网(WG/Tailscale)路由段重叠的会自动跳过（组网优先）；macOS 会跳过本机物理局域网段。一般用户无需设置。'
+                      'Unlike "Bypass LAN" (a routing direct-connect preference that does not affect whether traffic enters TUN), this excludes the networks from TUN capture directly. Note this is BIDIRECTIONAL — an excluded range bypasses TUN in both directions (outbound too), so it can no longer be routed through a proxy/custom rule. Ranges overlapping mesh (WireGuard/Tailscale) routes are skipped automatically (mesh wins); on macOS the machine\'s own physical LAN is skipped. Most users don\'t need this.'
                     )}
                   />
                 </>
               }
               desc={t(
                 'settings.advanced.tunInboundExcludeDesc',
-                '被这些网段远程连入本机（如经组网/NAT 访问本机服务）时，让回包绕过 TUN、走物理网卡，避免连接被劫持中断。'
+                "When these networks connect in to this machine (e.g. reaching a local service via mesh/NAT), let reply traffic bypass TUN and use the physical interface, so the connection isn't hijacked and dropped."
               )}
             />
             {isLinux && (
               <div className="srow-warn muted">
                 {t(
                   'settings.advanced.tunInboundExcludeLinuxNote',
-                  'Linux 下服务端连入回包已由内核策略路由天然保护，此项不生效、已忽略（填写不会有效果）。'
+                  'On Linux, inbound server reply packets are already protected natively by kernel policy routing; this option has no effect and is ignored.'
                 )}
               </div>
             )}
@@ -690,11 +696,11 @@ export function NetworkSettings() {
               onChange={(v) => updateTun({ inboundExcludeCidrs: v })}
               placeholder={t(
                 'settings.advanced.tunInboundExcludePlaceholder',
-                '每行一个 IP 段（CIDR），例如：\n10.147.0.0/16\n192.168.5.0/24'
+                'One IP range (CIDR) per line, e.g.:\n10.147.0.0/16\n192.168.5.0/24'
               )}
               hint={t(
                 'settings.advanced.tunInboundExcludeHint',
-                '每行一个 CIDR；非法项保存时自动剔除。用于「本机被远程管理/被连入」场景。'
+                'One CIDR per line; invalid entries are dropped on save. For "this machine is remotely managed / connected in to" scenarios.'
               )}
             />
           </>
@@ -706,9 +712,9 @@ export function NetworkSettings() {
           <Collapse
             summary={
               <>
-                {t('settings.advanced.lanGateway', '局域网网关')}
+                {t('settings.advanced.lanGateway', 'LAN Gateway')}
                 <span className="pill region">
-                  {t('settings.network.onlyTunLinuxMac', '仅 TUN · Linux / macOS')}
+                  {t('settings.network.onlyTunLinuxMac', 'TUN only · Linux / macOS')}
                 </span>
               </>
             }
@@ -716,7 +722,7 @@ export function NetworkSettings() {
             <Srow
               label={
                 <>
-                  {t('settings.advanced.neighborDomains', '局域网短名解析')}
+                  {t('settings.advanced.neighborDomains', 'LAN short-name resolution')}
                   <InfoTooltip content={t('settings.advanced.neighborDomainsDescFull')} />
                 </>
               }
@@ -729,7 +735,7 @@ export function NetworkSettings() {
               placeholder={t('settings.advanced.neighborDomainsPlaceholder', '.lan\n.home')}
               hint={t(
                 'settings.advanced.neighborDomainsHint',
-                '每行一个后缀（自动补前导点）；对该后缀下无点的短名（如 nas.lan）走局域网设备解析。'
+                'One suffix per line (leading dot added automatically); dot-less short names under it (e.g. nas.lan) resolve via LAN devices.'
               )}
             />
 
@@ -739,9 +745,9 @@ export function NetworkSettings() {
                 <Srow
                   label={
                     <>
-                      {t('settings.advanced.macFilter', '按 MAC 过滤设备')}
+                      {t('settings.advanced.macFilter', 'Filter devices by MAC')}
                       <span className="pill region">
-                        {t('settings.network.onlyLinux', '仅 Linux')}
+                        {t('settings.network.onlyLinux', 'Linux only')}
                       </span>
                       <InfoTooltip content={t('settings.advanced.macFilterDescFull')} />
                     </>
@@ -750,7 +756,7 @@ export function NetworkSettings() {
                 >
                   <div className="sel">
                     <select
-                      aria-label={t('settings.advanced.macFilter', '按 MAC 过滤设备')}
+                      aria-label={t('settings.advanced.macFilter', 'Filter devices by MAC')}
                       value={config.tunConfig?.macFilterMode ?? 'off'}
                       onChange={(e) =>
                         updateTun({
@@ -761,12 +767,12 @@ export function NetworkSettings() {
                         })
                       }
                     >
-                      <option value="off">{t('settings.advanced.macFilterOff', '关闭')}</option>
+                      <option value="off">{t('settings.advanced.macFilterOff', 'Off')}</option>
                       <option value="include">
-                        {t('settings.advanced.macFilterInclude', '仅允许')}
+                        {t('settings.advanced.macFilterInclude', 'Only allow')}
                       </option>
                       <option value="exclude">
-                        {t('settings.advanced.macFilterExclude', '排除')}
+                        {t('settings.advanced.macFilterExclude', 'Exclude')}
                       </option>
                     </select>
                   </div>
@@ -779,7 +785,7 @@ export function NetworkSettings() {
                     placeholder={'00:11:22:33:44:55\naa:bb:cc:dd:ee:ff'}
                     hint={t(
                       'settings.advanced.macFilterHint',
-                      '每行一个 MAC（00:11:22:33:44:55）；需 auto_route 开启，仅 Linux 生效。'
+                      'One MAC per line (00:11:22:33:44:55); requires auto_route, Linux only.'
                     )}
                   />
                 )}
@@ -792,13 +798,18 @@ export function NetworkSettings() {
       {isTunMode && (
         <div className="card set-card">
           <div className="set-h">
-            <b>{t('settings.advanced.tunMode', 'TUN 模式')}</b>
-            <small>{t('settings.network.tunModeSub', '虚拟网卡网络栈（仅 TUN 接管时显示）')}</small>
+            <b>{t('settings.advanced.tunMode', 'TUN Mode')}</b>
+            <small>
+              {t(
+                'settings.network.tunModeSub',
+                'Virtual NIC network stack (shown only with TUN takeover)'
+              )}
+            </small>
           </div>
           <Srow
             label={
               <>
-                {t('settings.advanced.tunStack', '网络栈')}
+                {t('settings.advanced.tunStack', 'Network stack')}
                 <InfoTooltip content={t('settings.advanced.tunStackDescFull')} />
               </>
             }
@@ -812,7 +823,7 @@ export function NetworkSettings() {
           >
             <div className="sel">
               <select
-                aria-label={t('settings.advanced.tunStack', '网络栈')}
+                aria-label={t('settings.advanced.tunStack', 'Network stack')}
                 value={config.tunConfig?.stack ?? 'auto'}
                 onChange={(e) => updateTun({ stack: e.target.value as TunStack })}
               >
@@ -873,7 +884,12 @@ export function NetworkSettings() {
       <div className="card set-card">
         <div className="set-h">
           <b>{t('settings.network.connection')}</b>
-          <small>{t('settings.network.connectionSub', '切换行为与 QUIC / TLS / IPv6 治理')}</small>
+          <small>
+            {t(
+              'settings.network.connectionSub',
+              'Switching behavior and QUIC / TLS / IPv6 governance'
+            )}
+          </small>
         </div>
         <Srow
           label={t('settings.advanced.autoSwitchNode')}
@@ -885,10 +901,10 @@ export function NetworkSettings() {
           />
         </Srow>
         <Srow
-          label={t('settings.network.meshLoginFallback', '组网登录期出口让位')}
+          label={t('settings.network.meshLoginFallback', 'Fall back to direct during mesh login')}
           desc={t(
             'settings.network.meshLoginFallbackDesc',
-            '所选 Tailscale 出口尚未连接时，登录/授权期间默认路由临时走直连（避免授权页打不开导致卡死），连接成功后自动切回该出口。关闭则登录期不直连（宁可授权失败也不产生直连流量）。'
+            "When the selected Tailscale exit isn't connected yet, route traffic directly during login/authorization (so the auth page isn't sent to the not-yet-connected exit and deadlocks), then switch back to the exit once connected. Turn off to never go direct during login (authorization may fail instead)."
           )}
         >
           <Swt
@@ -921,7 +937,7 @@ export function NetworkSettings() {
               <span>
                 {t(
                   'settings.network.ipv6NodeFakeIpHint',
-                  '若节点不支持 IPv6，部分网站可能无法访问；建议开启 FakeIP。'
+                  'If the node lacks IPv6, some sites may be unreachable; enabling FakeIP is recommended.'
                 )}
               </span>
               <button
@@ -930,11 +946,11 @@ export function NetworkSettings() {
                 style={{ flex: 'none' }}
                 onClick={() => writeFakeIp(true)}
               >
-                {t('settings.network.enableFakeIpAction', '开启 FakeIP')}
+                {t('settings.network.enableFakeIpAction', 'Enable FakeIP')}
               </button>
             </div>
           )}
-        <Collapse summary={t('settings.network.advancedTraffic', '高级流量')}>
+        <Collapse summary={t('settings.network.advancedTraffic', 'Advanced Traffic')}>
           <Srow
             label={
               <>
@@ -1052,9 +1068,12 @@ export function NetworkSettings() {
 
       <div className="card set-card">
         <div className="set-h">
-          <b>{t('settings.network.updateAndSpeedTest', '更新与测速')}</b>
+          <b>{t('settings.network.updateAndSpeedTest', 'Updates & Speed Test')}</b>
           <small>
-            {t('settings.network.updateAndSpeedTestSub', '订阅自动更新、更新流量走向与测速端点')}
+            {t(
+              'settings.network.updateAndSpeedTestSub',
+              'Subscription auto-update, update-traffic routing and speed-test endpoint'
+            )}
           </small>
         </div>
         <Srow
@@ -1107,13 +1126,13 @@ export function NetworkSettings() {
               }
             >
               <option value="follow">
-                {t('settings.advanced.subProxyPolicyFollow', '跟随订阅设置')}
+                {t('settings.advanced.subProxyPolicyFollow', 'Follow subscription settings')}
               </option>
               <option value="proxy">
-                {t('settings.advanced.subProxyPolicyProxy', '全部经代理')}
+                {t('settings.advanced.subProxyPolicyProxy', 'All via proxy')}
               </option>
               <option value="direct">
-                {t('settings.advanced.subProxyPolicyDirect', '全部直连')}
+                {t('settings.advanced.subProxyPolicyDirect', 'All direct')}
               </option>
             </select>
           </div>
@@ -1121,7 +1140,7 @@ export function NetworkSettings() {
         <Srow
           label={
             <>
-              {t('settings.advanced.mainSessionViaProxy', '更新检查走代理')}
+              {t('settings.advanced.mainSessionViaProxy', 'Update checks via proxy')}
               <InfoTooltip content={t('settings.advanced.mainSessionViaProxyDescFull')} />
             </>
           }
@@ -1370,9 +1389,9 @@ function NodeResolverSection({
       <div className="ng-group">
         <div className="ng-row">
           <div className="ng-h">
-            {t('settings.advanced.nodeResolverRaceGroup', '竞速组')}
+            {t('settings.advanced.nodeResolverRaceGroup', 'Race group')}
             <span className="pill region">
-              {t('settings.advanced.nodeResolverRaceGroupCap', '加密 · 上限 3')}
+              {t('settings.advanced.nodeResolverRaceGroupCap', 'Encrypted · max 3')}
             </span>
           </div>
           <span className="ng-hint">{t('settings.advanced.nodeResolverRaceHint')}</span>

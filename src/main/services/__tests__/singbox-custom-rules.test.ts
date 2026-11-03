@@ -157,7 +157,9 @@ describe('buildCustomRules — legacy customRuleSets 告警', () => {
     );
     expect(rules).toHaveLength(0);
     expect(ruleSets).toHaveLength(0);
-    expect(deps.logs.some((m) => m.includes('legacy 远程规则集已不再支持'))).toBe(true);
+    expect(
+      deps.logs.some((m) => m.includes('Legacy remote rule sets are no longer supported'))
+    ).toBe(true);
   });
 });
 

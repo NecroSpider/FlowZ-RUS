@@ -225,7 +225,9 @@ export async function updateSubscriptionServers(subscriptionId: string): Promise
     if (result.success) {
       // §16.3.4：304/无内容变化 → 「订阅无变化」（否则计数=0/0/0 会误显「已更新」）；有变化照旧显新增/更新/删除计数。
       if (result.unchanged) {
-        ErrorHandler.showSuccess(i18n.t('apiToast.subNoChange', { defaultValue: '订阅无变化' }));
+        ErrorHandler.showSuccess(
+          i18n.t('apiToast.subNoChange', { defaultValue: 'Subscription unchanged' })
+        );
       } else {
         ErrorHandler.showSuccess(
           i18n.t('apiToast.subServersUpdated', {

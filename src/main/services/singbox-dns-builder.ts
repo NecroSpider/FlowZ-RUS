@@ -142,11 +142,14 @@ export function buildDnsConfig(
   if (userDnsConfig.domesticDns && !parseDnsServerSpec(userDnsConfig.domesticDns)) {
     log(
       'warn',
-      `国内 DNS 无法解析，已回退默认 ${DEFAULT_DOMESTIC_DNS}: ${userDnsConfig.domesticDns}`
+      `Could not parse domestic DNS, fell back to default ${DEFAULT_DOMESTIC_DNS}: ${userDnsConfig.domesticDns}`
     );
   }
   if (userDnsConfig.foreignDns && !parseDnsServerSpec(userDnsConfig.foreignDns)) {
-    log('warn', `境外 DNS 无法解析，已回退默认 dns.google: ${userDnsConfig.foreignDns}`);
+    log(
+      'warn',
+      `Could not parse foreign DNS, fell back to default dns.google: ${userDnsConfig.foreignDns}`
+    );
   }
   // 由解析结果构造 dns server：域名型 DNS 需 domain_resolver 引导解析；DoH 带 path；remote 走代理 detour。
   const buildUserDns = (tag: string, p: ParsedDnsServer, detour?: string): SingBoxDnsServer => ({
@@ -274,7 +277,7 @@ export function buildDnsConfig(
       const local = dnsServers.find((s) => s.tag === 'dns-local');
       if (local) {
         local.neighbor_domain = neighborDomains;
-        log('info', `local DNS 邻居解析后缀: ${neighborDomains.join(', ')}`);
+        log('info', `local DNS neighbor-resolution suffixes: ${neighborDomains.join(', ')}`);
       }
     }
   }
@@ -365,7 +368,7 @@ export function buildDnsConfig(
   );
   if (nodeDomains.length) {
     // 观测：超大订阅下 rule1 域名规模（不设上限，trie 匹配千级无压力；异常膨胀时据此定位）。
-    log('info', `DNS rule1 节点域名规则: ${nodeDomains.length} 个域名`);
+    log('info', `DNS rule1 node-domain rule: ${nodeDomains.length} domains`);
     dnsRules.push({
       domain: nodeDomains,
       domain_suffix: nodeDomains.flatMap((d) => [d, `.${d}`]),
@@ -792,9 +795,15 @@ export function buildDnsConfig(
         action: 'route',
         server: TS_NAME_DNS_TAG,
       } as SingBoxDnsRule);
-      log('info', `Tailscale 按名解析已启用：tailnet 名 → ${TS_NAME_DNS_TAG}(endpoint=${epTag})`);
+      log(
+        'info',
+        `Tailscale name resolution enabled: tailnet names -> ${TS_NAME_DNS_TAG}(endpoint=${epTag})`
+      );
     } else {
-      log('warn', 'Tailscale 按名解析已开启，但未能定位选中节点的 endpoint tag，已跳过');
+      log(
+        'warn',
+        'Tailscale name resolution is on, but the endpoint tag of the selected node was not found; skipped'
+      );
     }
   }
 

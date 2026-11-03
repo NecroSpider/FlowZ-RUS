@@ -47,7 +47,7 @@ describe('flushOsDnsCache', () => {
     const log = jest.fn();
     await flushOsDnsCache({ platform: 'darwin', exec, helperFlushDns: helper, log });
     expect(exec).toHaveBeenCalledWith('/usr/bin/dscacheutil', ['-flushcache'], expect.any(Number));
-    expect(log).toHaveBeenCalledWith('warn', expect.stringContaining('降级'));
+    expect(log).toHaveBeenCalledWith('warn', expect.stringContaining('falling back'));
   });
 
   it('darwin：无 helper（null，未装/非 TUN 场景）→ 直接用户级 dscacheutil', async () => {

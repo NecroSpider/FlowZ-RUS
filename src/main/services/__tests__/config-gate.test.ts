@@ -236,7 +236,7 @@ describe('checkAndPruneConfig 剔除算法', () => {
         servers: [{ id: 'a' }, { id: 'b' }],
         selectedServerId: 'a',
       })
-    ).rejects.toThrow(/更换节点/);
+    ).rejects.toThrow(/switch to another node/);
   });
 
   it('全部节点剔光 → throw 没有可用的代理节点', async () => {
@@ -252,7 +252,7 @@ describe('checkAndPruneConfig 剔除算法', () => {
     const cfg = { servers: [{ id: 'a' }, { id: 'b' }], selectedServerId: 'zzz' };
     checkFailOnce('outbounds[0].method: bad'); // 剔 A
     checkFailOnce('outbounds[0].method: bad'); // 剩 [B,selector,...]，B 在下标0 → 剔 B → selector 空
-    await expect(pm.checkAndPruneConfig(sb, cfg)).rejects.toThrow(/没有可用的代理节点/);
+    await expect(pm.checkAndPruneConfig(sb, cfg)).rejects.toThrow(/No usable proxy node/);
   });
 
   it('降级：stderr 无下标 → throw 配置校验失败（不误剔）', async () => {
@@ -265,7 +265,7 @@ describe('checkAndPruneConfig 剔除算法', () => {
     checkFailOnce('some opaque parse error without index');
     await expect(
       pm.checkAndPruneConfig(sb, { servers: [{ id: 'a' }], selectedServerId: 'a' })
-    ).rejects.toThrow(/配置校验失败/);
+    ).rejects.toThrow(/Config validation failed/);
   });
 
   it('降级：命中非节点出站（proxy-selector）→ throw 配置校验失败', async () => {
@@ -279,7 +279,7 @@ describe('checkAndPruneConfig 剔除算法', () => {
     checkFailOnce('outbounds[1].outbounds: bad');
     await expect(
       pm.checkAndPruneConfig(sb, { servers: [{ id: 'a' }], selectedServerId: 'a' })
-    ).rejects.toThrow(/配置校验失败/);
+    ).rejects.toThrow(/Config validation failed/);
   });
 
   it('fail-open：ENOENT（核心不可执行）→ 跳过 gate 不抛，按现状启动', async () => {
@@ -346,7 +346,7 @@ describe('checkAndPruneConfig 剔除算法', () => {
       selectedServerId: 'sel',
     });
     // 文案含「已剔除 3」+「无法通过校验」；命中的是上限分支而非「没有可用的代理节点」/「更换节点」。
-    await expect(p).rejects.toThrow(/已剔除 3 个非法节点仍无法通过校验/);
+    await expect(p).rejects.toThrow(/still failing after removing 3 invalid node\(s\)/);
     // 旁证：确实剔了 3 个（N1/N2/N3），且选中 SEL 与 N4 仍在 → selector 未剔空、选中未被标。
     expect(pm.gateInvalidNodes.size).toBe(3);
     const tags = sb.outbounds.map((o: AnyCfg) => o.tag);

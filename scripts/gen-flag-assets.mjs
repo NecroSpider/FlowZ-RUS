@@ -42,39 +42,39 @@ for (const region of manifest) {
   try {
     raw = readFileSync(file, 'utf8').trim();
   } catch {
-    errors.push(`${code}: 缺文件 3x2/${upper}.svg（country-flag-icons 未收录该 code）`);
+    errors.push(`${code}: missing file 3x2/${upper}.svg (country-flag-icons does not include this code)`);
     continue;
   }
 
   for (const bad of FORBIDDEN) {
-    if (raw.includes(bad)) errors.push(`${code}: 含禁用构造 '${bad}'（id 冲突/CSP 风险）`);
+    if (raw.includes(bad)) errors.push(`${code}: contains forbidden construct '${bad}' (id collision / CSP risk)`);
   }
 
   const open = raw.match(/^<svg\b[^>]*>/);
   if (!open) {
-    errors.push(`${code}: 未找到 <svg> 根标签`);
+    errors.push(`${code}: <svg> root tag not found`);
     continue;
   }
   const vbMatch = open[0].match(/viewBox="([^"]*)"/);
   if (!vbMatch) {
-    errors.push(`${code}: 根标签缺 viewBox`);
+    errors.push(`${code}: root tag is missing viewBox`);
     continue;
   }
   const viewBox = vbMatch[1].trim();
   const nums = viewBox.split(/\s+/).map(Number);
   if (nums.length !== 4 || nums.some((n) => Number.isNaN(n))) {
-    errors.push(`${code}: viewBox 非法 '${viewBox}'`);
+    errors.push(`${code}: invalid viewBox '${viewBox}'`);
     continue;
   }
   const [, , w, h] = nums;
   const aspect = w / h;
   if (Math.abs(aspect - ASPECT) > TOL) {
-    errors.push(`${code}: 宽高比 ${aspect.toFixed(4)} 偏离 1.5（viewBox '${viewBox}'），非 3:2`);
+    errors.push(`${code}: aspect ratio ${aspect.toFixed(4)} deviates from 1.5 (viewBox '${viewBox}'), not 3:2`);
   }
 
   const close = raw.lastIndexOf('</svg>');
   if (close < 0) {
-    errors.push(`${code}: 未找到 </svg> 收尾`);
+    errors.push(`${code}: closing </svg> tag not found`);
     continue;
   }
   const inner = raw.slice(open[0].length, close);
@@ -83,7 +83,7 @@ for (const region of manifest) {
 }
 
 if (errors.length) {
-  console.error('gen-flag-assets 失败（严格校验未通过）：');
+  console.error('gen-flag-assets failed (strict validation did not pass):');
   for (const e of errors) console.error(`  - ${e}`);
   process.exit(1);
 }
@@ -108,4 +108,4 @@ const prettierConfig = (await resolveConfig(outFile)) ?? {};
 const out = await format(source, { ...prettierConfig, parser: 'typescript' });
 
 writeFileSync(outFile, out);
-console.log(`生成 ${Object.keys(bodies).length} 面旗（country-flag-icons@${pkgVersion}）→ flag-assets.generated.ts`);
+console.log(`Generated ${Object.keys(bodies).length} flags (country-flag-icons@${pkgVersion}) → flag-assets.generated.ts`);

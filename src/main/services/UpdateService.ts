@@ -163,8 +163,12 @@ export class UpdateService {
    */
   async checkForUpdate(includePrerelease = false, retried = false): Promise<UpdateCheckResult> {
     try {
-      this.logManager.addLog('info', '开始检查更新...', 'UpdateService');
-      this.updateProgress({ status: 'checking', percentage: 0, message: '正在检查更新...' });
+      this.logManager.addLog('info', 'Starting update check...', 'UpdateService');
+      this.updateProgress({
+        status: 'checking',
+        percentage: 0,
+        message: 'Checking for updates...',
+      });
 
       const releases = await this.fetchReleases();
 
@@ -176,8 +180,8 @@ export class UpdateService {
         );
 
       if (validReleases.length === 0) {
-        this.logManager.addLog('warn', '未找到任何发布版本', 'UpdateService');
-        this.updateProgress({ status: 'no-update', percentage: 0, message: '未找到发布版本' });
+        this.logManager.addLog('warn', 'No releases found', 'UpdateService');
+        this.updateProgress({ status: 'no-update', percentage: 0, message: 'No releases found' });
         return { hasUpdate: false };
       }
 
@@ -186,19 +190,19 @@ export class UpdateService {
       const latestVersion = latestRelease.tag_name.replace(/^v/, '');
 
       if (!this.isNewerVersion(latestVersion, currentVersion)) {
-        this.logManager.addLog('info', `当前已是最新版本: ${currentVersion}`, 'UpdateService');
-        this.updateProgress({ status: 'no-update', percentage: 0, message: '当前已是最新版本' });
+        this.logManager.addLog('info', `Already up to date: ${currentVersion}`, 'UpdateService');
+        this.updateProgress({ status: 'no-update', percentage: 0, message: 'Already up to date' });
         return { hasUpdate: false };
       }
 
       const asset = this.findSuitableAsset(latestRelease.assets);
 
       if (!asset) {
-        this.logManager.addLog('warn', '未找到适合当前平台的安装包', 'UpdateService');
+        this.logManager.addLog('warn', 'No installer found for this platform', 'UpdateService');
         this.updateProgress({
           status: 'no-update',
           percentage: 0,
-          message: '未找到适合当前平台的安装包',
+          message: 'No installer found for this platform',
         });
         return { hasUpdate: false };
       }
@@ -208,7 +212,7 @@ export class UpdateService {
       else
         this.logManager.addLog(
           'warn',
-          `安装包缺少 sha256 摘要，将拒绝安装: ${asset.name}`,
+          `Installer has no sha256 digest and will be refused: ${asset.name}`,
           'UpdateService'
         );
 
@@ -224,27 +228,35 @@ export class UpdateService {
       };
 
       if (this.skippedVersion === latestVersion) {
-        this.logManager.addLog('info', `版本 ${latestVersion} 已被用户跳过`, 'UpdateService');
-        this.updateProgress({ status: 'no-update', percentage: 0, message: '此版本已被跳过' });
+        this.logManager.addLog(
+          'info',
+          `Version ${latestVersion} was skipped by the user`,
+          'UpdateService'
+        );
+        this.updateProgress({
+          status: 'no-update',
+          percentage: 0,
+          message: 'This version was skipped',
+        });
         return { hasUpdate: false };
       }
 
-      this.logManager.addLog('info', `发现新版本: ${latestVersion}`, 'UpdateService');
+      this.logManager.addLog('info', `New version available: ${latestVersion}`, 'UpdateService');
       this.updateProgress({
         status: 'update-available',
         percentage: 0,
-        message: `发现新版本 ${latestVersion}`,
+        message: `New version ${latestVersion} available`,
       });
 
       return { hasUpdate: true, updateInfo };
     } catch (error: any) {
-      const errorMessage = error?.message || '检查更新失败';
+      const errorMessage = error?.message || 'Update check failed';
       const transient = this.isTransientNetworkError(errorMessage);
       // 网络切换/瞬态（TUN 起来、断网重连，启动期常见）：不报刺眼 error；首次延迟 5s 自重试一次（等网络稳定）。
       if (transient && !retried) {
         this.logManager.addLog(
           'info',
-          `网络切换中，5s 后重试检查更新: ${errorMessage}`,
+          `Network is switching, retrying the update check in 5s: ${errorMessage}`,
           'UpdateService'
         );
         await new Promise((r) => setTimeout(r, 5000));
@@ -253,13 +265,13 @@ export class UpdateService {
       // 重试后仍失败的瞬态 → warn + 静默（no-update），不弹 error UI；其它 → error。
       this.logManager.addLog(
         transient ? 'warn' : 'error',
-        `检查更新失败: ${errorMessage}`,
+        `Update check failed: ${errorMessage}`,
         'UpdateService'
       );
       this.updateProgress({
         status: transient ? 'no-update' : 'error',
         percentage: 0,
-        message: '检查更新失败',
+        message: 'Update check failed',
         error: errorMessage,
       });
       return { hasUpdate: false, error: errorMessage };
@@ -269,8 +281,12 @@ export class UpdateService {
   async downloadUpdate(updateInfo: UpdateInfo): Promise<string | null> {
     // 手动下载不传 cancel token → 不可取消、与弹窗流的取消 token 完全隔离（无跨流污染）。
     try {
-      this.logManager.addLog('info', `开始下载更新: ${updateInfo.version}`, 'UpdateService');
-      this.updateProgress({ status: 'downloading', percentage: 0, message: '正在下载更新...' });
+      this.logManager.addLog('info', `Downloading update: ${updateInfo.version}`, 'UpdateService');
+      this.updateProgress({
+        status: 'downloading',
+        percentage: 0,
+        message: 'Downloading update...',
+      });
 
       const downloadDir = app.getPath('temp');
       const filePath = path.join(downloadDir, updateInfo.fileName);
@@ -282,17 +298,17 @@ export class UpdateService {
       await this.downloadFile(updateInfo.downloadUrl, filePath, updateInfo.fileSize);
       await this.verifyInstaller(filePath, updateInfo.downloadUrl);
 
-      this.logManager.addLog('info', `更新下载完成: ${filePath}`, 'UpdateService');
-      this.updateProgress({ status: 'downloaded', percentage: 100, message: '下载完成' });
+      this.logManager.addLog('info', `Update downloaded: ${filePath}`, 'UpdateService');
+      this.updateProgress({ status: 'downloaded', percentage: 100, message: 'Download complete' });
 
       return filePath;
     } catch (error: any) {
-      const errorMessage = error?.message || '下载更新失败';
-      this.logManager.addLog('error', `下载更新失败: ${errorMessage}`, 'UpdateService');
+      const errorMessage = error?.message || 'Update download failed';
+      this.logManager.addLog('error', `Update download failed: ${errorMessage}`, 'UpdateService');
       this.updateProgress({
         status: 'error',
         percentage: 0,
-        message: '下载失败',
+        message: 'Download failed',
         error: errorMessage,
       });
       return null;
@@ -324,10 +340,14 @@ export class UpdateService {
 
   async installUpdate(installerPath: string): Promise<boolean> {
     try {
-      this.logManager.addLog('info', `准备安装更新: ${installerPath}`, 'UpdateService');
+      this.logManager.addLog(
+        'info',
+        `Preparing to install update: ${installerPath}`,
+        'UpdateService'
+      );
 
       if (!fs.existsSync(installerPath)) {
-        this.logManager.addLog('error', `安装包不存在: ${installerPath}`, 'UpdateService');
+        this.logManager.addLog('error', `Installer not found: ${installerPath}`, 'UpdateService');
         return false;
       }
 
@@ -335,7 +355,7 @@ export class UpdateService {
       if (!expected || (await sha256OfFile(installerPath)) !== expected) {
         this.logManager.addLog(
           'error',
-          `拒绝安装未经校验或校验后被改动的安装包: ${installerPath}`,
+          `Refusing to install an unverified or modified installer: ${installerPath}`,
           'UpdateService'
         );
         return false;
@@ -347,7 +367,11 @@ export class UpdateService {
       if (this.isDebUpdateForm(installerPath)) {
         const proceed = await this.confirmDebElevation();
         if (!proceed) {
-          this.logManager.addLog('info', 'deb 更新被用户取消（授权说明框）', 'UpdateService');
+          this.logManager.addLog(
+            'info',
+            'deb update cancelled by the user (authorization prompt)',
+            'UpdateService'
+          );
           return false;
         }
       }
@@ -355,12 +379,16 @@ export class UpdateService {
       // 在安装更新前，先清理资源（停止代理进程等）
       // 这是关键步骤，否则 Windows 上会因为文件被占用而安装失败
       if (this.cleanupCallback) {
-        this.logManager.addLog('info', '正在停止代理进程...', 'UpdateService');
+        this.logManager.addLog('info', 'Stopping the proxy process...', 'UpdateService');
         try {
           await this.cleanupCallback();
-          this.logManager.addLog('info', '代理进程已停止', 'UpdateService');
+          this.logManager.addLog('info', 'Proxy process stopped', 'UpdateService');
         } catch (error: any) {
-          this.logManager.addLog('warn', `停止代理进程时出错: ${error?.message}`, 'UpdateService');
+          this.logManager.addLog(
+            'warn',
+            `Error stopping the proxy process: ${error?.message}`,
+            'UpdateService'
+          );
           // 继续安装，不要因为清理失败而中断
         }
       }
@@ -379,7 +407,9 @@ export class UpdateService {
           : null;
         this.logManager.addLog(
           'info',
-          portableTarget ? '便携版：移入新版本名文件 + 删旧版本名' : 'NSIS：运行安装器原位升级',
+          portableTarget
+            ? 'Portable: moving in the new versioned file and removing the old one'
+            : 'NSIS: running the installer for an in-place upgrade',
           'UpdateService'
         );
         const vbsContent = buildWindowsUpdateVbs({
@@ -401,7 +431,11 @@ export class UpdateService {
         });
         vbs.unref();
 
-        this.logManager.addLog('info', '更新脚本已启动，正在退出应用...', 'UpdateService');
+        this.logManager.addLog(
+          'info',
+          'Update script started, quitting the app...',
+          'UpdateService'
+        );
 
         // 给一点时间让 VBS 启动，然后退出应用
         setTimeout(() => {
@@ -416,7 +450,9 @@ export class UpdateService {
         const appBundlePath = macAppBundleFromExe(app.getPath('exe'));
         this.logManager.addLog(
           'info',
-          appBundlePath ? `自动替换 .app: ${appBundlePath}` : '定位 .app 失败，回退手动拖拽',
+          appBundlePath
+            ? `Replacing the .app automatically: ${appBundlePath}`
+            : 'Could not locate the .app, falling back to manual drag-and-drop',
           'UpdateService'
         );
         const scriptContent = buildMacUpdateScript({ dmgPath: installerPath, appBundlePath });
@@ -430,7 +466,11 @@ export class UpdateService {
         });
         child.unref();
 
-        this.logManager.addLog('info', 'DMG 文件将在应用退出后打开...', 'UpdateService');
+        this.logManager.addLog(
+          'info',
+          'The DMG will be opened after the app quits...',
+          'UpdateService'
+        );
 
         setTimeout(() => {
           this.destroyTrayForExit();
@@ -458,8 +498,8 @@ export class UpdateService {
           this.logManager.addLog(
             'info',
             isAppImage
-              ? `AppImage 原位更新: ${appImageTarget}`
-              : 'deb 原位升级（pkexec apt-get install + 重启）',
+              ? `AppImage in-place update: ${appImageTarget}`
+              : 'deb in-place upgrade (pkexec apt-get install + restart)',
             'UpdateService'
           );
         } else {
@@ -468,7 +508,7 @@ export class UpdateService {
           await shell.openPath(installerPath);
           this.logManager.addLog(
             'warn',
-            `更新包形态与运行形态不匹配，交系统处理: ${installerPath}`,
+            `Update package type does not match the installed app type, handing it to the system: ${installerPath}`,
             'UpdateService'
           );
         }
@@ -480,7 +520,11 @@ export class UpdateService {
 
       return true;
     } catch (error: any) {
-      this.logManager.addLog('error', `安装更新失败: ${error?.message}`, 'UpdateService');
+      this.logManager.addLog(
+        'error',
+        `Failed to install the update: ${error?.message}`,
+        'UpdateService'
+      );
       return false;
     }
   }
@@ -501,7 +545,7 @@ export class UpdateService {
   skipVersion(version: string): void {
     this.skippedVersion = version.replace(/^v/, '');
     this.saveSkippedVersion();
-    this.logManager.addLog('info', `已跳过版本: ${version}`, 'UpdateService');
+    this.logManager.addLog('info', `Skipped version: ${version}`, 'UpdateService');
   }
 
   /**
@@ -622,7 +666,11 @@ export class UpdateService {
       ? win.loadURL('http://localhost:5173/update-popup.html')
       : win.loadFile(path.join(app.getAppPath(), 'dist/renderer/update-popup.html'));
     loaded.catch((err: Error) => {
-      this.logManager.addLog('error', `更新弹窗加载失败: ${err.message}`, 'UpdateService');
+      this.logManager.addLog(
+        'error',
+        `Failed to load the update popup: ${err.message}`,
+        'UpdateService'
+      );
       // 加载失败弹窗永不 ready-to-show/无按钮 → 关窗并解 awaiter，避免 showUpdateDialog/下载流永挂（旧实现降级 later）。
       if (this.updatePopupWindow === win) {
         this.closeUpdatePopup();
@@ -787,7 +835,11 @@ export class UpdateService {
       const ctl: DownloadControl = { cancelled: false, abort: null };
       this.popupDownloadControl = ctl;
       try {
-        this.logManager.addLog('info', `开始下载更新: ${updateInfo.version}`, 'UpdateService');
+        this.logManager.addLog(
+          'info',
+          `Downloading update: ${updateInfo.version}`,
+          'UpdateService'
+        );
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         await this.downloadFile(
           updateInfo.downloadUrl,
@@ -799,11 +851,11 @@ export class UpdateService {
         );
 
         // 竞态：取消恰在下载完成瞬间到达（download 已 resolve）→ 仍按取消处理，不进 done/不安装。
-        if (ctl.cancelled) return this.finishPopupCancel(filePath, '（完成瞬间）');
+        if (ctl.cancelled) return this.finishPopupCancel(filePath, ' (at completion)');
         await this.verifyInstaller(filePath, updateInfo.downloadUrl);
 
         this.popupDownloadControl = null;
-        this.logManager.addLog('info', `更新下载完成: ${filePath}`, 'UpdateService');
+        this.logManager.addLog('info', `Update downloaded: ${filePath}`, 'UpdateService');
         this.sendPopupState({
           phase: 'done',
           theme: this.resolvedTheme(),
@@ -822,8 +874,8 @@ export class UpdateService {
         if (ctl.cancelled) return this.finishPopupCancel(filePath, '');
 
         this.popupDownloadControl = null;
-        const errorMessage = error?.message || '下载更新失败';
-        this.logManager.addLog('error', `下载更新失败: ${errorMessage}`, 'UpdateService');
+        const errorMessage = error?.message || 'Update download failed';
+        this.logManager.addLog('error', `Update download failed: ${errorMessage}`, 'UpdateService');
         this.sendPopupState({
           phase: 'error',
           theme: this.resolvedTheme(),
@@ -853,15 +905,16 @@ export class UpdateService {
   /** 把下载错误的（中文）内部消息按类别映射为本地化文案，供 5 语弹窗 error 态展示；原始详情仍进日志。 */
   private localizeDownloadError(raw: string): string {
     if (
-      /停滞超时|超时|ETIMEDOUT|ECONNRESET|DISCONNECTED|NETWORK_CHANGED|socket hang up|中断|拦截/i.test(
+      /timed out|stalled|interrupted|blocked|ETIMEDOUT|ECONNRESET|DISCONNECTED|NETWORK_CHANGED|socket hang up/i.test(
         raw
       )
     ) {
       return mt('updErrNetwork');
     }
-    if (/校验失败/.test(raw)) return mt('updErrIntegrity');
-    if (/不完整|截断|incomplete|truncat/i.test(raw)) return mt('updErrIncomplete');
-    if (/HTTP\s*\d|返回错误|频率限制|响应过大|403|5\d\d/i.test(raw)) return mt('updErrServer');
+    if (/verification failed/i.test(raw)) return mt('updErrIntegrity');
+    if (/incomplete|truncat/i.test(raw)) return mt('updErrIncomplete');
+    if (/HTTP\s*\d|returned an error|rate limit|response too large|403|5\d\d/i.test(raw))
+      return mt('updErrServer');
     return mt('updErrGeneric');
   }
 
@@ -881,12 +934,12 @@ export class UpdateService {
       }
       throw new Error(
         expected
-          ? `安装包校验失败：sha256 不匹配（期望 ${expected}，实际 ${actual}）`
-          : '安装包校验失败：缺少官方 sha256 摘要，拒绝安装'
+          ? `Installer verification failed: sha256 mismatch (expected ${expected}, got ${actual})`
+          : 'Installer verification failed: no official sha256 digest, refusing to install'
       );
     }
     this.verifiedInstallers.set(filePath, expected);
-    this.logManager.addLog('info', `安装包 sha256 校验通过: ${expected}`, 'UpdateService');
+    this.logManager.addLog('info', `Installer sha256 verified: ${expected}`, 'UpdateService');
   }
 
   /** 取消下载的统一收尾：清 token + 删残件 + 关窗 + 返回 null（不安装）。 */
@@ -897,7 +950,7 @@ export class UpdateService {
     } catch {
       /* 残件清理失败无害（temp 目录 OS 自清） */
     }
-    this.logManager.addLog('info', `用户取消更新下载${note}`, 'UpdateService');
+    this.logManager.addLog('info', `User cancelled the update download${note}`, 'UpdateService');
     this.closeUpdatePopup();
     return null;
   }
@@ -929,7 +982,7 @@ export class UpdateService {
         } catch {
           /* ignore */
         }
-        finish(new Error('检查更新超时（GitHub 不可达或被网络拦截）'));
+        finish(new Error('Update check timed out (GitHub unreachable or blocked by the network)'));
       }, 15000);
 
       request.setHeader('User-Agent', APP_USER_AGENT);
@@ -950,7 +1003,7 @@ export class UpdateService {
             } catch {
               /* ignore */
             }
-            finish(new Error('GitHub 响应过大（疑似被劫持/WAF 拦截）'));
+            finish(new Error('GitHub response too large (possibly hijacked or blocked by a WAF)'));
             return;
           }
         });
@@ -959,12 +1012,14 @@ export class UpdateService {
             try {
               finish(null, JSON.parse(data));
             } catch {
-              finish(new Error('解析 GitHub API 响应失败'));
+              finish(new Error('Failed to parse the GitHub API response'));
             }
           } else if (res.statusCode === 403) {
-            finish(new Error('GitHub API 访问频率限制 (403)，请稍后再试或使用代理'));
+            finish(
+              new Error('GitHub API rate limit exceeded (403), try again later or use a proxy')
+            );
           } else {
-            finish(new Error(`GitHub API 返回错误: ${res.statusCode}`));
+            finish(new Error(`GitHub API returned an error: ${res.statusCode}`));
           }
         });
         // response 阶段断连（ERR_CONNECTION_CLOSED 等）从 res emit 'error'，缺此 handler 会逃逸成主进程
@@ -1026,7 +1081,7 @@ export class UpdateService {
             this.updateProgress({
               status: 'downloading',
               percentage: 0,
-              message: '正在尝试通过镜像下载...',
+              message: 'Trying to download via the mirror...',
             });
           }
         },
@@ -1044,7 +1099,7 @@ export class UpdateService {
               this.updateProgress({
                 status: 'downloading',
                 percentage,
-                message: `正在下载更新... ${percentage}%`,
+                message: `Downloading update... ${percentage}%`,
               });
             }
           }
@@ -1109,7 +1164,9 @@ export class UpdateService {
         } catch {
           /* ignore */
         }
-        handleError(new Error('下载停滞超时（30s 无数据，网络中断或被拦截）'));
+        handleError(
+          new Error('Download stalled (no data for 30s, network interrupted or blocked)')
+        );
       }, DOWNLOAD_IDLE_TIMEOUT_MS);
 
       const handleError = (err: any) => {
@@ -1130,7 +1187,7 @@ export class UpdateService {
         if (mirrorUrl) {
           this.logManager.addLog(
             'warn',
-            `下载出错，尝试使用加速镜像: ${err.message}`,
+            `Download error, retrying via the mirror: ${err.message}`,
             'UpdateService'
           );
           cb.onMirror();
@@ -1158,12 +1215,12 @@ export class UpdateService {
           } catch {
             /* ignore */
           }
-          handleError(new Error('下载已取消'));
+          handleError(new Error('Download cancelled'));
         };
         // 取消可能落在建请求前的 await 间隙（resolveGhPrefix/updateSession，含端口探测）——彼时 ctl.abort 尚为
         // null、abort() 是 no-op。到此请求已建、abort 钩子已装，若期间已置取消则立即收尾，避免白下整包才被完成后检查丢弃。
         if (ctl.cancelled) {
-          handleError(new Error('下载已取消'));
+          handleError(new Error('Download cancelled'));
           return;
         }
       }
@@ -1198,7 +1255,7 @@ export class UpdateService {
           idle.clear();
           file.close();
           if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-          reject(new Error(`下载失败: HTTP ${response.statusCode}`));
+          reject(new Error(`Download failed: HTTP ${response.statusCode}`));
           return;
         }
 
@@ -1229,7 +1286,7 @@ export class UpdateService {
             if (!isNaN(expectedBytes) && downloadedBytes !== expectedBytes) {
               handleError(
                 new Error(
-                  `下载不完整：收到 ${downloadedBytes} 字节，期望 ${expectedBytes}（可能被截断）`
+                  `Download incomplete: received ${downloadedBytes} bytes, expected ${expectedBytes} (possibly truncated)`
                 )
               );
               return;

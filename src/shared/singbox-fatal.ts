@@ -82,15 +82,15 @@ export function classifySingBoxFatal(
     // 172.19.0.1 的网卡——方向全错。且 P0-2 的候选池只避让 v4，对 v6 冲突无避让，文案不能暗示已处理。
     const isV6 = lower.includes('set ipv6 address');
     const suffix =
-      '无法配置到虚拟网卡。占用方可能是一张已断开或隐藏的适配器（设备管理器默认不显示），常见于其它 VPN/TUN 客户端的残留网卡。';
+      'so it cannot be assigned to the virtual adapter. The interface holding it may be a disconnected or hidden adapter (Device Manager does not show these by default), often one left behind by another VPN/TUN client.';
     return {
       kind: 'tun-address-conflict',
       raw,
       message: isV6
-        ? `TUN 的 IPv6 地址已被本机其它网络接口占用，${suffix}`
+        ? `The TUN IPv6 address is already in use by another network interface on this computer, ${suffix}`
         : addr
-          ? `TUN 地址 ${addr} 已被本机其它网络接口占用，${suffix}`
-          : `TUN 地址已被本机其它网络接口占用，${suffix}`,
+          ? `TUN address ${addr} is already in use by another network interface on this computer, ${suffix}`
+          : `The TUN address is already in use by another network interface on this computer, ${suffix}`,
     };
   }
 
@@ -101,20 +101,20 @@ export function classifySingBoxFatal(
       kind: 'tun-adapter-create',
       raw,
       message:
-        '虚拟网卡（wintun）创建失败。常见原因：wintun 驱动被安全软件拦截或隔离、驱动版本与其它 VPN 客户端冲突。',
+        'Failed to create the virtual adapter (wintun). Common causes: the wintun driver was blocked or quarantined by security software, or its version conflicts with another VPN client.',
     };
   }
 
   if (lower.includes('set ipv4 dns') || lower.includes('set ipv6 dns')) {
-    return { kind: 'tun-dns', raw, message: 'TUN 接口的 DNS 下发失败。' };
+    return { kind: 'tun-dns', raw, message: 'Failed to apply DNS settings to the TUN interface.' };
   }
 
   // 仍在 tun.New() 窗口内但不在已知表：透传原文，不编造原因。
   if (lower.includes('configure tun interface')) {
-    return { kind: 'tun-other', raw, message: `TUN 接口配置失败：${raw}` };
+    return { kind: 'tun-other', raw, message: `Failed to configure the TUN interface: ${raw}` };
   }
 
-  return { kind: 'other', raw, message: `sing-box 启动失败：${raw}` };
+  return { kind: 'other', raw, message: `sing-box failed to start: ${raw}` };
 }
 
 /**

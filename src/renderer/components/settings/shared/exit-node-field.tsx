@@ -71,7 +71,7 @@ export function ExitNodeField({ value, onChange, serverId, disabled }: ExitNodeF
         disabled={disabled}
         showAddress
         ariaLabel={t('servers.tsExitNode', 'Exit node')}
-        searchPlaceholder={t('common.search', '搜索')}
+        searchPlaceholder={t('common.search', 'Search')}
       />
       {isCustom && customInput}
     </div>

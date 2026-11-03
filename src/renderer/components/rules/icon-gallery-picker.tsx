@@ -123,7 +123,7 @@ export function IconGalleryPicker({
           />
         </label>
 
-        <div className="ico-sub">{t('rules.customApp.iconRemoteGroup', '远端图标')}</div>
+        <div className="ico-sub">{t('rules.customApp.iconRemoteGroup', 'Remote icons')}</div>
         {isLoadingIcons ? (
           <div className="px-1 py-3 text-center text-xs text-fg-faint">
             {t('rules.customApp.loadingIcons')}
@@ -170,7 +170,7 @@ export function IconGalleryPicker({
           </div>
         )}
 
-        <div className="ico-sub">{t('rules.customApp.iconEmojiGroup', 'emoji 兜底')}</div>
+        <div className="ico-sub">{t('rules.customApp.iconEmojiGroup', 'emoji fallback')}</div>
         <div className="ico-emoji">
           {EMOJI_PALETTE.map((e) => (
             <button
@@ -186,7 +186,7 @@ export function IconGalleryPicker({
             <button
               type="button"
               className={!iconUrl && emoji === firstLetter(appName) ? 'ltr sel' : 'ltr'}
-              title={t('rules.customApp.iconLetterFallback', '首字母图标')}
+              title={t('rules.customApp.iconLetterFallback', 'Initial icon')}
               onClick={() => onPickEmoji(firstLetter(appName))}
             >
               {firstLetter(appName)}
@@ -194,7 +194,7 @@ export function IconGalleryPicker({
           )}
         </div>
 
-        <div className="ico-sub">{t('rules.customApp.iconUrlGroup', '或粘贴图标 URL')}</div>
+        <div className="ico-sub">{t('rules.customApp.iconUrlGroup', 'Or paste an icon URL')}</div>
         <div className="ico-url">
           <input
             type="text"
@@ -209,12 +209,15 @@ export function IconGalleryPicker({
             }}
           />
           <button type="button" className="btn sm ghost" onClick={applyUrl}>
-            {t('common.apply', '应用')}
+            {t('common.apply', 'Apply')}
           </button>
         </div>
 
         <div className="ico-hint">
-          {t('rules.customApp.iconFallbackHint', '远端图标加载失败时，自动回退为应用名首字母。')}
+          {t(
+            'rules.customApp.iconFallbackHint',
+            'If the remote icon fails to load, it falls back to the app name’s initial.'
+          )}
         </div>
       </div>
     </details>

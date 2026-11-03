@@ -144,7 +144,7 @@ describe('buildWireGuardEndpoint', () => {
         } as unknown as Partial<ServerConfig>),
         'WG4'
       )
-    ).toThrow(/外网访问|allowed/i);
+    ).toThrow(/internet access|allowed/i);
   });
 
   it('缺 privateKey/peerPublicKey/localAddress → 抛错', () => {

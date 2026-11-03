@@ -370,7 +370,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                   <Input
                     placeholder={t(
                       'servers.wgAllowedIPsPlaceholder',
-                      '留空=全隧道；或 10.8.0.0/24'
+                      'Empty = full tunnel; or 10.8.0.0/24'
                     )}
                     {...field}
                   />

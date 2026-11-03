@@ -92,7 +92,7 @@ describe('VLESS', () => {
   });
 
   it('缺 UUID → 抛错', () => {
-    expect(() => parser.parseUrl('vless://@h.example.com:443')).toThrow(/缺少 UUID/);
+    expect(() => parser.parseUrl('vless://@h.example.com:443')).toThrow(/missing UUID/);
   });
 
   it('往返不动点 ws+tls', () =>
@@ -158,7 +158,7 @@ describe('Hysteria2', () => {
   });
 
   it('缺密码 → 抛错', () => {
-    expect(() => parser.parseUrl('hysteria2://@d.example.com:443')).toThrow(/缺少密码/);
+    expect(() => parser.parseUrl('hysteria2://@d.example.com:443')).toThrow(/missing password/);
   });
 
   it('往返不动点', () =>
@@ -198,7 +198,7 @@ describe('Shadowsocks', () => {
   });
 
   it('缺 userinfo → 抛错', () => {
-    expect(() => parser.parseUrl('ss://@e.example.com:8388')).toThrow(/缺少加密信息/);
+    expect(() => parser.parseUrl('ss://@e.example.com:8388')).toThrow(/missing cipher info/);
   });
 
   it('往返不动点（base64）', () =>
@@ -276,7 +276,7 @@ describe('TUIC', () => {
 
   it('缺 password → 抛错', () => {
     expect(() => parser.parseUrl('tuic://onlyuuid@g.example.com:443')).toThrow(
-      /缺少 uuid 或 password/
+      /missing uuid or password/
     );
   });
 
@@ -340,7 +340,9 @@ describe('Naive', () => {
   ])('别名归一为 naive: %s', (u) => expect(parser.parseUrl(u).protocol).toBe('naive'));
 
   it('缺用户名/密码 → 抛错', () => {
-    expect(() => parser.parseUrl('naive+https://h.example.com:443')).toThrow(/缺少用户名或密码/);
+    expect(() => parser.parseUrl('naive+https://h.example.com:443')).toThrow(
+      /missing username or password/
+    );
   });
 
   it('往返不动点', () =>
@@ -388,7 +390,7 @@ describe('VMess', () => {
   });
 
   it('配置不完整 → 抛错', () => {
-    expect(() => parser.parseUrl(mkVmess({ add: 'x', port: '443' }))).toThrow(/解析失败/);
+    expect(() => parser.parseUrl(mkVmess({ add: 'x', port: '443' }))).toThrow(/Failed to parse/);
   });
 
   it('往返不动点', () =>
@@ -468,12 +470,12 @@ describe('IPv6 / 通用', () => {
   });
 
   it('不支持协议 → 抛错', () => {
-    expect(() => parser.parseUrl('ftp://x.example.com')).toThrow(/不支持的协议/);
+    expect(() => parser.parseUrl('ftp://x.example.com')).toThrow(/Unsupported protocol/);
   });
 
   it('generateUrl 不支持协议 → 抛错', () => {
     expect(() => parser.generateUrl({ id: 'x', protocol: 'wireguard' } as ServerConfig)).toThrow(
-      /不支持的协议/
+      /Unsupported protocol/
     );
   });
 });
@@ -754,13 +756,13 @@ describe('传输层归一化与白名单（issue #263）', () => {
 
   it('vless/trojan type=xhttp|splithttp|kcp（sing-box 不支持）→ 整节点拒绝且消息可检索', () => {
     expect(() => parser.parseUrl('vless://u@a.com:443?type=xhttp#n')).toThrow(
-      /不支持的传输层类型: xhttp/
+      /Unsupported transport type: xhttp/
     );
     expect(() => parser.parseUrl('trojan://pw@a.com:443?type=splithttp#n')).toThrow(
-      /不支持的传输层类型: splithttp/
+      /Unsupported transport type: splithttp/
     );
     expect(() => parser.parseUrl('vless://u@a.com:443?type=kcp#n')).toThrow(
-      /不支持的传输层类型: kcp/
+      /Unsupported transport type: kcp/
     );
   });
 
@@ -770,8 +772,8 @@ describe('传输层归一化与白名单（issue #263）', () => {
       Buffer.from(
         JSON.stringify({ v: '2', ps: 'V', add: 'x.com', port: '443', id: 'uid', net })
       ).toString('base64');
-    expect(() => parser.parseUrl(vmessUrl('kcp'))).toThrow(/不支持的传输层类型: kcp/);
-    expect(() => parser.parseUrl(vmessUrl('quic'))).toThrow(/不支持的传输层类型: quic/);
+    expect(() => parser.parseUrl(vmessUrl('kcp'))).toThrow(/Unsupported transport type: kcp/);
+    expect(() => parser.parseUrl(vmessUrl('quic'))).toThrow(/Unsupported transport type: quic/);
     expect(parser.parseUrl(vmessUrl('raw')).network).toBe('tcp');
   });
 
@@ -793,7 +795,7 @@ describe('传输层归一化与白名单（issue #263）', () => {
     const c = parser.parseUrl('hysteria2://pw@a.com:443?obfs=faketype&obfs-password=x#n');
     expect(c.hysteria2Settings?.obfs).toBeUndefined();
     expect(() => parser.parseUrl('hysteria2://pw@a.com:443?obfs=salamander#n')).toThrow(
-      /缺少 obfs-password/
+      /missing obfs-password/
     );
   });
 
@@ -899,10 +901,10 @@ describe('Snell', () => {
   });
 
   it('缺 psk / 版本非 4|6 / obfs=tls（sing-box 无能力）→ 整节点拒绝', () => {
-    expect(() => parser.parseUrl('snell://@s.example.com:443?version=4')).toThrow(/缺少 psk/);
-    expect(() => parser.parseUrl('snell://pw@s.example.com:443?version=3')).toThrow(/仅支持 4\/6/);
+    expect(() => parser.parseUrl('snell://@s.example.com:443?version=4')).toThrow(/missing psk/);
+    expect(() => parser.parseUrl('snell://pw@s.example.com:443?version=3')).toThrow(/only 4\/6/);
     expect(() => parser.parseUrl('snell://pw@s.example.com:443?version=4&obfs=tls')).toThrow(
-      /obfs 不受支持/
+      /obfs not supported/
     );
   });
 
@@ -934,12 +936,14 @@ describe('Snell — review 边界补测', () => {
 
   it('v6 + obfs → 拒绝（sing-box v6 无混淆能力）', () => {
     expect(() => parser.parseUrl('snell://pw@s.example.com:443?version=6&obfs=http#n')).toThrow(
-      /obfs 不受支持/
+      /obfs not supported/
     );
   });
 
   it('空白 psk → 拒绝（trim 语义与 completeness 闸门对齐）', () => {
-    expect(() => parser.parseUrl('snell://%20@s.example.com:443?version=4#n')).toThrow(/缺少 psk/);
+    expect(() => parser.parseUrl('snell://%20@s.example.com:443?version=4#n')).toThrow(
+      /missing psk/
+    );
   });
 });
 

@@ -50,9 +50,12 @@ const CUSTOM = '__custom__';
 function reportDownloadResult(results: Array<{ ok: boolean }>, t: TFunction): void {
   const ok = results.filter((r) => r.ok).length;
   const fail = results.length - ok;
-  if (fail === 0) toast.success(t('ruleResources.downloadSuccess', '已下载 {{n}} 项', { n: ok }));
-  else if (ok === 0) toast.error(t('ruleResources.downloadAllFailed', '下载失败'));
-  else toast.warning(t('ruleResources.partialFailed', '{{ok}} 成功，{{fail}} 失败', { ok, fail }));
+  if (fail === 0) toast.success(t('ruleResources.downloadSuccess', 'Downloaded {{n}}', { n: ok }));
+  else if (ok === 0) toast.error(t('ruleResources.downloadAllFailed', 'Download failed'));
+  else
+    toast.warning(
+      t('ruleResources.partialFailed', '{{ok}} succeeded, {{fail}} failed', { ok, fail })
+    );
 }
 
 export function RuleResourcesPage() {
@@ -141,7 +144,7 @@ export function RuleResourcesPage() {
       reportDownloadResult(results, t);
     } catch {
       refresh();
-      toast.error(t('ruleResources.downloadAllFailed', '下载失败'));
+      toast.error(t('ruleResources.downloadAllFailed', 'Download failed'));
     }
   };
 
@@ -149,10 +152,10 @@ export function RuleResourcesPage() {
     try {
       const r = await api.ruleResources.redownload(id);
       refresh();
-      if (!r.ok) toast.error(t('ruleResources.downloadAllFailed', '下载失败'));
+      if (!r.ok) toast.error(t('ruleResources.downloadAllFailed', 'Download failed'));
     } catch {
       refresh();
-      toast.error(t('ruleResources.downloadAllFailed', '下载失败'));
+      toast.error(t('ruleResources.downloadAllFailed', 'Download failed'));
     }
   };
 
@@ -164,11 +167,11 @@ export function RuleResourcesPage() {
     try {
       const r = await api.ruleResources.resetBuiltin(tag);
       refresh();
-      if (r.ok) toast.success(t('ruleResources.resetSuccess', '已重置为出厂版'));
-      else toast.error(t('ruleResources.resetFailed', '重置失败'));
+      if (r.ok) toast.success(t('ruleResources.resetSuccess', 'Reset to bundled version'));
+      else toast.error(t('ruleResources.resetFailed', 'Reset failed'));
     } catch {
       refresh();
-      toast.error(t('ruleResources.resetFailed', '重置失败'));
+      toast.error(t('ruleResources.resetFailed', 'Reset failed'));
     }
   };
 
@@ -183,7 +186,7 @@ export function RuleResourcesPage() {
       }
       refresh(); // 无引用 → 已删
     } catch {
-      toast.error(t('ruleResources.deleteFailed', '删除失败'));
+      toast.error(t('ruleResources.deleteFailed', 'Delete failed'));
     }
   };
 
@@ -194,7 +197,7 @@ export function RuleResourcesPage() {
     try {
       await api.ruleResources.delete(target.id, true); // force：确认后真正删除
     } catch {
-      toast.error(t('ruleResources.deleteFailed', '删除失败'));
+      toast.error(t('ruleResources.deleteFailed', 'Delete failed'));
     }
     refresh();
   };
@@ -209,9 +212,9 @@ export function RuleResourcesPage() {
   const renderTimeAgo = (iso?: string): string => {
     const ago = formatTimeAgo(iso);
     if (!ago) return '—';
-    if (ago.key === 'justNow') return t('ruleResources.timeJustNow', '刚刚');
+    if (ago.key === 'justNow') return t('ruleResources.timeJustNow', 'just now');
     const cap = ago.key.charAt(0).toUpperCase() + ago.key.slice(1);
-    return t(`ruleResources.time${cap}`, '{{n}} 前', { n: ago.n });
+    return t(`ruleResources.time${cap}`, '{{n}} ago', { n: ago.n });
   };
 
   // 自动更新设置（默认开启：仅显式 false 才关；老配置 undefined 视为开）
@@ -233,7 +236,10 @@ export function RuleResourcesPage() {
       }));
       // 系统基线仅归属内置默认（与主进程 referencingRules 同口径）：用户下载的同名 geosite-cn 不挂系统引用。
       if (it.id.startsWith('builtin:') && baseline.has(it.id.slice('builtin:'.length))) {
-        refs.push({ kind: 'system', label: t('ruleResources.smartBaselineRef', '智能分流基线') });
+        refs.push({
+          kind: 'system',
+          label: t('ruleResources.smartBaselineRef', 'Smart-routing baseline'),
+        });
       }
       map.set(it.id, refs);
     }
@@ -255,7 +261,7 @@ export function RuleResourcesPage() {
       reportDownloadResult(results, t);
     } catch {
       refresh();
-      toast.error(t('ruleResources.downloadAllFailed', '下载失败'));
+      toast.error(t('ruleResources.downloadAllFailed', 'Download failed'));
     }
   };
 
@@ -264,7 +270,7 @@ export function RuleResourcesPage() {
 
   const applyGhProxy = async (value: string) => {
     const res = await api.ruleResources.setGhProxy(value);
-    if (!res.ok) toast.error(t('ruleResources.invalidProxyHost', '加速域名不合法'));
+    if (!res.ok) toast.error(t('ruleResources.invalidProxyHost', 'Invalid accelerator domain'));
   };
 
   const onSelectGhProxy = (v: string) => {
@@ -285,7 +291,7 @@ export function RuleResourcesPage() {
     if (!v) return;
     const normalized = normalizeGhProxyPrefix(v);
     if (!normalized) {
-      toast.error(t('ruleResources.invalidProxyHost', '加速域名不合法'));
+      toast.error(t('ruleResources.invalidProxyHost', 'Invalid accelerator domain'));
       return;
     }
     void applyGhProxy(normalized);
@@ -294,25 +300,25 @@ export function RuleResourcesPage() {
 
   const accelLabel =
     selectValue === DIRECT
-      ? t('ruleResources.direct', '直连（不加速）')
+      ? t('ruleResources.direct', 'Default (no accelerator)')
       : selectValue === CUSTOM
-        ? t('ruleResources.custom', '自定义…')
+        ? t('ruleResources.custom', 'Custom…')
         : ghPrefix;
   const accelOptions: Array<{ value: string; label: string; hint: string }> = [
     {
       value: DIRECT,
-      label: t('ruleResources.direct', '直连（不加速）'),
-      hint: t('ruleResources.accelHintDirect', '官方源 · 可能较慢'),
+      label: t('ruleResources.direct', 'Default (no accelerator)'),
+      hint: t('ruleResources.accelHintDirect', 'Official source · may be slow'),
     },
     ...GH_PROXY_PRESETS.map((p) => ({
       value: p as string,
       label: p as string,
-      hint: t('ruleResources.accelHintPreset', '镜像加速'),
+      hint: t('ruleResources.accelHintPreset', 'Mirror acceleration'),
     })),
     {
       value: CUSTOM,
-      label: t('ruleResources.custom', '自定义…'),
-      hint: t('ruleResources.accelHintCustom', '自填镜像域名'),
+      label: t('ruleResources.custom', 'Custom…'),
+      hint: t('ruleResources.accelHintCustom', 'Enter a mirror domain'),
     },
   ];
 
@@ -322,37 +328,37 @@ export function RuleResourcesPage() {
   return (
     <div className="flex flex-col gap-4" data-page="resources">
       <div className="page-h">
-        <h1>{t('ruleResources.pageTitle', '规则资源')}</h1>
+        <h1>{t('ruleResources.pageTitle', 'Rule Resources')}</h1>
         <span className="rsc-summary">
-          {t('ruleResources.summaryCount', '共 {{n}} 项', { n: totalCount })}
+          {t('ruleResources.summaryCount', '{{n}} total', { n: totalCount })}
           {' · '}
           <span className="mono tnum">{formatBytes(totalBytes)}</span>
           {missingCount > 0 && (
             <>
               {' · '}
-              <b>{t('ruleResources.summaryMissing', '{{n}} 项缺失', { n: missingCount })}</b>
+              <b>{t('ruleResources.summaryMissing', '{{n}} missing', { n: missingCount })}</b>
             </>
           )}
         </span>
         <div className="rsc-head-actions">
           <button className="btn ghost sm" onClick={() => setCatalogOpen(true)}>
             <Library />
-            {t('ruleResources.library', '资源库')}
+            {t('ruleResources.library', 'Library')}
           </button>
           <button className="btn ghost sm" onClick={() => setUrlOpen(true)}>
             <LinkIcon />
-            {t('ruleResources.manualUrl', 'URL 下载')}
+            {t('ruleResources.manualUrl', 'URL Download')}
           </button>
         </div>
       </div>
 
       <div className="rsc-settings">
         <div className="card rsc-card">
-          <div className="field-lbl">{t('ruleResources.ghProxy', 'GitHub 加速')}</div>
+          <div className="field-lbl">{t('ruleResources.ghProxy', 'GitHub Accelerator')}</div>
           <div className="cc-hair" />
           <div className="rsc-body">
             <div className="rsc-field-row">
-              <label>{t('ruleResources.downloadMethod', '下载方式')}</label>
+              <label>{t('ruleResources.downloadMethod', 'Download method')}</label>
               <div className="rsc-sel" ref={accelRef} onClick={() => setAccelOpen((o) => !o)}>
                 <span className="rsc-sel-val">{accelLabel}</span>
                 <span className="rsc-sel-chev">▾</span>
@@ -376,7 +382,7 @@ export function RuleResourcesPage() {
             </div>
             {customMode && (
               <div className="rsc-field-row">
-                <label>{t('ruleResources.customDomainLabel', '自定义加速域名')}</label>
+                <label>{t('ruleResources.customDomainLabel', 'Custom accelerator domain')}</label>
                 <input
                   className="input mono"
                   value={customInput}
@@ -390,7 +396,10 @@ export function RuleResourcesPage() {
             )}
             <p className="rsc-hint">
               <span className="dot idle" />
-              {t('ruleResources.ghProxyHint', '留空回退直连；下载失败自动回退直连兜底。')}
+              {t(
+                'ruleResources.ghProxyHint',
+                'Leave empty to fall back to direct; on download failure it auto-falls back to direct.'
+              )}
             </p>
           </div>
         </div>
@@ -398,14 +407,14 @@ export function RuleResourcesPage() {
         <div className="card rsc-card">
           <div className="rsc-card-head">
             <div className="field-lbl">
-              {t('ruleResources.autoUpdate', '自动更新')}
+              {t('ruleResources.autoUpdate', 'Auto-update')}
               <InfoTooltip content={t('ruleResources.autoUpdateDescFull')} />
             </div>
             <button
               className={cn('swt', autoUpdate && 'on')}
               role="switch"
               aria-checked={autoUpdate}
-              aria-label={t('ruleResources.autoUpdate', '自动更新')}
+              aria-label={t('ruleResources.autoUpdate', 'Auto-update')}
               onClick={() => handleAutoUpdateToggle(!autoUpdate)}
             />
           </div>
@@ -413,7 +422,7 @@ export function RuleResourcesPage() {
           <div className="rsc-body">
             {autoUpdate && (
               <div className="rsc-field-row">
-                <label>{t('ruleResources.updateInterval', '更新间隔')}</label>
+                <label>{t('ruleResources.updateInterval', 'Interval')}</label>
                 <div className="seg2">
                   {INTERVALS.map((h) => (
                     <button
@@ -421,7 +430,7 @@ export function RuleResourcesPage() {
                       className={cn(intervalHours === h && 'on')}
                       onClick={() => handleIntervalChange(String(h))}
                     >
-                      {t(`ruleResources.interval.h${h}`, h < 24 ? `${h} 小时` : `${h / 24} 天`)}
+                      {t(`ruleResources.interval.h${h}`, h < 24 ? `${h}h` : `${h / 24}d`)}
                     </button>
                   ))}
                 </div>
@@ -430,8 +439,11 @@ export function RuleResourcesPage() {
             <p className="rsc-hint">
               <span className={cn('dot', autoUpdate ? 'ok' : 'idle')} />
               {autoUpdate
-                ? t('ruleResources.autoUpdateOnHint', '已开启，按所选间隔在后台刷新已下载资源')
-                : t('ruleResources.autoUpdateOffHint', '已关闭，资源需手动更新')}
+                ? t(
+                    'ruleResources.autoUpdateOnHint',
+                    'On — refreshes downloaded resources in the background at the selected interval'
+                  )
+                : t('ruleResources.autoUpdateOffHint', 'Off — resources must be updated manually')}
             </p>
           </div>
         </div>
@@ -447,15 +459,15 @@ export function RuleResourcesPage() {
                 onClick={() => setListTab(tabKey)}
               >
                 {tabKey === 'all'
-                  ? t('ruleResources.listTabAll', '全部')
+                  ? t('ruleResources.listTabAll', 'All')
                   : tabKey === 'builtin'
-                    ? t('ruleResources.listTabBuiltin', '内置')
-                    : t('ruleResources.listTabExternal', '外置')}
+                    ? t('ruleResources.listTabBuiltin', 'Builtin')
+                    : t('ruleResources.listTabExternal', 'External')}
               </button>
             ))}
           </div>
           <span className="rsc-th-count">
-            {t('ruleResources.tableUsage', '占用')}{' '}
+            {t('ruleResources.tableUsage', 'Usage')}{' '}
             <span className="mono tnum">{formatBytes(totalBytes)}</span>
           </span>
           <div className="rsc-th-right">
@@ -463,10 +475,10 @@ export function RuleResourcesPage() {
               className="btn ghost sm rsc-update-all"
               onClick={handleUpdateAll}
               disabled={isUpdateAllDisabled(items.length, activeRows.length)}
-              title={t('ruleResources.updateAll', '全部更新')}
+              title={t('ruleResources.updateAll', 'Update all')}
             >
               <RefreshCw />
-              {t('ruleResources.updateAll', '全部更新')}
+              {t('ruleResources.updateAll', 'Update all')}
             </button>
             <div className="rsc-search">
               <Search />
@@ -474,7 +486,7 @@ export function RuleResourcesPage() {
                 className="input"
                 value={tableSearch}
                 onChange={(e) => setTableSearch(e.target.value)}
-                placeholder={t('ruleResources.searchDownloaded', '搜索资源…')}
+                placeholder={t('ruleResources.searchDownloaded', 'Search resources…')}
               />
             </div>
           </div>
@@ -486,10 +498,13 @@ export function RuleResourcesPage() {
             style={{ color: 'hsl(var(--fg-faint))' }}
           >
             {tableSearch
-              ? t('ruleResources.searchEmpty', '未找到匹配的资源')
+              ? t('ruleResources.searchEmpty', 'No matching resources')
               : listTab === 'all'
-                ? t('ruleResources.empty', '暂无规则资源，点击「资源库」或「URL 下载」添加')
-                : t('ruleResources.emptyTab', '该分类下暂无资源')}
+                ? t(
+                    'ruleResources.empty',
+                    'No rule resources yet. Click Library or URL Download to add'
+                  )
+                : t('ruleResources.emptyTab', 'No resources in this category')}
           </div>
         ) : (
           <div className="rsc-table-scroll">
@@ -508,12 +523,12 @@ export function RuleResourcesPage() {
               </colgroup>
               <thead>
                 <tr>
-                  <th>{t('ruleResources.colName', '名称')}</th>
-                  <th>{t('ruleResources.colType', '分类')}</th>
-                  <th className="rc-r">{t('ruleResources.colSize', '大小')}</th>
-                  <th>{t('ruleResources.colUpdated', '更新于')}</th>
-                  <th className="rc-r">{t('ruleResources.colRef', '引用')}</th>
-                  <th className="rc-r">{t('common.actions', '操作')}</th>
+                  <th>{t('ruleResources.colName', 'Name')}</th>
+                  <th>{t('ruleResources.colType', 'Category')}</th>
+                  <th className="rc-r">{t('ruleResources.colSize', 'Size')}</th>
+                  <th>{t('ruleResources.colUpdated', 'Updated')}</th>
+                  <th className="rc-r">{t('ruleResources.colRef', 'Used by')}</th>
+                  <th className="rc-r">{t('common.actions', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -524,7 +539,7 @@ export function RuleResourcesPage() {
                       <div className="rc-name">
                         <span className="rc-nm mono">{p.name}</span>
                         <span className="rc-badge dl">
-                          {t('ruleResources.downloadingBadge', '下载中')}
+                          {t('ruleResources.downloadingBadge', 'Downloading')}
                         </span>
                       </div>
                     </td>
@@ -535,7 +550,7 @@ export function RuleResourcesPage() {
                         </div>
                         <span className="rc-prog-pct mono tnum">
                           {p.status === 'queued'
-                            ? t('ruleResources.queued', '等待中…')
+                            ? t('ruleResources.queued', 'Queued…')
                             : p.percent != null
                               ? `${p.percent}%`
                               : formatBytes(p.received)}
@@ -552,7 +567,7 @@ export function RuleResourcesPage() {
                       <div className="rc-name">
                         <span className="rc-nm mono">{p.name}</span>
                         <span className="rc-badge fail">
-                          {t('ruleResources.failedBadge', '失败')}
+                          {t('ruleResources.failedBadge', 'Failed')}
                         </span>
                       </div>
                     </td>
@@ -561,7 +576,7 @@ export function RuleResourcesPage() {
                         <span className="dot warn" />
                         {t(
                           `ruleResources.error.${p.errorCode}`,
-                          t('ruleResources.downloadAllFailed', '下载失败')
+                          t('ruleResources.downloadAllFailed', 'Download failed')
                         )}
                       </div>
                     </td>
@@ -569,7 +584,7 @@ export function RuleResourcesPage() {
                       <div className="rc-ops">
                         <button
                           className="btn ghost icon"
-                          title={t('ruleResources.dismiss', '忽略')}
+                          title={t('ruleResources.dismiss', 'Dismiss')}
                           onClick={() => dismissError(p.id)}
                         >
                           <X />
@@ -586,10 +601,10 @@ export function RuleResourcesPage() {
                   const refs = refsByItemId.get(item.id) ?? [];
                   const refText =
                     refs.length > 0
-                      ? t('ruleResources.referencedBy', '{{n}} 条规则', { n: refs.length })
+                      ? t('ruleResources.referencedBy', '{{n}} rules', { n: refs.length })
                       : item.builtin
-                        ? t('ruleResources.builtinRef', '智能分流')
-                        : t('ruleResources.refNone', '未引用');
+                        ? t('ruleResources.builtinRef', 'Smart routing')
+                        : t('ruleResources.refNone', 'Unused');
                   return (
                     <tr key={item.id}>
                       <td>
@@ -599,12 +614,12 @@ export function RuleResourcesPage() {
                           </span>
                           {item.builtin && (
                             <span className="rc-badge bi">
-                              {t('ruleResources.builtinBadge', '内置')}
+                              {t('ruleResources.builtinBadge', 'Built-in')}
                             </span>
                           )}
                           {missing && (
                             <span className="rc-badge miss">
-                              {t('ruleResources.missing', '文件缺失')}
+                              {t('ruleResources.missing', 'File missing')}
                             </span>
                           )}
                         </div>
@@ -644,10 +659,10 @@ export function RuleResourcesPage() {
                                 <div key={i} className="flex items-baseline gap-2">
                                   <span className={cn('rc-ref-kind', r.kind)}>
                                     {r.kind === 'route'
-                                      ? t('ruleResources.refKindRoute', '路由')
+                                      ? t('ruleResources.refKindRoute', 'Route')
                                       : r.kind === 'app'
-                                        ? t('ruleResources.refKindApp', '应用')
-                                        : t('ruleResources.refKindSystem', '系统')}
+                                        ? t('ruleResources.refKindApp', 'App')
+                                        : t('ruleResources.refKindSystem', 'System')}
                                   </span>
                                   <span className="truncate text-[12px] text-foreground">
                                     {r.label}
@@ -665,7 +680,7 @@ export function RuleResourcesPage() {
                           <button
                             className="btn ghost icon"
                             onClick={() => handleRedownload(item.id)}
-                            title={t('ruleResources.update', '更新')}
+                            title={t('ruleResources.update', 'Update')}
                           >
                             <RotateCw />
                           </button>
@@ -673,7 +688,7 @@ export function RuleResourcesPage() {
                             <button
                               className="btn ghost icon"
                               onClick={() => setResetConfirm(item)}
-                              title={t('ruleResources.reset', '重置为出厂')}
+                              title={t('ruleResources.reset', 'Reset to bundled')}
                             >
                               <RotateCcw />
                             </button>
@@ -681,7 +696,7 @@ export function RuleResourcesPage() {
                             <button
                               className="btn ghost icon rc-icon-del"
                               onClick={() => handleDelete(item)}
-                              title={t('ruleResources.delete', '删除')}
+                              title={t('ruleResources.delete', 'Delete')}
                             >
                               <Trash2 />
                             </button>
@@ -709,10 +724,12 @@ export function RuleResourcesPage() {
       <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
         <AlertDialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[440px]">
           <div className="rsc-dialog-h">
-            <AlertDialogTitle>{t('ruleResources.deleteTitle', '删除规则资源')}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t('ruleResources.deleteTitle', 'Delete rule resource')}
+            </AlertDialogTitle>
             <button
               className="rsc-x"
-              aria-label={t('common.cancel', '取消')}
+              aria-label={t('common.cancel', 'Cancel')}
               onClick={() => setDeleteConfirm(null)}
             >
               ✕
@@ -723,7 +740,7 @@ export function RuleResourcesPage() {
               <p className="rsc-del-lead">
                 {t(
                   'ruleResources.deleteReferencedDesc',
-                  '「{{name}}」正被以下 {{n}} 项规则引用，删除后将暂时失效（重新下载该资源后自动恢复）：',
+                  '「{{name}}」is referenced by the following {{n}} item(s). Deleting it temporarily disables them (auto-restored after re-downloading the resource):',
                   { name: deleteConfirm?.name, n: deleteConfirm?.rules.length ?? 0 }
                 )}
               </p>
@@ -737,13 +754,16 @@ export function RuleResourcesPage() {
                     <div className="rsc-ref-group-h">
                       <span className={cn('dot', warn ? 'warn' : 'idle')} />
                       {warn
-                        ? t('ruleResources.deleteGroupRoute', '路由规则（暂时失效·重下恢复）')
+                        ? t(
+                            'ruleResources.deleteGroupRoute',
+                            'Route rules (temporarily disabled · restored on re-download)'
+                          )
                         : t(
                             'ruleResources.deleteGroupApp',
-                            '应用分流（改走智能分流·重下恢复·进程名仍生效）'
+                            'App routing (falls back to smart routing · restored on re-download)'
                           )}
                       <small>
-                        {t('ruleResources.refGroupCount', '{{n}} 条', { n: group.length })}
+                        {t('ruleResources.refGroupCount', '{{n}} items', { n: group.length })}
                       </small>
                     </div>
                     <ul className="rsc-ref-list">
@@ -751,8 +771,8 @@ export function RuleResourcesPage() {
                         <li key={`${r.kind}-${r.id}`}>
                           <span className="pill rc-app">
                             {warn
-                              ? t('ruleResources.refKindRoute', '路由')
-                              : t('ruleResources.refKindApp', '应用')}
+                              ? t('ruleResources.refKindRoute', 'Route')
+                              : t('ruleResources.refKindApp', 'App')}
                           </span>
                           <span className="mono">
                             {r.kind === 'app' && r.appBuiltin
@@ -769,10 +789,10 @@ export function RuleResourcesPage() {
           </AlertDialogDescription>
           <div className="rsc-dialog-f">
             <button className="btn ghost" onClick={() => setDeleteConfirm(null)}>
-              {t('common.cancel', '取消')}
+              {t('common.cancel', 'Cancel')}
             </button>
             <button className="btn danger" onClick={confirmDelete}>
-              {t('ruleResources.deleteAnyway', '仍要删除')}
+              {t('ruleResources.deleteAnyway', 'Delete anyway')}
             </button>
           </div>
         </AlertDialogContent>
@@ -782,10 +802,12 @@ export function RuleResourcesPage() {
       <AlertDialog open={!!resetConfirm} onOpenChange={(o) => !o && setResetConfirm(null)}>
         <AlertDialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[440px]">
           <div className="rsc-dialog-h">
-            <AlertDialogTitle>{t('ruleResources.resetTitle', '重置为出厂版')}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t('ruleResources.resetTitle', 'Reset to bundled version')}
+            </AlertDialogTitle>
             <button
               className="rsc-x"
-              aria-label={t('common.cancel', '取消')}
+              aria-label={t('common.cancel', 'Cancel')}
               onClick={() => setResetConfirm(null)}
             >
               ✕
@@ -796,7 +818,7 @@ export function RuleResourcesPage() {
               <p className="rsc-del-lead">
                 {t(
                   'ruleResources.resetConfirmDesc',
-                  '将「{{name}}」恢复为随 App 出厂的版本，已下载更新的内容会丢失（之后可重新更新）。',
+                  'Restore "{{name}}" to the version shipped with the app. Any downloaded updates will be lost (you can update again later).',
                   { name: resetConfirm?.name }
                 )}
               </p>
@@ -804,10 +826,10 @@ export function RuleResourcesPage() {
           </AlertDialogDescription>
           <div className="rsc-dialog-f">
             <button className="btn ghost" onClick={() => setResetConfirm(null)}>
-              {t('common.cancel', '取消')}
+              {t('common.cancel', 'Cancel')}
             </button>
             <button className="btn danger" onClick={confirmReset}>
-              {t('ruleResources.resetConfirmBtn', '重置为出厂')}
+              {t('ruleResources.resetConfirmBtn', 'Reset to bundled')}
             </button>
           </div>
         </AlertDialogContent>

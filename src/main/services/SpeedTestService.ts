@@ -214,7 +214,7 @@ export class SpeedTestService {
     if (mainCoreProbe?.available() && mainCoreProbe.isRunning()) {
       this.logManager.addLog(
         'info',
-        `开始测速: ${servers.length} 个节点（经主核探测池，${mainCoreProbe.poolPorts.length} 槽）`,
+        `Starting speed test: ${servers.length} nodes (via main core probe pool, ${mainCoreProbe.poolPorts.length} slots)`,
         'SpeedTest'
       );
       const results = await this.testServersViaMainCore(
@@ -230,8 +230,8 @@ export class SpeedTestService {
       this.logManager.addLog(
         'info',
         runCtx.outcome === 'interrupted'
-          ? `测速中断：已测 ${ok}/${servers.length}（核生命周期跃迁，未测节点保留原值）`
-          : `测速完成：成功 ${ok}/${servers.length}`,
+          ? `Speed test interrupted: ${ok}/${servers.length} tested (core lifecycle changed; untested nodes keep their previous values)`
+          : `Speed test finished: ${ok}/${servers.length} succeeded`,
         'SpeedTest'
       );
       return { results, outcome: runCtx.outcome, skipped: runCtx.skipped };
@@ -250,7 +250,7 @@ export class SpeedTestService {
       }
       this.logManager.addLog(
         'info',
-        `开始测速: ${tempServers.length} 个节点（经代理 urltest）`,
+        `Starting speed test: ${tempServers.length} nodes (via proxy urltest)`,
         'SpeedTest'
       );
       const results = await this.testServersViaProxy(
@@ -266,8 +266,8 @@ export class SpeedTestService {
       this.logManager.addLog(
         'info',
         runCtx.outcome === 'interrupted'
-          ? `测速中断：已测 ${ok}/${tempServers.length}`
-          : `测速完成：成功 ${ok}/${tempServers.length}`,
+          ? `Speed test interrupted: ${ok}/${tempServers.length} tested`
+          : `Speed test finished: ${ok}/${tempServers.length} succeeded`,
         'SpeedTest'
       );
       return { results, outcome: runCtx.outcome, skipped: runCtx.skipped };
@@ -285,7 +285,7 @@ export class SpeedTestService {
     ]);
     for (const [id, latency] of tcpResults) results.set(id, latency);
     for (const [id, latency] of udpResults) results.set(id, latency);
-    this.logManager.addLog('info', '测速完成', 'SpeedTest');
+    this.logManager.addLog('info', 'Speed test finished', 'SpeedTest');
     return { results, outcome: runCtx.outcome, skipped: runCtx.skipped };
   }
 
@@ -310,7 +310,7 @@ export class SpeedTestService {
         if (result.error) {
           this.logManager.addLog(
             'warn',
-            `测速失败 ${result.serverId}: ${result.error}`,
+            `Speed test failed for ${result.serverId}: ${result.error}`,
             'SpeedTest'
           );
         }
@@ -427,8 +427,8 @@ export class SpeedTestService {
       const dist = [...failReasons.entries()]
         .sort((a, b) => b[1] - a[1])
         .map(([r, n]) => `${r}×${n}`)
-        .join('，');
-      this.logManager.addLog('info', `测速失败原因分布：${dist}`, 'SpeedTest');
+        .join(', ');
+      this.logManager.addLog('info', `Speed test failure reasons: ${dist}`, 'SpeedTest');
     };
     let singboxProcess: ChildProcess | null = null;
     let configFilePath: string | null = null;
@@ -501,7 +501,7 @@ export class SpeedTestService {
         if (code !== null && code !== 0) {
           this.logManager.addLog(
             'warn',
-            `临时 sing-box 进程退出 (code=${code}): ${stderrOutput.slice(0, 500)}`,
+            `Temporary sing-box process exited (code=${code}): ${stderrOutput.slice(0, 500)}`,
             'SpeedTest'
           );
         }
@@ -512,7 +512,7 @@ export class SpeedTestService {
       if (!ready || processExited) {
         this.logManager.addLog(
           'warn',
-          `sing-box 测速进程未就绪: ${stderrOutput.slice(0, 500)}`,
+          `sing-box speed test process not ready: ${stderrOutput.slice(0, 500)}`,
           'SpeedTest'
         );
         for (const u of usable) {
@@ -567,7 +567,7 @@ export class SpeedTestService {
       resolvedIpProbes.push(...(await Promise.all(resolvedIpProbePromises)));
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logManager.addLog('error', `测速异常: ${msg}`, 'SpeedTest');
+      this.logManager.addLog('error', `Speed test error: ${msg}`, 'SpeedTest');
       for (const u of usable) {
         if (!results.has(u.server.id)) {
           results.set(u.server.id, null);
@@ -590,7 +590,7 @@ export class SpeedTestService {
       if (coreOutput) {
         this.logManager.addLog(
           'debug',
-          `临时 sing-box 测速输出：${coreOutput.slice(-4000)}`,
+          `Temporary sing-box speed test output: ${coreOutput.slice(-4000)}`,
           'SpeedTest'
         );
       }
@@ -668,8 +668,8 @@ export class SpeedTestService {
       const dist = [...failReasons.entries()]
         .sort((a, b) => b[1] - a[1])
         .map(([r, n]) => `${r}×${n}`)
-        .join('，');
-      this.logManager.addLog('info', `测速失败原因分布：${dist}`, 'SpeedTest');
+        .join(', ');
+      this.logManager.addLog('info', `Speed test failure reasons: ${dist}`, 'SpeedTest');
     };
 
     // 上游 testAllServers 已按 isSpeedTestable(caps) 过滤（含 TS-exit）；此处再波前预筛「本核不可测」→ 缺席（不
@@ -777,7 +777,7 @@ export class SpeedTestService {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logManager.addLog('error', `主核测速异常: ${msg}`, 'SpeedTest');
+      this.logManager.addLog('error', `Main core speed test error: ${msg}`, 'SpeedTest');
       // §15.11：仅非超代（核未跃迁/未崩溃）时把未测节点记 exception(-1)（真实异常）；超代下绝不写假 -1（缺席、保留旧值）。
       if (!superseded()) {
         for (const s of poolTestable) {
@@ -1084,7 +1084,7 @@ export class SpeedTestService {
       // Y1（§12.3.2）：带 target host——V37 判读 WARP 无延迟根因（early-close / http-4xx / MTU timeout）须知打的哪个目标。
       this.logManager.addLog(
         'debug',
-        `出口伴测失败 (${reason ?? 'unknown'}) target=${target.host}:${target.port} port=${proxyPort}`,
+        `Exit probe latency measurement failed (${reason ?? 'unknown'}) target=${target.host}:${target.port} port=${proxyPort}`,
         'SpeedTest'
       );
     }

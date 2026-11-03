@@ -326,16 +326,28 @@ export function CoreManagementCard() {
       const result = await api.coreUpdate.applyStaged();
       switch (result) {
         case 'applied':
-          toast.success(t('settings.coreManagement.applyNowSuccess', '新内核已应用'));
+          toast.success(t('settings.coreManagement.applyNowSuccess', 'New core applied'));
           break;
         case 'failed':
-          toast.error(t('settings.coreManagement.applyNowFailed', '内核落位失败，已恢复原内核'));
+          toast.error(
+            t(
+              'settings.coreManagement.applyNowFailed',
+              'Core update failed; the previous core was restored'
+            )
+          );
           break;
         case 'discarded':
-          toast.info(t('settings.coreManagement.applyNowDiscarded', '该暂存内核已不适用，已作废'));
+          toast.info(
+            t(
+              'settings.coreManagement.applyNowDiscarded',
+              'This staged core no longer applies and was discarded'
+            )
+          );
           break;
         case 'deferred':
-          toast.info(t('settings.coreManagement.applyNowDeferred', '内核暂未生效，仍待落位'));
+          toast.info(
+            t('settings.coreManagement.applyNowDeferred', 'Core not applied yet; still pending')
+          );
           break;
         // noop：无暂存可应用，无需提示
       }
@@ -422,16 +434,18 @@ export function CoreManagementCard() {
   // 来源徽章（官方=ok / 第三方=warn / 未知=idle），与 src-legend 图例同源。
   const buildPill =
     coreBuild === 'official'
-      ? { cls: 'ok', label: t('settings.coreManagement.sourceOfficial', '官方') }
+      ? { cls: 'ok', label: t('settings.coreManagement.sourceOfficial', 'Official') }
       : coreBuild === 'fork'
-        ? { cls: 'warn', label: t('settings.coreManagement.sourceFork', '第三方') }
-        : { cls: 'idle', label: t('settings.coreManagement.sourceUnknown', '未知') };
+        ? { cls: 'warn', label: t('settings.coreManagement.sourceFork', 'Third-party') }
+        : { cls: 'idle', label: t('settings.coreManagement.sourceUnknown', 'Unknown') };
 
   return (
     <div className="card set-card">
       <div className="set-h">
         <b>{t('settings.coreManagement.title')}</b>
-        <small>{t('settings.coreManagement.cardSub', 'sing-box 版本、来源与更新')}</small>
+        <small>
+          {t('settings.coreManagement.cardSub', 'sing-box version, source and updates')}
+        </small>
       </div>
 
       <Srow
@@ -441,7 +455,10 @@ export function CoreManagementCard() {
             <span className={cn('pill', buildPill.cls)}>{buildPill.label}</span>
           </>
         }
-        desc={t('settings.coreManagement.sourceDesc', '内核来源：官方 / 第三方 / 未知 自动识别')}
+        desc={t(
+          'settings.coreManagement.sourceDesc',
+          'Core source: Official / Third-party / Unknown, auto-detected'
+        )}
       >
         <span className="mono tnum" style={{ fontSize: 13, fontWeight: 640 }}>
           {currentVersion}
@@ -458,17 +475,17 @@ export function CoreManagementCard() {
       </Srow>
 
       <div className="src-legend">
-        <span className="pill ok">{t('settings.coreManagement.sourceOfficial', '官方')}</span>
+        <span className="pill ok">{t('settings.coreManagement.sourceOfficial', 'Official')}</span>
         <span className="src-note">
-          {t('settings.coreManagement.srcNoteOfficial', 'GitHub 在线更新可用')}
+          {t('settings.coreManagement.srcNoteOfficial', 'GitHub online updates available')}
         </span>
-        <span className="pill warn">{t('settings.coreManagement.sourceFork', '第三方')}</span>
+        <span className="pill warn">{t('settings.coreManagement.sourceFork', 'Third-party')}</span>
         <span className="src-note">
-          {t('settings.coreManagement.srcNoteFork', '禁在线 / 自动更新')}
+          {t('settings.coreManagement.srcNoteFork', 'Online / auto-update disabled')}
         </span>
-        <span className="pill idle">{t('settings.coreManagement.sourceUnknown', '未知')}</span>
+        <span className="pill idle">{t('settings.coreManagement.sourceUnknown', 'Unknown')}</span>
         <span className="src-note">
-          {t('settings.coreManagement.srcNoteUnknown', '无法确认，仅提示')}
+          {t('settings.coreManagement.srcNoteUnknown', 'Cannot verify, notice only')}
         </span>
       </div>
 
@@ -479,7 +496,10 @@ export function CoreManagementCard() {
             <AlertTriangle />
             <div>
               <div style={{ fontWeight: 600 }}>
-                {t('settings.coreManagement.nonOfficialTitle', '检测到第三方（非官方）内核')}
+                {t(
+                  'settings.coreManagement.nonOfficialTitle',
+                  'Third-party (non-official) core detected'
+                )}
               </div>
               <div className="ng-hint" style={{ marginTop: 2 }}>
                 {t('settings.coreManagement.nonOfficialDesc')}
@@ -499,7 +519,7 @@ export function CoreManagementCard() {
             <span>
               {t(
                 'settings.coreManagement.unknownBuildNote',
-                '无法确认当前内核来源（可能为源码自建）。'
+                "Unable to confirm the current core's origin (it may be a source build)."
               )}
             </span>
           </div>
@@ -509,7 +529,10 @@ export function CoreManagementCard() {
       {hasBackup && (
         <Srow
           label={t('settings.coreManagement.backupVersion')}
-          desc={t('settings.coreManagement.backupVersionDesc', '升级失败或异常时可回滚至此版本')}
+          desc={t(
+            'settings.coreManagement.backupVersionDesc',
+            'Roll back to this version if an upgrade fails or misbehaves'
+          )}
         >
           <span className="mono tnum" style={{ fontSize: 13, color: 'hsl(var(--fg-dim))' }}>
             {backupVersion || '—'}
@@ -623,7 +646,7 @@ export function CoreManagementCard() {
         label={t('settings.coreManagement.manualReplace')}
         desc={t(
           'settings.coreManagement.manualReplaceDesc',
-          '导入本地 sing-box 可执行文件（同版本 / 覆盖基线需二次确认）'
+          'Import a local sing-box executable (same version / overwriting the baseline needs confirmation)'
         )}
       >
         <button
@@ -633,7 +656,7 @@ export function CoreManagementCard() {
           disabled={busy}
         >
           {replacingManual && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {t('settings.coreManagement.selectFile', '选择文件…')}
+          {t('settings.coreManagement.selectFile', 'Choose file…')}
         </button>
       </Srow>
 
@@ -644,7 +667,10 @@ export function CoreManagementCard() {
           <div className="srow-main">
             <div className="srow-lbl">{t('settings.coreManagement.resetFactory')}</div>
             <div className="srow-desc">
-              {t('settings.coreManagement.resetFactoryRowDesc', '恢复随 App 出厂的官方内核版本')}
+              {t(
+                'settings.coreManagement.resetFactoryRowDesc',
+                'Restore the official core version bundled with the app'
+              )}
             </div>
           </div>
           <button
@@ -654,14 +680,17 @@ export function CoreManagementCard() {
             disabled={busy}
           >
             {resettingFactory && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {t('settings.coreManagement.resetShort', '重置')}
+            {t('settings.coreManagement.resetShort', 'Reset')}
           </button>
         </div>
         <div className="danger-row">
           <div className="srow-main">
             <div className="srow-lbl">{t('settings.coreManagement.uninstallAll')}</div>
             <div className="srow-desc">
-              {t('settings.coreManagement.uninstallRowDesc', '移除内核、助手、配置与全部本地数据')}
+              {t(
+                'settings.coreManagement.uninstallRowDesc',
+                'Remove the core, helper, config and all local data'
+              )}
             </div>
           </div>
           <button
@@ -671,7 +700,7 @@ export function CoreManagementCard() {
             disabled={busy}
           >
             {uninstalling && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {t('settings.coreManagement.uninstallShort', '完全卸载')}
+            {t('settings.coreManagement.uninstallShort', 'Uninstall completely')}
           </button>
         </div>
       </div>
@@ -681,11 +710,11 @@ export function CoreManagementCard() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('settings.coreVersion.rollbackConfirmTitle', '回滚内核版本？')}
+              {t('settings.coreVersion.rollbackConfirmTitle', 'Roll back the core?')}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t('settings.coreVersion.rollbackConfirmDesc', {
-                defaultValue: '将回滚到 {{version}}，内核会重启。',
+                defaultValue: 'This rolls back to {{version}}; the core will restart.',
                 version: backupVersion || '—',
               })}
             </AlertDialogDescription>

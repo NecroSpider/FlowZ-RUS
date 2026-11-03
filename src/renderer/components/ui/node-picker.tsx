@@ -70,7 +70,7 @@ function LatencyLabel({ item, className }: { item: NodePickerItem; className?: s
     );
   }
   if (item.latency === undefined) return null;
-  const label = item.latency < 0 ? t('servers.timeout', '超时') : `${item.latency} ms`;
+  const label = item.latency < 0 ? t('servers.timeout', 'Timeout') : `${item.latency} ms`;
   return (
     <span
       className={cn(
@@ -167,7 +167,7 @@ export function NodePicker({
       showSearch={showSearch}
       query={query}
       onQueryChange={setQuery}
-      searchPlaceholder={searchPlaceholder ?? t('common.search', '搜索')}
+      searchPlaceholder={searchPlaceholder ?? t('common.search', 'Search')}
       // Enter 选中当前首个结果（分组后视觉第一项）→ 搜到即回车确认；enterSelection 挡下空 query 的裸 Enter，
       // 杜绝误选顶部哨兵（None / 直连 / 跟随全局）静默清空已配置出口。
       onSearchEnter={() => {
@@ -178,7 +178,7 @@ export function NodePicker({
         }
       }}
       isEmpty={sections.length === 0}
-      emptyText={emptyText ?? t('common.noResults', '无匹配')}
+      emptyText={emptyText ?? t('common.noResults', 'No results')}
       trigger={
         current ? (
           <>

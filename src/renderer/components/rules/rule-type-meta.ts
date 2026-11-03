@@ -30,11 +30,11 @@ export const CATEGORY_TYPES: Record<RuleCategory, RuleType[]> = {
 
 /** 分组的默认中文名（i18n key: rules.category.<cat>）。 */
 export const CATEGORY_NAME: Record<RuleCategory, string> = {
-  domain: '域名',
-  network: 'IP / 端口',
-  device: '局域网设备',
-  process: '进程',
-  ruleset: '规则集',
+  domain: 'Domain',
+  network: 'IP / Port',
+  device: 'LAN Device',
+  process: 'Process',
+  ruleset: 'Rule Set',
 };
 
 export const CATEGORY_ICON: Record<RuleCategory, typeof Globe> = {
@@ -56,40 +56,40 @@ export const CATEGORY_BADGE_CLASS: Record<RuleCategory, string> = {
 
 /** 类型默认中文名（i18n key: rules.types.<type>.name）。 */
 export const RULE_TYPE_NAME: Record<RuleType, string> = {
-  domain: '域名',
-  domainSuffix: '域名后缀',
-  domainKeyword: '域名关键词',
-  domainRegex: '域名正则',
-  ipCidr: '目的 IP/CIDR',
-  sourceIpCidr: '源 IP/CIDR',
-  port: '目的端口',
-  sourcePort: '源端口',
-  sourceMac: '源设备 MAC',
-  sourceHostname: '源设备主机名',
-  processName: '进程名',
-  processPath: '进程路径',
+  domain: 'Domain',
+  domainSuffix: 'Domain Suffix',
+  domainKeyword: 'Domain Keyword',
+  domainRegex: 'Domain Regex',
+  ipCidr: 'Dest IP/CIDR',
+  sourceIpCidr: 'Source IP/CIDR',
+  port: 'Dest Port',
+  sourcePort: 'Source Port',
+  sourceMac: 'Source MAC',
+  sourceHostname: 'Source Hostname',
+  processName: 'Process Name',
+  processPath: 'Process Path',
   geosite: 'Geosite',
   geoip: 'GeoIP',
-  ruleSet: '规则集',
+  ruleSet: 'Rule Set',
 };
 
 /** 类型默认中文说明（i18n key: rules.types.<type>.desc）。 */
 export const RULE_TYPE_DESC: Record<RuleType, string> = {
-  domain: '精确匹配完整域名，不含子域名',
-  domainSuffix: '匹配该域名及其全部子域名（推荐）',
-  domainKeyword: '域名中包含该关键词即匹配',
-  domainRegex: 'Golang RE2 正则匹配域名（高级）',
-  ipCidr: '目的 IP/CIDR 网段（支持 IPv4/IPv6）',
-  sourceIpCidr: '源 IP/CIDR（按来源设备分流）',
-  port: '目的端口，支持单端口与区间（如 1000-2000）',
-  sourcePort: '源端口（高级，少用）',
-  sourceMac: '按来源设备 MAC 分流（局域网网关场景，仅 Linux/macOS）',
-  sourceHostname: '按来源设备主机名分流（DHCP 租约名，仅 Linux/macOS）',
-  processName: '进程可执行文件名（Windows 含 .exe）；仅本机发起的连接可识别',
-  processPath: '进程可执行文件完整路径（区分同名程序）',
-  geosite: 'sing-geosite 域名分类库标签（如 youtube）',
-  geoip: 'sing-geoip 国家/地区 IP 库标签（如 cn）',
-  ruleSet: '已下载的本地规则资源',
+  domain: 'Match the exact full domain, no subdomains',
+  domainSuffix: 'Match the domain and all its subdomains (recommended)',
+  domainKeyword: 'Match if the domain contains the keyword',
+  domainRegex: 'Match domain by Golang RE2 regex (advanced)',
+  ipCidr: 'Destination IP/CIDR (IPv4/IPv6)',
+  sourceIpCidr: 'Source IP/CIDR (route by source device)',
+  port: 'Destination port, single or range (e.g. 1000-2000)',
+  sourcePort: 'Source port (advanced, rarely used)',
+  sourceMac: 'Route by source device MAC (LAN gateway scenario; Linux/macOS only)',
+  sourceHostname: 'Route by source device hostname (DHCP lease name; Linux/macOS only)',
+  processName: 'Executable file name (Windows incl. .exe); local connections only',
+  processPath: 'Full executable path (distinguishes same-named programs)',
+  geosite: 'sing-geosite domain category tag (e.g. youtube)',
+  geoip: 'sing-geoip country/region IP tag (e.g. cn)',
+  ruleSet: 'A downloaded local rule resource',
 };
 
 /** 每行一条输入的占位示例（i18n key: rules.types.<type>.placeholder）。 */
@@ -115,20 +115,20 @@ export const PROCESS_TYPES: RuleType[] = ['processName', 'processPath'];
 
 /** 按类型的输入格式 hint（i18n key: rules.types.<type>.hint）。ruleSet 用 ResourcePicker，不取此值。 */
 export const RULE_TYPE_HINT: Record<RuleType, string> = {
-  domain: '每行一条完整域名',
-  domainSuffix: '每行一条域名（匹配其及全部子域名）',
-  domainKeyword: '每行一个关键词，域名包含即匹配',
-  domainRegex: 'Golang RE2 正则，不支持 lookahead / 反向引用',
-  ipCidr: '每行一条，裸 IP 视为单主机；IPv4/IPv6 均可',
-  sourceIpCidr: '每行一条源 IP/CIDR',
-  port: '每行一条端口或区间（如 443 或 1000-2000）',
-  sourcePort: '每行一条源端口或区间',
-  sourceMac: '每行一个 MAC（00:11:22:33:44:55 / 00-11-22-33-44-55 / 0011.2233.4455）',
-  sourceHostname: '每行一个设备主机名（来自 DHCP 租约）',
-  processName: '每行一个进程名（Windows 含 .exe）',
-  processPath: '每行一个进程完整路径',
-  geosite: '每行一个标签（如 youtube），或从下方常用标签选择',
-  geoip: '每行一个标签（如 cn），或从下方常用标签选择',
+  domain: 'One full domain per line',
+  domainSuffix: 'One domain per line (matches it and all subdomains)',
+  domainKeyword: 'One keyword per line; matches if the domain contains it',
+  domainRegex: 'Golang RE2 regex; no lookahead / backreferences',
+  ipCidr: 'One per line; a bare IP means a single host; IPv4/IPv6 both OK',
+  sourceIpCidr: 'One source IP/CIDR per line',
+  port: 'One port or range per line (e.g. 443 or 1000-2000)',
+  sourcePort: 'One source port or range per line',
+  sourceMac: 'One MAC per line (00:11:22:33:44:55 / 00-11-22-33-44-55 / 0011.2233.4455)',
+  sourceHostname: 'One device hostname per line (from DHCP leases)',
+  processName: 'One process name per line (Windows includes .exe)',
+  processPath: 'One full process path per line',
+  geosite: 'One tag per line (e.g. youtube), or pick from common tags below',
+  geoip: 'One tag per line (e.g. cn), or pick from common tags below',
   ruleSet: '',
 };
 

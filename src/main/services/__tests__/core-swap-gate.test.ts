@@ -104,7 +104,7 @@ describe('T1：ProxyManager core-swap 手动轴门控', () => {
   it('rejectIfCoreSwapInProgress：置位时抛带 CORE_UPDATE_IN_PROGRESS code 的 Error', () => {
     const svc = makeSvc();
     svc.setCoreSwapInProgress(true);
-    expect(() => svc.rejectIfCoreSwapInProgress('启动代理')).toThrow(/内核更新进行中/);
+    expect(() => svc.rejectIfCoreSwapInProgress('启动代理')).toThrow(/Core update in progress/);
     let threw: any;
     try {
       svc.rejectIfCoreSwapInProgress('启动代理');
@@ -125,7 +125,7 @@ describe('T1：ProxyManager core-swap 手动轴门控', () => {
     const svc = makeSvc();
     svc.setCoreSwapInProgress(true);
     // start 公开方法开头即 startInternal → rejectIfCoreSwapInProgress；不应触达 sing-box 启动
-    await expect(svc.start(makeConfig())).rejects.toThrow(/内核更新进行中/);
+    await expect(svc.start(makeConfig())).rejects.toThrow(/Core update in progress/);
     // 再验 code 透传
     await expect(svc.start(makeConfig())).rejects.toMatchObject({
       code: ProxyErrorCode.CORE_UPDATE_IN_PROGRESS,
@@ -136,7 +136,7 @@ describe('T1：ProxyManager core-swap 手动轴门控', () => {
     const svc = makeSvc();
     svc.setCoreSwapInProgress(true);
     // 代理未运行（未 start）→ switchMode 开头 rejectIfCoreSwapInProgress 先抛
-    await expect(svc.switchMode(makeConfig())).rejects.toThrow(/内核更新进行中/);
+    await expect(svc.switchMode(makeConfig())).rejects.toThrow(/Core update in progress/);
     await expect(svc.switchMode(makeConfig())).rejects.toMatchObject({
       code: ProxyErrorCode.CORE_UPDATE_IN_PROGRESS,
     });

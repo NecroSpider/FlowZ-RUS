@@ -75,7 +75,7 @@ export function SubscriptionDialog({
       });
   }, [open, appVersion]);
 
-  const defaultUserAgent = appVersion ? `FlowZ/${appVersion}` : 'FlowZ/<版本>';
+  const defaultUserAgent = appVersion ? `FlowZ/${appVersion}` : 'FlowZ/<version>';
 
   useEffect(() => {
     if (open) {
@@ -241,7 +241,7 @@ export function SubscriptionDialog({
           {/* 高级设置（默认折叠，用户反馈）：自动更新 + 经代理更新。 */}
           <details className="group rounded-lg border shadow-sm">
             <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2.5 text-sm font-medium [&::-webkit-details-marker]:hidden">
-              <span>{t('sub.advancedSection', '高级')}</span>
+              <span>{t('sub.advancedSection', 'Advanced')}</span>
               <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
             </summary>
             <div className="flex flex-col gap-3 border-t p-3">
@@ -266,22 +266,30 @@ export function SubscriptionDialog({
               <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-1.5">
-                    <Label htmlFor="sub-via-proxy">{t('sub.updateViaProxy', '经代理更新')}</Label>
+                    <Label htmlFor="sub-via-proxy">
+                      {t('sub.updateViaProxy', 'Update via proxy')}
+                    </Label>
                     <InfoTooltip
                       content={t(
                         'sub.updateViaProxyDescFull',
-                        '开启后该订阅经运行中的代理拉取（订阅地址被直连封锁时用）；代理未运行时本轮跳过、就绪后自动补更。仅当「更新与测速」的全局「订阅更新经代理」为「跟随订阅设置」时本开关生效。'
+                        'When on, this subscription is fetched through the running proxy (use when the subscription URL is blocked over direct). If the proxy isn\'t running, this round is skipped and retried once it\'s up. Takes effect only when the global "Fetch subscriptions through proxy" is set to "Follow subscription settings".'
                       )}
                     />
                   </div>
                   <div className="text-[0.8rem] text-muted-foreground">
                     {subscriptionProxyPolicy === 'proxy'
-                      ? t('sub.updateViaProxyOverrideProxy', '已由全局策略覆盖：全部订阅经代理')
+                      ? t(
+                          'sub.updateViaProxyOverrideProxy',
+                          'Overridden by global policy: all subscriptions via proxy'
+                        )
                       : subscriptionProxyPolicy === 'direct'
-                        ? t('sub.updateViaProxyOverrideDirect', '已由全局策略覆盖：全部订阅直连')
+                        ? t(
+                            'sub.updateViaProxyOverrideDirect',
+                            'Overridden by global policy: all subscriptions direct'
+                          )
                         : t(
                             'sub.updateViaProxyDesc',
-                            '该订阅经运行中的代理拉取（代理未运行则就绪后补更）'
+                            'Fetch this subscription through the running proxy (deferred until the proxy is up if not running).'
                           )}
                   </div>
                 </div>
@@ -297,7 +305,7 @@ export function SubscriptionDialog({
               <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-1.5">
-                    <Label htmlFor="sub-send-hwid">{t('sub.sendHwid', '发送设备 ID')}</Label>
+                    <Label htmlFor="sub-send-hwid">{t('sub.sendHwid', 'Send device ID')}</Label>
                     <InfoTooltip content={t('sub.sendHwidDescFull')} />
                   </div>
                   <div className="text-[0.8rem] text-muted-foreground">{t('sub.sendHwidDesc')}</div>
