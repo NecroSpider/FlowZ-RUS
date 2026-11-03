@@ -178,8 +178,7 @@ export class CoreDownloader {
     );
     const file = fs.createWriteStream(tempPath);
     const sess = await this.updateSession();
-    // 下载失败兜底镜像前缀：优先用户配置的 ghProxyPrefix，否则用内置 preset[0]（gh-proxy.org）。
-    // 旧硬编码 mirror.ghproxy.com 已停服，复用 shared/gh-proxy 单一权威（同 RuleResourceManager 重试链）。
+    // 下载失败兜底镜像前缀：只用用户配置的 ghProxyPrefix（未配置 → 不走镜像），复用 shared/gh-proxy 单一权威。
     let ghPrefix: string | undefined;
     try {
       const cfg = await this.configProvider();
@@ -219,9 +218,9 @@ export class CoreDownloader {
         // 文件」那一类事故（见 core-downloader-integrity.test.ts 里同一毫秒撞名那条的回归记录）在结构上
         // 也不再可能——临时文件名的随机段仍保留，两道防线不互斥。
         const afterCleanup = (): void => {
-          // 遇到网络错误，且是第一次尝试，并且是 github 链接，尝试使用加速镜像
-          if (!isRetry && url.includes('github.com')) {
-            const mirrorUrl = ghMirrorUrl(url, ghPrefix);
+          // 遇到网络错误，且是第一次尝试，并且用户配置了加速前缀（github 链接），尝试使用加速镜像
+          const mirrorUrl = isRetry ? null : ghMirrorUrl(url, ghPrefix);
+          if (mirrorUrl) {
             this.logManager.addLog(
               'warn',
               `下载出错，尝试使用加速镜像: ${err.message}`,

@@ -1,7 +1,7 @@
 {
   "appId": "com.flowz.app",
   "productName": "FlowZ",
-  "copyright": "Copyright © 2025",
+  "copyright": "Copyright © 2025 FlowZ Project, © 2026 NecroSpider",
   "directories": {
     "output": "dist-package",
     "buildResources": "build"

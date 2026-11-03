@@ -1,7 +1,7 @@
 {
   "name": "flowz",
   "version": "4.3.11",
-  "description": "FlowZ - 简洁现代的跨平台代理客户端",
+  "description": "FlowZ-RUS - a clean, modern cross-platform proxy client (fork of FlowZ)",
   "desktopName": "flowz",
   "main": "dist/main/main/index.js",
   "scripts": {
@@ -46,7 +46,7 @@
     "trojan",
     "flowz"
   ],
-  "author": "dododook <admin@flowz.app>",
+  "author": "NecroSpider <35307432+NecroSpider@users.noreply.github.com>",
   "license": "MIT",
   "devDependencies": {
     "@dnd-kit/core": "^6.3.1",

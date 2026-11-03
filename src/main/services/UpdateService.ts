@@ -1070,7 +1070,7 @@ export class UpdateService {
    *   ① idle/stall 停滞超时——30s 无 data 即 abort，防网络中断/被拦截致永久挂起、更新永不 resolve（转圈不退）。
    *   ② Content-Length 完整性校验——end 时比对实收字节与响应头 totalSize，被截断的下载 reject（github 链接自动换镜像重试）。
    *   ③ 背压——file.write 返回 false（写盘慢于收流）时 response.pause()，drain 后 resume，防大包下内存堆积。
-   * mirror 兜底：原 mirror.ghproxy.com 已停服，复用 shared/gh-proxy 内置 preset[0]（末尾带 '/'）。
+   * mirror 兜底：仅当用户配置了 ghProxyPrefix 时换该镜像重试一次（shared/gh-proxy.ghMirrorUrl）。
    */
   private async downloadWithHardening(
     url: string,
@@ -1084,7 +1084,7 @@ export class UpdateService {
     ctl?: DownloadControl
   ): Promise<void> {
     // #60：先解析用户 ghProxyPrefix（async），供 handleError 兜底镜像拼接用——与 CoreDownloader.downloadFile 同口径
-    // （在 Promise executor 外 await 配置，闭包内用解析后的同步值）。未配置 → undefined（ghMirrorUrl 回落内置 preset[0]）。
+    // （在 Promise executor 外 await 配置，闭包内用解析后的同步值）。未配置 → undefined（不走镜像）。
     const ghPrefix = await this.resolveGhPrefix();
     const sess = await this.updateSession();
     return new Promise((resolve, reject) => {
@@ -1117,15 +1117,15 @@ export class UpdateService {
           return;
         }
 
-        if (!isRetry && url.includes('github.com')) {
+        // #60：兜底镜像只用用户配置的 ghProxyPrefix（应用内核/资源下载同一加速前缀）；未配置不重试镜像。
+        const mirrorUrl = isRetry ? null : ghMirrorUrl(url, ghPrefix);
+        if (mirrorUrl) {
           this.logManager.addLog(
             'warn',
             `下载出错，尝试使用加速镜像: ${err.message}`,
             'UpdateService'
           );
           cb.onMirror();
-          // #60：兜底镜像优先用用户配置的 ghProxyPrefix（应用内核/资源下载同一加速前缀），缺失才回落内置 preset[0]。
-          const mirrorUrl = ghMirrorUrl(url, ghPrefix);
           this.downloadWithHardening(mirrorUrl, destPath, totalSize, true, cb, ctl)
             .then(resolve)
             .catch(reject);

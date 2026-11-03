@@ -767,7 +767,7 @@
     "about": {
       "version": "Version",
       "reportIssue": "Report an issue",
-      "tgChannel": "FLOWZ Channel",
+      "originalApp": "Original FlowZ",
       "builtWith": "A cross-platform proxy client built on sing-box",
       "loadVersionFail": "Failed to load version info",
       "downloadFail": "Download failed",

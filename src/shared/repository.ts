@@ -6,3 +6,8 @@ export const GITHUB_OWNER = 'NecroSpider';
 export const GITHUB_REPO = 'FlowZ-RUS';
 export const REPOSITORY_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`;
 export const RELEASES_URL = `${REPOSITORY_URL}/releases`;
+
+/** 本 fork 作者的 Telegram（关于页按钮）。 */
+export const AUTHOR_TELEGRAM_URL = 'https://t.me/necro_spider';
+/** 本 fork 所基于的原版 FlowZ（关于页「原版 FlowZ」按钮）。 */
+export const UPSTREAM_REPOSITORY_URL = 'https://github.com/dododook/FlowZ';

@@ -15,7 +15,11 @@ import { useTranslation } from 'react-i18next';
 import { AppUpdateBanner } from './app-update-banner';
 import { useAppStore } from '@/store/app-store';
 import { buildBugReportUrl } from '@/lib/issue-report';
-import { REPOSITORY_URL } from '../../../shared/repository';
+import {
+  AUTHOR_TELEGRAM_URL,
+  REPOSITORY_URL,
+  UPSTREAM_REPOSITORY_URL,
+} from '../../../shared/repository';
 
 interface VersionInfo {
   appVersion: string;
@@ -215,7 +219,7 @@ export function AboutSettings() {
       )}
       <div className="card set-card">
         <div className="about-brand">
-          {/* FlowZ 自有应用图标（ui/icon.svg，F/Z 导流单色渐变）——替换原通用占位 SVG（用户反馈）。 */}
+          {/* FlowZ 自有应用图标（assets/flowz-icon.svg，F/Z 导流单色渐变）——替换原通用占位 SVG（用户反馈）。 */}
           <div className="about-logo overflow-hidden !bg-transparent !p-0">
             <img src={flowzIcon} alt="FlowZ" className="h-full w-full object-cover" />
           </div>
@@ -288,7 +292,7 @@ export function AboutSettings() {
           <button
             type="button"
             className="btn ghost sm"
-            onClick={() => openExternal('https://t.me/flowz1234')}
+            onClick={() => openExternal(AUTHOR_TELEGRAM_URL)}
           >
             <svg
               width="14"
@@ -304,7 +308,31 @@ export function AboutSettings() {
                 strokeLinejoin="round"
               />
             </svg>
-            {t('settings.about.tgChannel', 'FLOWZ频道')}
+            Telegram
+          </button>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => openExternal(UPSTREAM_REPOSITORY_URL)}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+            >
+              <circle cx="12" cy="18" r="3" />
+              <circle cx="6" cy="6" r="3" />
+              <circle cx="18" cy="6" r="3" />
+              <path
+                d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9M12 12v3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {t('settings.about.originalApp', '原版 FlowZ')}
           </button>
         </div>
 
@@ -320,7 +348,7 @@ export function AboutSettings() {
               <br />
             </>
           )}
-          {versionInfo?.copyright || '© 2025 FlowZ. All rights reserved.'}
+          {versionInfo?.copyright || '© 2025 FlowZ Project · © 2026 NecroSpider'}
         </div>
       </div>
     </div>

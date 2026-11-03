@@ -767,7 +767,7 @@
     "about": {
       "version": "Версия",
       "reportIssue": "Сообщить о проблеме",
-      "tgChannel": "Канал FLOWZ",
+      "originalApp": "Оригинальный FlowZ",
       "builtWith": "Кроссплатформенный прокси-клиент на основе sing-box",
       "loadVersionFail": "Не удалось загрузить сведения о версии",
       "downloadFail": "Скачивание не удалось",

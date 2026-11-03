@@ -46,7 +46,7 @@ export function registerVersionHandlers(coreUpdateService?: CoreUpdateService): 
         appName: 'FlowZ',
         buildDate: BUILD_DATE,
         singBoxVersion: currentSingBoxVersion,
-        copyright: `© ${new Date().getFullYear()} FlowZ. All rights reserved.`,
+        copyright: `© 2025 FlowZ Project · © ${new Date().getFullYear()} NecroSpider`,
         repositoryUrl: REPOSITORY_URL,
         platform: process.platform,
         arch: process.arch,

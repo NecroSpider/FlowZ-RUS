@@ -2,7 +2,7 @@
  * CoreDownloader.downloadFile 的**内容完整性**校验（node env，零网络）：mock electron `net.request`，
  * 用 EventEmitter 驱动 response/data/end 流（照 unlock-http.test.ts 的 electron mock 范式）。
  *
- * 为什么这道门必须有测试：运行期换核在下载失败时会**回落 gh-proxy 第三方镜像**，而原先的完整性检查只有
+ * 为什么这道门必须有测试：运行期换核在下载失败时会**回落用户配置的 gh-proxy 镜像**，而原先的完整性检查只有
  * Content-Length —— 它能挡截断，挡不住「长度一样但内容被换」。摘要取自 api.github.com 直连响应、不经镜像，
  * 是镜像投毒的唯一实际拦截点。校验一旦被改坏，症状是**静默安装了一个不是官方发布的可执行文件**，
  * 没有任何用户可见的报错，正是最需要用例钉住的那类失败。
@@ -57,6 +57,9 @@ function serveBody(): void {
 
 const logManager = { addLog: () => {} } as never;
 const newDownloader = () => new CoreDownloader(logManager, async () => null);
+/** 配了 GitHub 加速前缀的下载器：直连失败才会换该镜像重试。 */
+const newMirroredDownloader = () =>
+  new CoreDownloader(logManager, async () => ({ ghProxyPrefix: 'https://my.mirror/' }) as never);
 
 afterAll(() => {
   try {
@@ -108,8 +111,10 @@ describe('CoreDownloader.downloadFile — sha256 完整性校验', () => {
    */
   it('GitHub 直连失败 → 换镜像重试，重试结果同样过摘要校验（不因重试而降级）', async () => {
     let call = 0;
-    mockRequest.mockImplementation(() => {
+    const urls: string[] = [];
+    mockRequest.mockImplementation((opts: { url: string }) => {
       call++;
+      urls.push(opts.url);
       const req = new FakeReq();
       if (call === 1) {
         setImmediate(() => req.emit('error', new Error('boom')));
@@ -127,9 +132,28 @@ describe('CoreDownloader.downloadFile — sha256 完整性校验', () => {
       return req;
     });
     await expect(
-      newDownloader().downloadFile('https://github.com/x/core.tar.gz', false, 'c'.repeat(64))
+      newMirroredDownloader().downloadFile(
+        'https://github.com/x/core.tar.gz',
+        false,
+        'c'.repeat(64)
+      )
     ).rejects.toThrow(/完整性校验失败/);
     expect(call).toBe(2); // 确实重试了；且重试那次没有绕过校验
+    expect(urls[1]).toBe('https://my.mirror/https://github.com/x/core.tar.gz');
+  });
+
+  it('未配置加速前缀 → GitHub 直连失败直接 reject，不静默改走第三方镜像', async () => {
+    let call = 0;
+    mockRequest.mockImplementation(() => {
+      call++;
+      const req = new FakeReq();
+      setImmediate(() => req.emit('error', new Error('boom')));
+      return req;
+    });
+    await expect(
+      newDownloader().downloadFile('https://github.com/x/core.tar.gz', false, BODY_SHA)
+    ).rejects.toThrow('boom');
+    expect(call).toBe(1);
   });
 
   /**

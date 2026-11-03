@@ -66,8 +66,6 @@ jobs:
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: false
       REQUIRE_HELPER: "1"
-      ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/"
-      ELECTRON_BUILDER_BINARIES_MIRROR: "https://npmmirror.com/mirrors/electron-builder-binaries/"
 
     steps:
       - name: Checkout code

@@ -39,8 +39,6 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        env:
-          ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/"
         run: npm ci
 
       - name: Lint code

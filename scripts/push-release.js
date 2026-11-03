@@ -140,7 +140,7 @@ async function main() {
 
   console.log('');
   log('✅ Tag 推送成功，GitHub Actions 将自动构建', colors.green);
-  log(`🔗 https://github.com/zhangjh/FlowZ/actions`, colors.blue);
+  log(`🔗 https://github.com/NecroSpider/FlowZ-RUS/actions`, colors.blue);
 }
 
 main().catch((err) => {

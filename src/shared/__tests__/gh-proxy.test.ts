@@ -1,10 +1,4 @@
-import {
-  ghMirrorUrl,
-  applyGhProxy,
-  isGithubHost,
-  normalizeGhProxyPrefix,
-  GH_PROXY_PRESETS,
-} from '../gh-proxy';
+import { ghMirrorUrl, applyGhProxy, isGithubHost, normalizeGhProxyPrefix } from '../gh-proxy';
 
 const GH = 'https://github.com/a/b/releases/download/v1/x.zip';
 
@@ -38,17 +32,17 @@ describe('isGithubHost（域名表单一真值）', () => {
 });
 
 describe('ghMirrorUrl', () => {
-  it('无 ghPrefix → 回落内置 preset[0]+url', () => {
-    expect(ghMirrorUrl(GH)).toBe(GH_PROXY_PRESETS[0] + GH);
+  it('无 ghPrefix → null（不静默回落第三方预设镜像）', () => {
+    expect(ghMirrorUrl(GH)).toBeNull();
+    expect(ghMirrorUrl(GH, '')).toBeNull();
   });
 
   it('有 ghPrefix 且命中 GitHub 域 → 用前缀拼接', () => {
     expect(ghMirrorUrl(GH, 'https://my.mirror/')).toBe('https://my.mirror/' + GH);
   });
 
-  it('有 ghPrefix 但非 GitHub 域(applyGhProxy 不改) → 回落 preset[0]', () => {
-    const nonGh = 'https://example.com/x.zip';
-    expect(ghMirrorUrl(nonGh, 'https://my.mirror/')).toBe(GH_PROXY_PRESETS[0] + nonGh);
+  it('有 ghPrefix 但非 GitHub 域(applyGhProxy 不改) → null', () => {
+    expect(ghMirrorUrl('https://example.com/x.zip', 'https://my.mirror/')).toBeNull();
   });
 });
 

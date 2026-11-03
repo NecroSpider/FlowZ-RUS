@@ -767,7 +767,7 @@
     "about": {
       "version": "版本",
       "reportIssue": "报告问题",
-      "tgChannel": "FLOWZ频道",
+      "originalApp": "原版 FlowZ",
       "builtWith": "基于 sing-box 构建的跨平台客户端代理应用",
       "loadVersionFail": "无法加载版本信息",
       "downloadFail": "下载失败",

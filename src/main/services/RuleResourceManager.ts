@@ -9,12 +9,7 @@ import * as path from 'path';
 import { getRuleResourcesPath } from '../utils/paths';
 import { writeFileAtomic } from '../utils/atomic-write';
 import { MAX_GITHUB_JSON_BYTES } from '../utils/http-limits';
-import {
-  applyGhProxy,
-  ghMirrorUrl,
-  isGithubHost,
-  normalizeGhProxyPrefix,
-} from '../../shared/gh-proxy';
+import { applyGhProxy, normalizeGhProxyPrefix } from '../../shared/gh-proxy';
 import {
   mrdRawUrl,
   RULE_RESOURCE_CATALOG,
@@ -416,7 +411,7 @@ export class RuleResourceManager {
   }
 
   /**
-   * 抓取 .srs 到目标文件：gh-proxy 重试链（加速→直连→预设[0]）+ SRS 魔数校验 + tmp→rename 原子写。
+   * 抓取 .srs 到目标文件：gh-proxy 重试链（加速→直连）+ SRS 魔数校验 + tmp→rename 原子写。
    * user 资源（落 rule-resources 目录）与内置 geo（落 rules 运行时目录）共用，仅 destPath 不同。
    */
   private async fetchSrsToFile(
@@ -428,9 +423,6 @@ export class RuleResourceManager {
     const finalUrl = applyGhProxy(prefix, sourceUrl);
     let r = await this.fetchBuffer(finalUrl, onChunk);
     if (!r.ok && prefix) r = await this.fetchBuffer(sourceUrl, onChunk);
-    if (!r.ok && isGithubHost(sourceUrl)) {
-      r = await this.fetchBuffer(ghMirrorUrl(sourceUrl), onChunk);
-    }
     if (!r.ok) return { ok: false, errorCode: r.errorCode };
     // 内容校验：.srs 魔数 'SRS'（拦加速代理返回的 HTML 错误页）
     if (!(r.buf.length >= 3 && r.buf[0] === 0x53 && r.buf[1] === 0x52 && r.buf[2] === 0x53)) {

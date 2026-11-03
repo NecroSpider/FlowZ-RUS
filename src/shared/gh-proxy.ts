@@ -75,14 +75,12 @@ export function applyGhProxy(prefix: string | undefined, url: string): string {
 }
 
 /**
- * GitHub 下载失败兜底镜像 URL：优先用户配置前缀（applyGhProxy 命中 GitHub 域时生效），
- * 否则回落内置 preset[0]（末尾带 '/'，直接拼完整原 URL）。收口 CoreUpdate(传 ghPrefix)/Update(不传)/
- * RuleResource 各处的镜像拼接为单一真值。
+ * GitHub 下载失败兜底镜像 URL：只用用户自己配置的加速前缀（applyGhProxy 命中 GitHub 域时生效）。
+ * 未配置 / 非 GitHub 域 → null（不重试镜像）：不再静默回落第三方 gh-proxy 预设，用户 IP 与下载请求
+ * 只发给用户明确选择的镜像。收口 CoreUpdate / Update 各处的镜像拼接为单一真值。
  */
-export function ghMirrorUrl(url: string, ghPrefix?: string): string {
-  if (ghPrefix) {
-    const proxied = applyGhProxy(ghPrefix, url);
-    if (proxied !== url) return proxied;
-  }
-  return GH_PROXY_PRESETS[0] + url;
+export function ghMirrorUrl(url: string, ghPrefix?: string): string | null {
+  if (!ghPrefix) return null;
+  const proxied = applyGhProxy(ghPrefix, url);
+  return proxied !== url ? proxied : null;
 }

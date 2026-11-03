@@ -38,10 +38,9 @@ const RETRY_DELAY_MS = 1000;
 const POST_CONNECT_MAX_PROBE_ATTEMPTS = 4;
 const POST_CONNECT_RETRY_DELAY_MS = 4000;
 
-// 本地直连出口（direct 链，仅国内端点 myip.ipip.net）专用预算：起核初期其解析器 dns-bootstrap（223.5.5.5 IP-DoH）
-// 易撞 use-of-closed 暂态 → 用更宽重试预算等 DNS 就绪，避免重试耗尽时本地出口空缺（旧实现此时会 fallback 到被
-// 透明分流劫持的国外端点 → 误标境外，已废）。成功路径零影响（IPIP 首跳成功即返回，不触发重试）。
-// 取温和的 3×1s（≈3s）而非更宽：doRefresh 与 proxy 探测并发、共用一次 onUpdate，过宽预算会让 IPIP 偶发首失时
+// 本地直连出口（direct 链）专用预算：起核初期 direct 出站的 DNS 解析易撞 use-of-closed 暂态 → 用更宽重试预算等
+// DNS 就绪，避免重试耗尽时本地出口空缺。成功路径零影响（首跳成功即返回，不触发重试）。
+// 取温和的 3×1s（≈3s）而非更宽：doRefresh 与 proxy 探测并发、共用一次 onUpdate，过宽预算会让 direct 偶发首失时
 // 把已成功的代理出口也拖到 direct 重试耗尽才一次性刷新（常规手动/TTL 刷新同样付代价）；3s 既覆盖起核 DNS 抖动、又限拖累。
 const DIRECT_MAX_PROBE_ATTEMPTS = 3;
 const DIRECT_RETRY_DELAY_MS = 1000;
@@ -51,12 +50,9 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 interface ProbeEndpoint {
   host: string;
   path: string;
-  /** 响应体解析方式：'json'（ip-api/ipip/ipify）/ 'trace'（Cloudflare /cdn-cgi/trace 纯文本 key=value）。 */
+  /** 响应体解析方式：'json'（ip-api/ipify）/ 'trace'（Cloudflare /cdn-cgi/trace 纯文本 key=value）。 */
   parse: 'json' | 'trace';
 }
-// 本地出口主用国内接口：旁路由/软路由透明分流会把国外目标劫持走境外出口，导致 ip-api 把本地出口误标为
-// 境外节点 IP；国内接口走真实大陆出口，是这类环境下唯一能测对本地出口的办法（也更快、不触 ip-api 限流）。
-const EP_IPIP: ProbeEndpoint = { host: 'myip.ipip.net', path: '/json', parse: 'json' };
 const EP_IPAPI: ProbeEndpoint = {
   host: 'ip-api.com',
   path: '/json/?fields=status,query,country,countryCode',
@@ -64,7 +60,6 @@ const EP_IPAPI: ProbeEndpoint = {
 };
 const EP_IPIFY: ProbeEndpoint = { host: 'api.ipify.org', path: '/?format=json', parse: 'json' };
 // Cloudflare trace：纯文本 key=value，apex 域 :80 absolute-form 实测直出 200 无重定向（陈先生定 apex 非 www）。
-// 仅用于代理出口链（境外节点访问准确、低延迟）；绝不进直连链——旁路由透明分流会把它劫走代理误标直连出口。
 const EP_CF_TRACE: ProbeEndpoint = {
   host: 'cloudflare.com',
   path: '/cdn-cgi/trace',
@@ -72,15 +67,10 @@ const EP_CF_TRACE: ProbeEndpoint = {
 };
 // 代理出口：trace 为主（境外节点访问快、对任意国家给 ISO loc→countryCode 国旗）；ip-api / ipify 限流无关联兜底降级。
 const PROXY_CHAIN: ProbeEndpoint[] = [EP_CF_TRACE, EP_IPAPI, EP_IPIFY];
-
-/** ipip 无 ISO 国别码：中国→cn（港澳台细分），其余 undefined（渲染端 Globe 兜底）。 */
-function ccFromIpipLocation(loc: readonly string[]): string | undefined {
-  if (loc[0] !== '中国') return undefined;
-  if (loc[1] === '香港') return 'hk';
-  if (loc[1] === '澳门') return 'mo';
-  if (loc[1] === '台湾') return 'tw';
-  return 'cn';
-}
+// 本地出口：ip-api 为主（纯 HTTP、俄罗斯等地直连稳定、带 ISO 国别码），trace / ipify 兜底。本 fork 不再用上游的
+// 国内（中国）端点 myip.ipip.net：它每次探测都拿到用户真实 IP，且对中国以外的出口给不出国别码。
+// 取舍：上游为「旁路由透明分流把国外端点劫走代理 → 本地出口误标境外」只信国内端点；本 fork 用户不在大陆，按国际端点测。
+const DIRECT_CHAIN: ProbeEndpoint[] = [EP_IPAPI, EP_CF_TRACE, EP_IPIFY];
 
 /**
  * 解析 Cloudflare /cdn-cgi/trace 纯文本响应（多行 `key=value`）。仅取 ip + countryCode（不取 colo）：
@@ -126,7 +116,7 @@ export class IpInfoService {
   // 首连专用更宽预算（仅 refreshProxyPostConnect 用）：覆盖 TS/组网首连隧道未就绪的几秒窗口。
   private readonly postConnectMaxAttempts: number;
   private readonly postConnectRetryDelayMs: number;
-  // 本地直连出口（direct 链）专用预算：起核初期 IPIP 解析器 dns-bootstrap 易撞 use-of-closed 暂态，宽预算等就绪。
+  // 本地直连出口（direct 链）专用预算：起核初期 direct 出站 DNS 易撞 use-of-closed 暂态，宽预算等就绪。
   private readonly directMaxAttempts: number;
   private readonly directRetryDelayMs: number;
 
@@ -396,9 +386,9 @@ export class IpInfoService {
               () => !!this.getProxyExitBlock?.()
             ),
       ]);
-      // 本地出口(direct)探测失败【不】污染全局 error/degraded：它走 direct 出站、与代理路径无关；direct 链改
-      // 单端点 IPIP-only 后失败更频繁，旧的 direct↔全局 error 强耦合会让导流脊误显「外网降级」、即便代理出口正常。
-      // IPIP 单点暂态失败只表现为本地出口「暂不可用」(direct 保留旧值/null)，绝不连累 degraded（#2 修复）。
+      // 本地出口(direct)探测失败【不】污染全局 error/degraded：它走 direct 出站、与代理路径无关；旧的 direct↔全局
+      // error 强耦合会让导流脊误显「外网降级」、即便代理出口正常。direct 暂态失败只表现为本地出口「暂不可用」
+      // (direct 保留旧值/null)，绝不连累 degraded（#2 修复）。
       if (d) direct = d;
       if (block) {
         proxy = null; // 直判无效：不探、清旧值、落 blocked 终态（非 error，不误染降级）。
@@ -488,24 +478,16 @@ export class IpInfoService {
   }
 
   /**
-   * 本地【直连出口】解析——**单端点**（非「链」，名沿用历史；保留函数封装作「direct 只信国内端点」规矩的单一
-   * 锚点 + 单测点，并为将来加国内备用端点留位）。
-   *
-   * 【只用国内端点 myip.ipip.net】，**绝不** fallback 到国外端点（ip-api/ipify/Cloudflare）：上层旁路由/软路由的
-   * 透明分流会把国外端点劫持走代理出口 → 本地出口被误标为境外（真机实证：起核初期 IPIP 的 dns-bootstrap 撞
-   * use-of-closed → 旧实现 fallback 到 ip-api → 直连出口显示软路由代理 IP，刷新才恢复）。与 EP_CF_TRACE「绝不进
-   * 直连链」同规矩。IPIP 暂态失败交 withRetry 重试（DIRECT_* 宽预算，等 dns-bootstrap 就绪即成功）；成功但缺国别码
-   * （境外直连出口、国内库无 ISO 码）由渲染端 Globe 兜底——不取 ip-api 增补（同样会被劫持给错码/错 IP）。
-   * EP_IPAPI/EP_IPIFY 仅服务 proxy 链（代理出口本就走国外端点测）。
-   *
-   * 取舍：去掉国外 fallback 后，无上层透明分流的环境下若 IPIP 持续不可达（ISP 封/服务故障/人在境外）→ 本地出口
-   * 暂无（旧实现此时有 ip-api/ipify 兜底）。即以「反劫持正确性」换「单点可用性」——宽预算 + IPIP 国内稳定性覆盖
-   * 常态暂态；持续不可达属已知权衡。
+   * 本地【直连出口】解析：DIRECT_CHAIN 逐端点串行，首个成功即返回。整链暂态失败交 withRetry 重试（DIRECT_* 宽预算）。
    */
   private async queryDirectChain(
     fetch: (ep: ProbeEndpoint) => Promise<IpInfo | null>
   ): Promise<IpInfo | null> {
-    return fetch(EP_IPIP);
+    for (const ep of DIRECT_CHAIN) {
+      const r = await fetch(ep);
+      if (r) return r;
+    }
+    return null;
   }
 
   private async queryViaProxy(proxyPort: number): Promise<IpInfo | null> {
@@ -563,7 +545,7 @@ export class IpInfoService {
   }
 }
 
-/** JSON 端点解析（ip-api / ipip / ipify）。解析失败或字段缺失返 null（走 fallback）。 */
+/** JSON 端点解析（ip-api / ipify）。解析失败或字段缺失返 null（走 fallback）。 */
 function parseJson(body: string): IpInfo | null {
   try {
     const j = JSON.parse(body) as Record<string, unknown>;
@@ -574,21 +556,6 @@ function parseJson(body: string): IpInfo | null {
         country: typeof j.country === 'string' ? j.country : undefined,
         countryCode: typeof j.countryCode === 'string' ? j.countryCode : undefined,
       };
-    }
-    // ipip：{ret:'ok', data:{ip, location:[国,省,市,区,ISP]}}
-    if (j && j.ret === 'ok' && j.data && typeof j.data === 'object') {
-      const d = j.data as { ip?: unknown; location?: unknown };
-      if (typeof d.ip === 'string') {
-        const raw = Array.isArray(d.location)
-          ? d.location.filter((s): s is string => typeof s === 'string')
-          : [];
-        const parts = raw.filter((s) => s.length > 0);
-        return {
-          ip: d.ip,
-          country: parts.length ? parts.join(' ') : undefined,
-          countryCode: ccFromIpipLocation(raw),
-        };
-      }
     }
     // ipify：{ip}
     if (j && typeof j.ip === 'string') {

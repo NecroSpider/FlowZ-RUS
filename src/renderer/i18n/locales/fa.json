@@ -767,7 +767,7 @@
     "about": {
       "version": "نسخه",
       "reportIssue": "گزارش یک مشکل",
-      "tgChannel": "کانال FLOWZ",
+      "originalApp": "FlowZ اصلی",
       "builtWith": "یک کلاینت پروکسی چندسکویی ساخته‌شده بر پایهٔ sing-box",
       "loadVersionFail": "بارگذاری اطلاعات نسخه ناموفق بود",
       "downloadFail": "دانلود ناموفق بود",
