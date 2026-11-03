@@ -42,6 +42,8 @@ import { GITHUB_OWNER, GITHUB_REPO } from '../../shared/repository';
 // 下载停滞超时：连接/下载 30s 无数据即视为卡死 → abort + 失败兜底（github 链接自动换镜像重试一次）。
 // 防永久挂起致更新永不 resolve（进度窗/对话框永久转圈）。正常下载持续有 data、不断重置、不会误触发。
 const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
+/** 下载进度推送最小间隔（≈10 帧/秒）：够流畅，又不让 IPC/重绘随数据块狂刷。 */
+const PROGRESS_THROTTLE_MS = 100;
 
 /** 流式 sha256（安装包 100MB+，不整读进内存）。 */
 function sha256OfFile(filePath: string): Promise<string> {
@@ -1008,6 +1010,9 @@ export class UpdateService {
     mirrorToPopup = false,
     ctl?: DownloadControl
   ): Promise<void> {
+    // 进度节流：每个数据块都发一次 IPC，快网下每秒上千条——进度条宽度过渡每帧被打断重启、字节文字狂刷
+    // （用户反馈下载条「灯光秀」）。最多每 PROGRESS_THROTTLE_MS 一帧，下载满 100% 那一帧必发。
+    let lastProgressAt = 0;
     return this.downloadWithHardening(
       url,
       destPath,
@@ -1027,6 +1032,9 @@ export class UpdateService {
         },
         onProgress: (downloaded, total) => {
           if (total > 0) {
+            const now = Date.now();
+            if (downloaded < total && now - lastProgressAt < PROGRESS_THROTTLE_MS) return;
+            lastProgressAt = now;
             const percentage = Math.round((downloaded / total) * 100);
             if (mirrorToPopup) {
               const downloadedMB = (downloaded / 1024 / 1024).toFixed(1);
