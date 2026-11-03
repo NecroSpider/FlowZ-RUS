@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "rules": [
+    {
+      "domain_suffix": [
+        "bungie.net",
+        "bungie.com",
+        "bungiestore.com",
+        "destinythegame.com",
+        "marathonthegame.com"
+      ]
+    }
+  ]
+}

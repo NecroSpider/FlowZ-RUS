@@ -7,7 +7,7 @@
 权威清单见 `src/main/services/builtin-geo-rulesets.ts`（`BUILTIN_GEO_RULESETS`）。当前共 **28 个文件（7 geoip + 21 geosite）**：
 
 - **国内基线（3）**——`geoip-cn` · `geosite-cn` · `geosite-geolocation-!cn`。来源：SagerNet [sing-geoip](https://github.com/SagerNet/sing-geoip) / [sing-geosite](https://github.com/SagerNet/sing-geosite)（rule-set 分支）。
-- **应用分流预设**——常见应用的 `geosite-*`（youtube、netflix、tiktok、telegram、twitter、instagram、openai、anthropic、category-ai-!cn、google、github、spotify、steam、epicgames、riot、disney）+ 部分 `geoip-*`（netflix、telegram、twitter）。来源：[MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat)（`@sing`）。
+- **应用分流预设**——常见应用的 `geosite-*`（youtube、netflix、tiktok、telegram、twitter、instagram、openai、anthropic、category-ai-!cn、google、github、spotify、steam、epicgames、riot、ubisoft、ea、activision、blizzard、bungie（自建，源 `scripts/rule-sets`）、disney）+ 部分 `geoip-*`（netflix、telegram、twitter）。来源：[MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat)（`@sing`）。
 - **地区分流（伊朗 / 俄罗斯）**——`geosite-category-ir` · `geosite-category-ru` · `geoip-ir` · `geoip-ru`。来源：MetaCubeX/meta-rules-dat。
 - **私有 / 局域网**——`geoip-private` · `geosite-private`（本地/内网直连）。
 

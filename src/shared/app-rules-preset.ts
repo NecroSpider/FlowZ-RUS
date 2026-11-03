@@ -223,6 +223,91 @@ export const APP_PRESETS: AppPreset[] = [
     category: 'game',
   },
   {
+    // Ubisoft Connect：俄罗斯直连常无法登录启动器 / 联机。无 macOS 客户端，进程名均为 Windows。
+    id: 'ubisoft',
+    labelKey: 'ubisoft',
+    emoji: '🌀',
+    geositeTags: ['ubisoft'],
+    processNames: [
+      'UbisoftConnect.exe',
+      'upc.exe', // Ubisoft Connect 主进程
+      'UplayWebCore.exe',
+      'UplayService.exe',
+      'UbisoftGameLauncher.exe',
+      'UbisoftGameLauncher64.exe',
+      'RainbowSix.exe',
+      'RainbowSix_Vulkan.exe',
+      'RainbowSix_BE.exe', // Rainbow Six Siege
+      'ForHonor.exe',
+      'TheDivision2.exe',
+      'ACValhalla.exe',
+      'ACMirage.exe',
+      'FarCry6.exe',
+      'TheCrewMotorfest.exe',
+    ],
+    category: 'game',
+  },
+  {
+    // EA app（原 Origin）：同上，俄罗斯直连登录 / 联机受限。geosite-ea 已含 origin.com。
+    id: 'ea',
+    labelKey: 'ea',
+    emoji: '🕹️',
+    geositeTags: ['ea'],
+    processNames: [
+      'EADesktop.exe', // EA app
+      'EABackgroundService.exe',
+      'EALocalHostSvc.exe',
+      'Origin.exe',
+      'OriginWebHelperService.exe',
+      'OriginClientService.exe',
+      'Origin', // macOS Origin
+      'EAAntiCheat.GameServiceLauncher.exe',
+      'r5apex.exe',
+      'r5apex_dx12.exe', // Apex Legends
+      'BF2042.exe',
+      'bfv.exe',
+      'bf1.exe',
+      'starwarsbattlefrontii.exe',
+      'FC25.exe',
+      'FC26.exe', // EA Sports FC
+      'NFSUnbound.exe',
+    ],
+    category: 'game',
+  },
+  {
+    // Bungie：Destiny 2 / Marathon（TAPIR 等网络错误）。上游无 geosite-bungie，清单自建（scripts/rule-sets）。
+    id: 'bungie',
+    labelKey: 'bungie',
+    emoji: '🌌',
+    geositeTags: ['bungie'],
+    processNames: ['destiny2.exe', 'destiny2launcher.exe', 'Marathon.exe'],
+    category: 'game',
+  },
+  {
+    // Battle.net：Call of Duty / Warzone、Diablo、WoW、Overwatch 等。geosite-activision 含 demonware.net（CoD 联机后端）。
+    id: 'battlenet',
+    labelKey: 'battlenet',
+    emoji: '❄️',
+    geositeTags: ['activision', 'blizzard'],
+    processNames: [
+      'Battle.net.exe',
+      'Battle.net', // macOS
+      'cod.exe', // Call of Duty HQ / Warzone
+      'ModernWarfare.exe',
+      'BlackOpsColdWar.exe',
+      'Diablo IV.exe',
+      'D2R.exe',
+      'DiabloImmortal.exe',
+      'Wow.exe',
+      'WowClassic.exe',
+      'World of Warcraft', // macOS
+      'Overwatch.exe',
+      'SC2_x64.exe',
+      'Hearthstone.exe',
+    ],
+    category: 'game',
+  },
+  {
     id: 'disney',
     labelKey: 'disney',
     emoji: '🏰',

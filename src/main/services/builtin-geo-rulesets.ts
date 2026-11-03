@@ -55,6 +55,10 @@ const APP_GEOSITE_TAGS = [
   'steam',
   'epicgames',
   'riot',
+  'ubisoft',
+  'ea',
+  'activision',
+  'blizzard',
   'disney',
   'private',
 ];
@@ -66,6 +70,12 @@ const REGION_GEOSITE_TAGS = ['category-ir', 'category-ru'];
 const REGION_GEOIP_TAGS = ['ir', 'ru'];
 
 const MRD_GEO_RAW = 'https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo';
+/**
+ * 上游 meta-rules-dat 没有的预设清单：本仓库自建（源 scripts/rule-sets/<tag>.json →
+ * `sing-box rule-set compile -o resources/data/<tag>.srs`），在线更新也从本仓库 main 拉。
+ */
+const FORK_DATA_RAW = 'https://raw.githubusercontent.com/NecroSpider/FlowZ-RUS/main/resources/data';
+const FORK_GEOSITE_TAGS = ['bungie'];
 const appGeoEntry = (cat: 'geosite' | 'geoip', tag: string): BuiltinGeoRuleSet => {
   // category-ai 在 MetaCubeX 用 category-ai-!cn（裸 category-ai 不单独成 .srs）；tag 仍为 geosite-category-ai（与 app-rule 生成对齐）。
   const srcName = cat === 'geosite' && tag === 'category-ai' ? 'category-ai-!cn' : tag;
@@ -105,6 +115,12 @@ export const BUILTIN_GEO_RULESETS: BuiltinGeoRuleSet[] = [
   // 内置应用分流预设的 geo（随包，本地优先）
   ...APP_GEOSITE_TAGS.map((t) => appGeoEntry('geosite', t)),
   ...APP_GEOIP_TAGS.map((t) => appGeoEntry('geoip', t)),
+  ...FORK_GEOSITE_TAGS.map(
+    (t): BuiltinGeoRuleSet => ({
+      ...appGeoEntry('geosite', t),
+      sourceUrl: `${FORK_DATA_RAW}/geosite-${t}.srs`,
+    })
+  ),
   // 地区分流场景的 geo（伊朗/俄罗斯，随包本地优先；CN 已在上方三件套）
   ...REGION_GEOSITE_TAGS.map((t) => appGeoEntry('geosite', t)),
   ...REGION_GEOIP_TAGS.map((t) => appGeoEntry('geoip', t)),

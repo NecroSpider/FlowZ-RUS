@@ -7,7 +7,7 @@ Bundled sing-box rule-sets (`.srs`, binary format) used for routing. They ship *
 The authoritative list lives in `src/main/services/builtin-geo-rulesets.ts` (`BUILTIN_GEO_RULESETS`). Current set — **28 files (7 geoip + 21 geosite)**:
 
 - **China baseline (3)** — `geoip-cn` · `geosite-cn` · `geosite-geolocation-!cn`. Source: SagerNet [sing-geoip](https://github.com/SagerNet/sing-geoip) / [sing-geosite](https://github.com/SagerNet/sing-geosite) (rule-set branch).
-- **App-routing presets** — `geosite-*` for popular apps (youtube, netflix, tiktok, telegram, twitter, instagram, openai, anthropic, category-ai-!cn, google, github, spotify, steam, epicgames, riot, disney) plus `geoip-*` for a few (netflix, telegram, twitter). Source: [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) (`@sing`).
+- **App-routing presets** — `geosite-*` for popular apps (youtube, netflix, tiktok, telegram, twitter, instagram, openai, anthropic, category-ai-!cn, google, github, spotify, steam, epicgames, riot, ubisoft, ea, activision, blizzard, bungie (own list, source in `scripts/rule-sets`), disney) plus `geoip-*` for a few (netflix, telegram, twitter). Source: [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) (`@sing`).
 - **Region splitting (Iran / Russia)** — `geosite-category-ir` · `geosite-category-ru` · `geoip-ir` · `geoip-ru`. Source: MetaCubeX/meta-rules-dat.
 - **Private / LAN** — `geoip-private` · `geosite-private` (local/intranet direct).
 

@@ -1441,6 +1441,10 @@
       "steam": "Steam",
       "epic": "Epic Games",
       "riot": "Riot / Valorant",
+      "ubisoft": "Ubisoft Connect",
+      "ea": "EA app / Origin",
+      "bungie": "Bungie (Destiny 2 / Marathon)",
+      "battlenet": "Battle.net (Activision / Blizzard)",
       "disney": "Disney+"
     },
     "customRules": "自定义规则",
