@@ -8,7 +8,7 @@
 [![license](https://img.shields.io/badge/license-MIT-0E98A4?style=flat-square)](LICENSE.txt)
 [![stars](https://img.shields.io/github/stars/NecroSpider/FlowZ-RUS?style=flat-square&color=0E98A4)](https://github.com/NecroSpider/FlowZ-RUS/stargazers)
 
-[简体中文](README.md) · [English](README.en.md) · **繁體中文** · [Русский](README.ru.md) · [فارسی](README.fa.md)
+[Русский](README.md) · [English](README.en.md) · [简体中文](README.zh-CN.md) · **繁體中文** · [فارسی](README.fa.md)
 
 </div>
 

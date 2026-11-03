@@ -8,7 +8,7 @@
 [![license](https://img.shields.io/badge/license-MIT-0E98A4?style=flat-square)](LICENSE.txt)
 [![stars](https://img.shields.io/github/stars/NecroSpider/FlowZ-RUS?style=flat-square&color=0E98A4)](https://github.com/NecroSpider/FlowZ-RUS/stargazers)
 
-[简体中文](README.md) · **English** · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [فارسی](README.fa.md)
+[Русский](README.md) · **English** · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [فارسی](README.fa.md)
 
 </div>
 
@@ -25,6 +25,7 @@ FlowZ-RUS is a fork of [dododook/FlowZ](https://github.com/dododook/FlowZ) (orig
 What it adds on top of the original:
 
 - **Runs alongside work VPNs** (macOS; Windows in testing). OpenVPN Connect, Tunnelblick, Viscosity, Cisco, FortiClient, GlobalProtect, WireGuard and built-in Windows VPNs work in parallel with FlowZ in TUN mode: the work VPN's subnets and DNS bypass FlowZ, and the VPN itself never goes through the proxy or drops when FlowZ restarts. Settings → Network → "Work VPN".
+- **Device ID for subscriptions with a device limit** (Remnawave, etc.): like Happ and v2RayTun, FlowZ sends `x-hwid`, so such subscriptions serve servers instead of a "⛔ app does not send device ID" placeholder. Toggle in the subscription settings.
 - **Xray JSON subscriptions** — import subscriptions that serve an array of Xray configs.
 - **The helper installs on Russian and other localized Windows**: permissions are granted by SID instead of group names, and files with broken permissions left by older installs repair themselves. Helper install failures are now reported on every platform.
 - **App updates are verified by SHA-256** before installing and come from this repository.
