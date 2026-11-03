@@ -1,8 +1,6 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-import zhCN from './locales/zh-CN.json';
-import zhTW from './locales/zh-TW.json';
 import enUS from './locales/en-US.json';
 import ru from './locales/ru.json';
 import fa from './locales/fa.json';
@@ -13,12 +11,6 @@ import {
 } from '../../shared/language';
 
 const resources = {
-  'zh-CN': {
-    translation: zhCN,
-  },
-  'zh-TW': {
-    translation: zhTW,
-  },
   'en-US': {
     translation: enUS,
   },
@@ -94,7 +86,7 @@ i18n.use(initReactI18next).init({
 });
 
 // 同步 <html lang> + <html dir>：初始化按当前语言设置，切换语言时随 languageChanged 更新。
-// index.html 中静态的 lang="zh-CN" 仅作首屏默认，运行期以此为准；
+// index.html 中静态的 lang 仅作首屏默认，运行期以此为准；
 // dir 随 RTL 语言（fa 等）切到 'rtl'，其余为 'ltr'，使整体布局镜像。
 i18n.on('languageChanged', (lng) => {
   applyDocumentDirection(lng);

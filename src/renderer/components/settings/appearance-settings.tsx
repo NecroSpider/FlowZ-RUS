@@ -14,8 +14,6 @@ import {
 
 // 各语言「母语自名」（不随界面语言翻译，便于使用者识别）。新增语言时在此与 i18n resources 同步追加。
 const NATIVE_NAMES: Record<string, string> = {
-  'zh-CN': '简体中文',
-  'zh-TW': '繁體中文',
   'en-US': 'English',
   ru: 'Русский',
   fa: 'فارسی',
@@ -77,10 +75,12 @@ export function AppearanceSettings() {
     <div className="set-panel">
       <div className="card set-card">
         <div className="set-h">
-          <b>{t('settings.appearance.theme', '主题')}</b>
-          <small>{t('settings.appearance.themeSub', '跟随系统或手动锁定明暗')}</small>
+          <b>{t('settings.appearance.theme', 'Theme')}</b>
+          <small>
+            {t('settings.appearance.themeSub', 'Follow the system or lock light/dark manually')}
+          </small>
         </div>
-        <SettingsRow label={t('settings.appearance.themeRowLabel', '配色主题')} stacked>
+        <SettingsRow label={t('settings.appearance.themeRowLabel', 'Color theme')} stacked>
           <div className="seg2" style={{ width: '100%', maxWidth: 280 }}>
             {themeOptions.map((o) => (
               <button
@@ -98,15 +98,17 @@ export function AppearanceSettings() {
 
       <div className="card set-card">
         <div className="set-h">
-          <b>{t('settings.appearance.language', '语言')}</b>
-          <small>{t('settings.appearance.languageSub', '界面显示语言，切换即时生效')}</small>
+          <b>{t('settings.appearance.language', 'Language')}</b>
+          <small>
+            {t('settings.appearance.languageSub', 'Interface language, applies instantly')}
+          </small>
         </div>
-        <SettingsRow label={t('settings.appearance.languageRowLabel', '显示语言')} stacked>
+        <SettingsRow label={t('settings.appearance.languageRowLabel', 'Display language')} stacked>
           <div className="sel" style={{ maxWidth: 280 }}>
             <select
               value={langChoice}
               onChange={(e) => handleLanguageChange(e.target.value)}
-              aria-label={t('settings.appearance.languageRowLabel', '显示语言')}
+              aria-label={t('settings.appearance.languageRowLabel', 'Display language')}
             >
               {/* 自动（跟随系统）置首位且为默认 */}
               <option value={AUTO_LANGUAGE}>{t('settings.appearance.languageAuto')}</option>

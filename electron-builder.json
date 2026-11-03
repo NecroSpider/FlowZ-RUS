@@ -10,7 +10,7 @@
     "dist/**/*",
     "package.json"
   ],
-  "electronLanguages": ["zh-CN", "zh-TW", "en-US", "ru", "fa"],
+  "electronLanguages": ["en-US", "ru", "fa"],
   "asar": true,
   "win": {
     "target": [
@@ -94,7 +94,7 @@
     "identity": null,
     "gatekeeperAssess": false,
     "extendInfo": {
-      "CFBundleLocalizations": ["en", "zh-Hans", "zh-Hant", "ru", "fa"],
+      "CFBundleLocalizations": ["en", "ru", "fa"],
       "CFBundleAllowMixedLocalizations": true
     },
     "extraResources": [
@@ -161,8 +161,6 @@
     "description": "FlowZ - a clean, modern cross-platform proxy client.",
     "desktop": {
       "entry": {
-        "Comment[zh_CN]": "简洁现代的跨平台代理客户端",
-        "Comment[zh_TW]": "簡潔現代的跨平台代理客戶端",
         "Comment[ru]": "Простой современный кроссплатформенный прокси-клиент",
         "Comment[fa]": "کلاینت پروکسی مدرن و چندسکویی"
       }

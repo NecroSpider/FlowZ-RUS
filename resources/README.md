@@ -1,90 +1,80 @@
-# 资源文件目录
+# Resources directory
 
-**简体中文** · [English](README.en.md)
+Cross-platform resource files for the app.
 
-这个目录包含应用程序的跨平台资源文件。
-
-## 目录结构
+## Layout
 
 ```
 resources/
 ├── win/                          # Windows (x64)
-│   ├── sing-box.exe              # sing-box 可执行文件（fetch 产物，不入库）
-│   ├── libcronet.dll             # NaïveProxy/cronet 运行时库（dlopen，fetch 产物，不入库）
-│   └── com.flowz.helper.exe      # 提权服务 helper（build 产物，不入库）
+│   ├── sing-box.exe              # sing-box binary (fetched, not committed)
+│   ├── libcronet.dll             # NaiveProxy/cronet runtime lib (dlopen, fetched, not committed)
+│   └── com.flowz.helper.exe      # privilege service helper (built, not committed)
 ├── linux/                        # Linux (x64)
-│   ├── sing-box                  # sing-box 可执行文件（fetch 产物，不入库）
-│   └── libcronet.so              # NaïveProxy/cronet 运行时库（dlopen，fetch 产物，不入库）
+│   ├── sing-box                  # sing-box binary (fetched, not committed)
+│   └── libcronet.so              # NaiveProxy/cronet runtime lib (dlopen, fetched, not committed)
 ├── mac-x64/                      # macOS Intel (x64)
-│   ├── sing-box                  # sing-box 可执行文件（fetch 产物，不入库）
-│   └── com.flowz.helper          # 提权服务 helper（build 产物，不入库）
+│   ├── sing-box                  # sing-box binary (fetched, not committed)
+│   └── com.flowz.helper          # privilege service helper (built, not committed)
 ├── mac-arm64/                    # macOS Apple Silicon (arm64)
-│   ├── sing-box                  # sing-box 可执行文件（fetch 产物，不入库）
-│   ├── com.flowz.helper          # 提权服务 helper（build 产物，不入库）
+│   ├── sing-box                  # sing-box binary (fetched, not committed)
+│   ├── com.flowz.helper          # privilege service helper (built, not committed)
 │   └── LICENSE
-├── dashboard/                    # sing-box 官方面板静态资源（fetch 产物，不入库）
-├── data/                         # 共享数据：随包内置 geo 规则集（geoip-*.srs / geosite-*.srs，入库）
-├── app.png / app-gray.png        # 托盘图标（常态/置灰）
-├── README.md                     # 本文档（简体中文）
-└── README.en.md                  # English
+├── dashboard/                    # official sing-box dashboard static assets (fetched, not committed)
+├── data/                         # shared data: bundled geo rule-sets (geoip-*.srs / geosite-*.srs, committed)
+├── app.png / app-gray.png        # tray icons (normal / grayed)
+├── README.md                     # this doc (Simplified Chinese)
 ```
 
-> 说明：`data/` geo 规则集、图标与 `LICENSE` **入库**；`sing-box` 二进制、`libcronet.*`、`dashboard/`、
-> `com.flowz.helper{,.exe}` 体积大或属构建产物 **不入库**，由下列命令在开发/CI 现拉现编后随 `resources/` 一起打包：
+> The `data/` geo rule-sets, icons, and `LICENSE` are **committed**; the `sing-box` binary, `libcronet.*`, `dashboard/`, and `com.flowz.helper{,.exe}` are large or build artifacts and are **not committed** — they're fetched/built in dev/CI and packaged together with `resources/`:
 >
-> - `npm run fetch:core` → 各平台 `sing-box[.exe]`（SagerNet 官方 release，按 core-manifest.json 的 `bundledCoreVersion` 拉、`coreArchiveSha256` 校验压缩包）
-> - `npm run fetch:cronet` → 各平台 `libcronet.*`（NaïveProxy/cronet，运行时 dlopen）
-> - `npm run fetch:dashboard`→ `dashboard/`（官方面板，gh-pages 构建产物）
-> - `npm run build:helper` → 各平台 `com.flowz.helper{,.exe}`（提权服务，交叉编译）
+> - `npm run fetch:core` → per-platform `sing-box[.exe]` (SagerNet official release; pulled per `core-manifest.json` `bundledCoreVersion`, archive verified by `coreArchiveSha256`)
+> - `npm run fetch:cronet` → per-platform `libcronet.*` (NaiveProxy/cronet, runtime dlopen)
+> - `npm run fetch:dashboard` → `dashboard/` (official panel, gh-pages build output)
+> - `npm run build:helper` → per-platform `com.flowz.helper{,.exe}` (privilege service, cross-compiled)
 >
-> 应用图标本体见 `build/icon.ico` / `build/icon.icns`（electron-builder 打包用）；`resources/app*.png` 仅作托盘图标。
+> The app icon itself is `build/icon.ico` / `build/icon.icns` (used by electron-builder); `resources/app*.png` are tray icons only.
 
-## 资源管理
+## Resource management
 
-应用程序使用 `ResourceManager` 类来管理资源文件的访问：
+The app accesses these files through the `ResourceManager` class:
 
-- 自动检测当前平台和架构（win / linux / mac-x64 / mac-arm64）
-- 处理开发环境和生产环境的路径差异
-- 提供统一的资源访问接口
+- Auto-detects the current platform and architecture (win / linux / mac-x64 / mac-arm64).
+- Handles the path difference between development and production.
+- Provides a unified resource-access interface.
 
-## 开发环境 vs 生产环境
+## Development vs production
 
-- **开发环境**：从项目根目录的 `resources/` 加载。
-- **生产环境**：从打包后的 `resources/`（electron-builder `extraResources`）加载。
+- **Development**: loaded from the project-root `resources/`.
+- **Production**: loaded from the packaged `resources/` (electron-builder `extraResources`).
 
-## 注意事项
+## Notes
 
-1. **可执行权限**：macOS / Linux 的 `sing-box` 与 helper 需可执行权限（`chmod +x`）。
-2. **文件大小**：`sing-box` 可执行文件较大（约 65–77 MB/平台），会影响安装包大小；故不入库、由 `npm run fetch:core` 现拉现打（见文首说明与下「换核」）。
-3. **更新**：GeoIP/GeoSite 数据（`data/*.srs`）需定期更新以获得最新路由规则；运行期亦可经规则资源管理在线更新到 userData。
-4. **换核**：改 `src/shared/core-manifest.json` 的 `bundledCoreVersion` + `coreArchiveSha256`（4 平台压缩包 sha，
-   值 = 官方 release REST API 的 asset digest，一行取：
-   `gh api repos/SagerNet/sing-box/releases/tags/v<新版本> --jq '.assets[]|select(.name|test("(linux-amd64.tar.gz|windows-amd64.zip|darwin-amd64.tar.gz|darwin-arm64.tar.gz)$"))|{name,digest}'`，
-   digest 形如 `sha256:<hex>`，**可原样填入** coreArchiveSha256，`fetch:core` 会自动 strip `sha256:` 前缀后比对），
-   再 `npm run fetch:core` 拉新核（无需手动下载/替换二进制；不入库）。换核须确认二进制 `Tags`
-   含 `with_naive_outbound`（naive 支持前提）。
-
-   **`coreBinarySha256` 也要一并更新**（4 平台落地二进制本体 sha）。它让「已落地则跳过」可自证：
-   磁盘 sha 与 pin 对得上才跳过，对不上即当陈旧核自动重下——**所以换版本不必再记得加 `--force`**。
-   取值方式：先跑一次 `npm run fetch:core -- --force`，脚本对每个平台打印 `bin sha <hex>`，抄进 manifest 即可
-   （缺 pin 不会静默：脚本打 `skip (unverified)` 明说无法确认磁盘上是不是新版本，单测亦断言四平台齐全）。
-
-   > 这条是 2026-08-05 踩出来的：旧实现无条件跳过、汇总行却照打 manifest 版本，于是磁盘还是 beta.5 时
-   > 仍显示 `4 ready (version 1.14.0-beta.7)`，据此跑的真核 check 把新字段误判成 unknown field。
-
-   **`libcronet` 必须同步换**（2026-08-05 起）：它不再独立管理——`cronetVersion` 就是从「随包 sing-box 的
-   go.mod」抄来的 Go module 伪版本，取源亦从已停更的 cronet-go Releases 改为 Go module proxy。步骤：
+1. **Executable bit**: `sing-box` and the helper on macOS / Linux need the executable bit (`chmod +x`).
+2. **File size**: the `sing-box` binary is large (~65–77 MB per platform) and affects installer size; hence it's not committed and is fetched at build time by `npm run fetch:core` (see above and "Swapping the core").
+3. **Updates**: GeoIP/GeoSite data (`data/*.srs`) should be refreshed periodically; at runtime they can also be updated online into userData via the Rule Resources manager.
+4. **Swapping the core**: edit `src/shared/core-manifest.json` `bundledCoreVersion` + `coreArchiveSha256` (per-platform archive sha; the value equals the official release REST API asset digest), then `npm run fetch:core`. One-liner to read the digests:
 
    ```bash
-   curl -fsSL "https://proxy.golang.org/github.com/sagernet/sing-box/@v/v<新版本>.mod" | grep 'cronet-go/lib/linux_amd64'
+   gh api repos/SagerNet/sing-box/releases/tags/v<version> --jq '.assets[]|select(.name|test("(linux-amd64.tar.gz|windows-amd64.zip|darwin-amd64.tar.gz|darwin-arm64.tar.gz)$"))|{name,digest}'
    ```
 
-   把伪版本回填 `cronetVersion`，按 `scripts/fetch-cronet.mjs` 头注取两类 sha（`cronetArchiveSha256`=module
-   zip、`cronetLibSha256`=落地库本体），再 `npm run fetch:cronet -- --force`。忘同步不会静默——脚本每次实际
-   下载前会拿 sing-box 的 `.mod` 校验同源，不一致直接 fail。
+   The digest looks like `sha256:<hex>` and can be pasted **as-is** into `coreArchiveSha256` (`fetch:core` strips the `sha256:` prefix before comparing). When swapping, confirm the binary's `Tags` include `with_naive_outbound` (prerequisite for naive support).
 
-## sing-box 版本
+   **Update `coreBinarySha256` too** (per-platform sha of the installed binary). It makes "already present, skip" self-verifying: the on-disk sha must match the pin to be skipped, otherwise the file is treated as a stale core and re-downloaded — **so bumping the version no longer requires remembering `--force`**. To obtain the values, run `npm run fetch:core -- --force` once; the script prints `bin sha <hex>` per platform. A missing pin is not silent: the script prints `skip (unverified)`, stating it cannot confirm the on-disk binary matches the configured version, and a unit test asserts all four platforms are pinned.
 
-当前版本以 `src/shared/core-manifest.json` 的 `bundledCoreVersion` 为准（**单一真值**，勿在此复述——历史上这里长期滞后于真实版本）。要求：SagerNet 官方 release 且 `Tags` 含 `with_naive_outbound`。
+   > Learned the hard way on 2026-08-05: the old implementation skipped unconditionally while the summary line still stamped the manifest version, so `4 ready (version 1.14.0-beta.7)` was printed while beta.5 was on disk — a real-core `check` run against it misreported a new field as an unknown field.
 
-下载地址：https://github.com/SagerNet/sing-box/releases
+   **`libcronet` must be swapped together with the core** (since 2026-08-05): it is no longer managed independently — `cronetVersion` is the Go module pseudo-version copied from the bundled sing-box's own `go.mod`, and the source moved from the (now stale) cronet-go Releases to the Go module proxy:
+
+   ```bash
+   curl -fsSL "https://proxy.golang.org/github.com/sagernet/sing-box/@v/v<version>.mod" | grep 'cronet-go/lib/linux_amd64'
+   ```
+
+   Put that pseudo-version into `cronetVersion`, obtain both pins as documented at the top of `scripts/fetch-cronet.mjs` (`cronetArchiveSha256` = module zip, `cronetLibSha256` = the installed library itself), then run `npm run fetch:cronet -- --force`. Forgetting to sync is not silent: before any actual download the script fetches sing-box's `.mod` and fails if the versions disagree.
+
+## sing-box version
+
+The current version is whatever `bundledCoreVersion` in `src/shared/core-manifest.json` says (**single source of truth** — do not restate it here; this line used to drift). Requirement: an official SagerNet release whose `Tags` include `with_naive_outbound`.
+
+Downloads: https://github.com/SagerNet/sing-box/releases

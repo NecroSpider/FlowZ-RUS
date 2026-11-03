@@ -19,8 +19,8 @@ const imgStub: any = { resize: () => imgStub, isEmpty: () => false };
 jest.mock('electron', () => ({
   // currentLanguage 初值改用 getPreferredSystemLanguages（getLocale 恒返 app bundle locale=en 不可用）→ mock 返中文偏好。
   app: {
-    getLocale: () => 'zh-CN',
-    getPreferredSystemLanguages: () => ['zh-Hans-CN'],
+    getLocale: () => 'ru',
+    getPreferredSystemLanguages: () => ['ru-RU'],
     isPackaged: false,
   },
   BrowserWindow: class {},
@@ -64,7 +64,9 @@ const baseData = (isProxyRunning: boolean): TrayMenuData => ({
 /** 从最近一次模板里取「状态头」label 与「启停开关」label。 */
 function readMenu(): { status: string; toggle: string } {
   const status = String(lastTemplate[0]?.label ?? '');
-  const toggleItem = lastTemplate.find((i) => i?.label === '启用代理' || i?.label === '禁用代理');
+  const toggleItem = lastTemplate.find(
+    (i) => i?.label === 'Включить прокси' || i?.label === 'Отключить прокси'
+  );
   return { status, toggle: String(toggleItem?.label ?? '') };
 }
 
@@ -80,7 +82,7 @@ beforeEach(() => {
   getTrayIconPath.mockClear();
   // 托盘文案改走主进程 i18n（mt 读中央语言持有点）。真机由 index.ts 启动按系统偏好初始化；
   // 测试显式设中文（对应本套 mock 的 zh-Hans-CN 系统偏好），以断言中文标签。
-  setMainLanguage('zh-CN');
+  setMainLanguage('ru');
 });
 
 describe('TrayManager 菜单状态映射 (#75)', () => {
@@ -89,8 +91,8 @@ describe('TrayManager 菜单状态映射 (#75)', () => {
     tm.updateFullTrayMenu(baseData(true));
 
     const { status, toggle } = readMenu();
-    expect(status).toBe('已连接');
-    expect(toggle).toBe('禁用代理');
+    expect(status).toBe('Подключено');
+    expect(toggle).toBe('Отключить прокси');
     // 状态头带圆点图标（connected）
     expect(lastTemplate[0]?.icon).toBe(imgStub);
   });
@@ -100,14 +102,14 @@ describe('TrayManager 菜单状态映射 (#75)', () => {
     tm.updateFullTrayMenu(baseData(false));
 
     const { status, toggle } = readMenu();
-    expect(status).toBe('已断开');
-    expect(toggle).toBe('启用代理');
+    expect(status).toBe('Отключено');
+    expect(toggle).toBe('Включить прокси');
   });
 
   it('hasError → 状态头「连接异常」（开关仍按运行态）', () => {
     const tm = makeTray();
     tm.updateFullTrayMenu({ ...baseData(false), hasError: true });
-    expect(readMenu().status).toBe('连接异常');
+    expect(readMenu().status).toBe('Ошибка подключения');
   });
 
   it('不变量：状态头与开关恒一致，绝不出现「已连接 + 启用代理」', () => {
@@ -115,15 +117,15 @@ describe('TrayManager 菜单状态映射 (#75)', () => {
     for (const running of [true, false, true, false]) {
       tm.updateFullTrayMenu(baseData(running));
       const { status, toggle } = readMenu();
-      if (status === '已连接') expect(toggle).toBe('禁用代理');
-      if (status === '已断开') expect(toggle).toBe('启用代理');
+      if (status === 'Подключено') expect(toggle).toBe('Отключить прокси');
+      if (status === 'Отключено') expect(toggle).toBe('Включить прокси');
     }
   });
 
   it('updateTrayMenu(true) 简化入口也渲染连接态', () => {
     const tm = makeTray();
     tm.updateTrayMenu(true);
-    expect(readMenu()).toEqual({ status: '已连接', toggle: '禁用代理' });
+    expect(readMenu()).toEqual({ status: 'Подключено', toggle: 'Отключить прокси' });
   });
 
   it('updateTrayIcon(connected) 取彩色图标并 setImage', () => {

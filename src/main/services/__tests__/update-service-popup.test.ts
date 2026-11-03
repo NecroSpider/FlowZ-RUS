@@ -121,9 +121,9 @@ describe('UpdateService.localizeDownloadError 错误本地化映射（Low-5）',
   });
 
   it('映射结果随当前语言变化（本地化生效）', () => {
-    setMainLanguage('zh-CN');
+    setMainLanguage('ru');
     expect(svc.localizeDownloadError('ETIMEDOUT')).toBe(mt('updErrNetwork'));
-    expect(mt('updErrNetwork')).toContain('网络');
+    expect(mt('updErrNetwork')).toMatch(/[А-я]/);
     setMainLanguage('en-US');
   });
 });

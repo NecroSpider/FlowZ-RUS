@@ -1,12 +1,13 @@
 /**
  * 界面语言：受支持语言集 + 「自动（跟随系统）」解析 + 旧码迁移。纯函数，主/渲染/单测共用，零副作用。
  *
- * 关键：i18n 资源键用 `fa`（非 `fa-IR`）——与其余「只在消歧时带地区」的口径一致（ru 裸码、zh-CN/zh-TW 必须区分简繁）；
+ * 关键：i18n 资源键用 `fa`（非 `fa-IR`）——与其余「只在消歧时带地区」的口径一致（ru 裸码）；
+ * 本 fork 去掉了中文界面（zh-CN/zh-TW）：系统语言为中文时按其余偏好 / en-US 解析，旧配置存的 zh-* 迁移为 auto。
  * 也与 Chromium/Electron 的 `fa.pak`（无 `fa-IR.pak`）对齐。旧版本存的 `fa-IR` 经 migrateLanguageCode 迁移。
  */
 
 /** 受支持的界面语言（i18n 资源键）。顺序无语义（UI 自行排序）。 */
-export const SUPPORTED_LANGUAGES = ['zh-CN', 'zh-TW', 'en-US', 'ru', 'fa'] as const;
+export const SUPPORTED_LANGUAGES = ['en-US', 'ru', 'fa'] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 /** 无匹配时的回退语言（国际通用，亦为 i18n fallbackLng）。 */
@@ -15,9 +16,11 @@ export const DEFAULT_LANGUAGE: SupportedLanguage = 'en-US';
 /** 语言选择的「自动（跟随系统）」哨兵值（真值源 = config.language；旧版存 localStorage['app-language']）。 */
 export const AUTO_LANGUAGE = 'auto';
 
-/** 旧语言码迁移：`fa-IR` → `fa`（其余原样返回，含 null/undefined 透传）。 */
+/** 旧语言码迁移：`fa-IR` → `fa`；已移除的中文界面 `zh-CN`/`zh-TW` → auto（其余原样返回，含 null/undefined 透传）。 */
 export function migrateLanguageCode(code: string | null | undefined): string | null | undefined {
-  return code === 'fa-IR' ? 'fa' : code;
+  if (code === 'fa-IR') return 'fa';
+  if (code === 'zh-CN' || code === 'zh-TW') return AUTO_LANGUAGE;
+  return code;
 }
 
 /** 单个 BCP47 语言码 → 受支持语言；无匹配返 null。按主语言子标签 + 脚本/地区消歧。 */
@@ -25,11 +28,6 @@ function matchSupported(raw: string): SupportedLanguage | null {
   const l = (raw || '').toLowerCase();
   if (!l) return null;
   const primary = l.split(/[-_]/)[0];
-  if (primary === 'zh') {
-    // 繁体：Hant 脚本 或 台/港/澳 地区；其余（Hans/cn/sg/裸 zh）→ 简体。
-    if (l.includes('hant') || /(^|[-_])(tw|hk|mo)([-_]|$)/.test(l)) return 'zh-TW';
-    return 'zh-CN';
-  }
   if (primary === 'fa') return 'fa';
   if (primary === 'ru') return 'ru';
   if (primary === 'en') return 'en-US';

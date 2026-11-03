@@ -2,15 +2,13 @@
  * i18n locale 完整性护栏。
  *
  * - en-US 是基准（source of truth）。
- * - 全部受支持 locale（zh-CN/zh-TW/ru/fa）要求与 en-US **精确 parity**：零缺漏、零多余键，
+ * - 全部受支持 locale（ru/fa）要求与 en-US **精确 parity**：零缺漏、零多余键，
  *   且每个含插值占位符的键，占位符集合与 en-US 一致（机翻草稿/漏译也不能漏变量、漏嵌套引用）。
- *   当前 4 个 locale 均已满 parity，本护栏防后续新增键时漏译。
+ *   当前 locale 均已满 parity，本护栏防后续新增键时漏译。
  * - 占位符识别两类：① i18next 插值 {{var}}；② i18next 嵌套引用 $t(key)（变量名/键名含 `.`、`:`、`$`，
  *   旧正则 [\w.-] 捕获组漏 `$t(...)` 的键名与 `$` 起始引用 → 补认，防嵌套引用键在某 locale 漏写不被察觉）。
  */
 import enUS from '../locales/en-US.json';
-import zhCN from '../locales/zh-CN.json';
-import zhTW from '../locales/zh-TW.json';
 import ru from '../locales/ru.json';
 import fa from '../locales/fa.json';
 
@@ -67,8 +65,6 @@ const enKeys = leafKeys(enUS as JsonObject);
 const enKeySet = new Set(enKeys);
 
 const allLocales: Record<string, JsonObject> = {
-  'zh-CN': zhCN as JsonObject,
-  'zh-TW': zhTW as JsonObject,
   ru: ru as JsonObject,
   fa: fa as JsonObject,
 };

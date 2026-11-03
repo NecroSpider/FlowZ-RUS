@@ -79,9 +79,9 @@ describe('headless 提示跟随系统 locale（H1 回归）', () => {
     expect(headlessFor('ru-RU')).toMatch(/[А-Яа-я]/);
   });
 
-  it('zh-Hans-CN / zh-CN → 简体中文文案（含汉字）', () => {
-    expect(headlessFor('zh-Hans-CN')).toMatch(/[一-鿿]/);
-    expect(headlessFor('zh-CN')).toMatch(/[一-鿿]/);
+  it('ru-RU → 俄语文案（含西里尔字母）；中文系统（界面已移除）→ 英文兜底', () => {
+    expect(headlessFor('ru-RU')).toMatch(/[А-я]/);
+    expect(headlessFor('zh-Hans-CN')).toContain('GUI application');
   });
 
   it('fa-IR → 波斯语文案（含阿拉伯/波斯字母）', () => {

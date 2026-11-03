@@ -1,115 +1,113 @@
-# 发布指南
+# Release Guide
 
-**简体中文** · [English](RELEASE.en.md)
+This document describes how to ship a new FlowZ release. The single trigger for a release is **pushing a `v*` tag**: CI (`.github/workflows/release.yml`) then builds on three platforms and creates the GitHub Release automatically. Local full packaging is for verification / offline builds only and is not part of the release path.
 
-本文档描述如何发布 FlowZ 新版本。发布的「单一触发点」是**推送 `v*` tag**：CI（`.github/workflows/release.yml`）随后在三平台构建并自动创建 GitHub Release。本地全量打包仅用于验证/离线出包，不走发布路径。
+## Prerequisites
 
-## 前置要求
+1. **Push access** to the repo (to push tags to `origin`).
+2. **Node.js 26** — match CI (`actions/setup-node@v4`, `node-version: 26`) to avoid local/CI drift.
+3. **GitHub CLI (optional)** — only for manually inspecting/editing a published Release. The standard flow lets CI create the Release with the built-in `GITHUB_TOKEN`; no local `gh` is required.
+4. **Go (only for building the helper locally)** — `build:helper` compiles the macOS/Windows privileged helper on the fly (the binaries are not committed). CI installs Go on the mac/win runners automatically; you only need Go locally when running `npm run dist:mac` / `dist:win`.
 
-1. **仓库写权限**：能向 `origin` 推送 tag。
-2. **Node.js 26**：与 CI（`actions/setup-node@v4`，`node-version: 26`）一致，避免本地/CI 行为漂移。
-3. **GitHub CLI（可选）**：仅用于手动查看/编辑已发布 Release；标准流程由 CI 用内置 `GITHUB_TOKEN` 自动建 Release，无需本地 `gh`。
-4. **Go（仅本地打包 helper 时需要）**：`build:helper` 现编现打 macOS/Windows 提权 helper（二进制不入库）。CI 已在 mac/win runner 自动装 Go；仅当你本地 `npm run dist:mac`/`dist:win` 时才需本机有 Go。
+## Release flow (standard: push a tag to trigger CI)
 
-## 发布流程（标准：推 tag 触发 CI）
+1. **Bump the version**
 
-1. **更新版本号**
-
-   编辑 `package.json` 的 `version`（当前 `4.1.3`）：
+   Edit `version` in `package.json` (currently `4.1.3`):
    ```json
    { "version": "4.1.4" }
    ```
 
-2. **提交并推送**
+2. **Commit and push**
    ```bash
    git add package.json
    git commit -m "chore: bump version to 4.1.4"
    git push
    ```
 
-3. **推送 Release tag**
+3. **Push the release tag**
 
-   用脚本按 `package.json` 版本号创建并推送 `v{version}` tag（触发 CI）：
+   Create and push the `v{version}` tag (read from `package.json`) to trigger CI:
    ```bash
-   npm run release:tag            # 创建并推送 vX.Y.Z
-   npm run release:tag -- -u      # 远程已存在同名 tag 时强制更新（删旧 tag 重推）
-   npm run release:tag -- -y -u   # 跳过确认 + 强制更新
+   npm run release:tag            # create and push vX.Y.Z
+   npm run release:tag -- -u      # force-update if the remote tag already exists (delete old, re-push)
+   npm run release:tag -- -y -u   # skip confirmation + force-update
    ```
-   脚本（`scripts/push-release.js`）会校验工作区干净度、检查本地/远程 tag 是否已存在，并在确认后创建并推送 tag。**它只推 tag**——构建与发布全部由 CI 完成。
+   The script (`scripts/push-release.js`) checks the working tree is clean, whether the local/remote tag already exists, and — after confirmation — creates and pushes the tag. **It only pushes the tag**; building and publishing are done entirely by CI.
 
-4. **CI 自动构建并发布**
+4. **CI builds and publishes automatically**
 
-   推送 `v*` tag 后，`release.yml` 自动：
-   - 在 `windows-2022` / `macos-14` / `ubuntu-latest` 三平台并行 `npm run package:<platform>`；
-   - 构建期拉取内核与面板（见下「构建期外部产物」），mac 额外把 arm64/x64 两份 `.app` 打成 DMG；
-   - 汇总各平台产物，生成 Release Notes，经 `softprops/action-gh-release` 创建 GitHub Release 并上传全部安装包。
+   On a `v*` tag push, `release.yml`:
+   - runs `npm run package:<platform>` in parallel on `windows-2022` / `macos-14` / `ubuntu-latest`;
+   - fetches the core and dashboard at build time (see "Build-time external artifacts"); on macOS it also packs both the arm64 and x64 `.app` into DMGs;
+   - collects each platform's artifacts, generates Release Notes, and creates the GitHub Release via `softprops/action-gh-release`, uploading all installers.
 
-5. **检查 Release**
+5. **Verify the Release**
 
-   打开仓库 Releases 页，确认版本、各平台产物齐全（尤其 mac arm64 与 x64 两份，历史上易缺其一）。
+   Open the repo's Releases page and confirm the version and all platform artifacts are present — in particular both mac arm64 and x64 (one of them has historically gone missing).
 
-## 本地全量打包（可选：验证 / 离线出包，不触发发布）
+## Local full packaging (optional: verify / offline build, no release)
 
 ```bash
-npm run release:prepare   # = fetch:core + fetch:cronet + fetch:dashboard + build + package:all（win+mac+linux）
-# 或按平台：
-npm run dist:win          # Windows（nsis + portable，x64）
-npm run dist:mac          # macOS（arm64 + x64）
-npm run dist:linux        # Linux（AppImage + deb，x64）
+npm run release:prepare   # = fetch:core + fetch:cronet + fetch:dashboard + build + package:all (win+mac+linux)
+# or per platform:
+npm run dist:win          # Windows (nsis + portable, x64)
+npm run dist:mac          # macOS (arm64 + x64)
+npm run dist:linux        # Linux (AppImage + deb, x64)
 ```
-`dist:*` 带 `--publish never`，只产出本地包、不上传。产物在 `dist-package/`。
+`dist:*` passes `--publish never`: it only produces local packages and uploads nothing. Output lands in `dist-package/`.
 
-## 构建期外部产物（不入库，构建时拉取）
+## Build-time external artifacts (not committed, fetched at build time)
 
-内核与面板**不再随仓库入库**，改为构建期从官方 Release 按 SHA 校验拉取（仓库瘦身、防膨胀）：
+The core and dashboard are **no longer committed to the repo**; they are fetched at build time from the official Release with SHA verification (slims the repo, prevents bloat):
 
-| 脚本 | 拉取内容 |
-|------|----------|
-| `fetch:core` | sing-box 内核（`coreArchiveSha256` 校验压缩包 = 官方 release digest，零后处理） |
-| `fetch:cronet` | cronet 库（Windows/Linux dlopen 外部库；macOS 静态编入不需要） |
-| `fetch:dashboard` | clash 面板静态资源 |
+| Script | Fetches |
+|--------|---------|
+| `fetch:core` | sing-box core (`coreArchiveSha256` verifies the archive == official release digest, zero post-processing) |
+| `fetch:cronet` | cronet library (dlopen external lib on Windows/Linux; statically linked on macOS, not needed) |
+| `fetch:dashboard` | clash dashboard static assets |
 
-`package:*` / `dist:*` 已串联对应 fetch 步骤。换内核版本：改 `src/shared/core-manifest.json` 的 `bundledCoreVersion` + `coreArchiveSha256`（压缩包 SHA256，= 官方 release asset digest）后重新 `fetch:core --force`。
+`package:*` / `dist:*` already chain the matching fetch steps. To change the core version: edit `bundledCoreVersion` + `coreArchiveSha256` (the archive's SHA256, which equals the official release asset digest) in `src/shared/core-manifest.json`, then re-run `fetch:core --force`.
 
-## 打包产物
+## Artifacts
 
-| 平台 | 产物 | 架构 |
-|------|------|------|
-| Windows | NSIS 安装器 + portable | x64 |
-| macOS | DMG | arm64、x64 |
+| Platform | Artifacts | Arch |
+|----------|-----------|------|
+| Windows | NSIS installer + portable | x64 |
+| macOS | DMG | arm64, x64 |
 | Linux | AppImage + deb | x64 |
 
-> 提权 helper 二进制由 `build:helper`（Go）现编现打进 mac/win 包；CI 在 mac/win runner 装 Go。缺 Go → 安装时报「提权助手二进制缺失」。
+> The privileged helper binary is compiled by `build:helper` (Go) into the mac/win packages; CI installs Go on the mac/win runners. Missing Go → "helper binary missing" at install time.
 
-## 版本号规范
+## Versioning
 
-遵循 [语义化版本](https://semver.org/lang/zh-CN/)：
+Follow [Semantic Versioning](https://semver.org/):
 
-- **MAJOR**：不兼容变更
-- **MINOR**：向下兼容的新功能
-- **PATCH**：向下兼容的修复
+- **MAJOR** — incompatible changes
+- **MINOR** — backward-compatible features
+- **PATCH** — backward-compatible fixes
 
-tag 形如 `v4.1.4`（`push-release.js` 自动加 `v` 前缀，勿手写带 `v` 的 version）。
+Tags look like `v4.1.4` (`push-release.js` adds the `v` prefix automatically — do not put `v` in the `version` field).
 
-## 故障排除
+## Troubleshooting
 
-| 问题 | 处理 |
-|------|------|
-| 远程 tag 已存在 | `npm run release:tag -- -u` 强制更新，或改 `package.json` 版本号后重发 |
-| Release 缺 mac 某架构包 | CI「Create DMG」步对缺失架构会 `::error::`；检查 `package:mac` 的 `electron-builder --arm64 --x64` 是否两架构都产出 |
-| 安装报「提权助手二进制缺失」 | 该平台打包时缺 Go → 装 Go 后重打（CI 已自动装；本地 `dist:mac`/`dist:win` 需本机 Go） |
-| 构建失败 | `npm ci` 重装依赖；确认能联网（`fetch:core`/`fetch:cronet`/`fetch:dashboard` 需访问官方 Release）；查 CI 日志定位平台 |
+| Problem | Fix |
+|---------|-----|
+| Remote tag already exists | `npm run release:tag -- -u` to force-update, or bump `package.json` and re-release |
+| Release missing a mac arch | The CI "Create DMG" step emits `::error::` for a missing arch; check that `package:mac`'s `electron-builder --arm64 --x64` produced both architectures |
+| "Helper binary missing" at install | Go was absent when packaging that platform → install Go and repackage (CI installs it automatically; local `dist:mac`/`dist:win` needs Go) |
+| Build fails | `npm ci` to reinstall; ensure network access (`fetch:core`/`fetch:cronet`/`fetch:dashboard` reach the official Release); check CI logs per platform |
 
-## CI/CD 配置
+## CI/CD
 
-- **`.github/workflows/build.yml`**：推送到分支时构建校验。
-- **`.github/workflows/release.yml`**：推送 `v*` tag 时三平台打包 + 自动建 Release。
-- 环境变量：CI 用内置 `GITHUB_TOKEN`（`permissions: contents: write`）创建 Release；electron 二进制走 npmmirror 镜像加速。
-- 修改 CI：编辑 `.github/workflows/` 下的文件。
+- **`.github/workflows/build.yml`** — build verification on branch pushes.
+- **`.github/workflows/release.yml`** — packages on three platforms + auto-creates the Release on a `v*` tag push.
+- Env: CI uses the built-in `GITHUB_TOKEN` (`permissions: contents: write`) to create the Release; the electron binary is pulled via an npmmirror mirror for speed.
+- To change CI: edit the files under `.github/workflows/`.
 
-## 参考资料
+## References
 
-- [Electron Builder 文档](https://www.electron.build/)
+- [Electron Builder docs](https://www.electron.build/)
 - [softprops/action-gh-release](https://github.com/softprops/action-gh-release)
-- [GitHub Actions 文档](https://docs.github.com/en/actions)
-- [语义化版本规范](https://semver.org/lang/zh-CN/)
+- [GitHub Actions docs](https://docs.github.com/en/actions)
+- [Semantic Versioning](https://semver.org/)

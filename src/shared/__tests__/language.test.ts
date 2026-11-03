@@ -11,9 +11,11 @@ import {
 } from '../language';
 
 describe('migrateLanguageCode', () => {
-  it('fa-IR → fa；其余/空值原样', () => {
+  it('fa-IR → fa；已移除的中文界面 zh-CN/zh-TW → auto；其余/空值原样', () => {
     expect(migrateLanguageCode('fa-IR')).toBe('fa');
-    expect(migrateLanguageCode('zh-CN')).toBe('zh-CN');
+    expect(migrateLanguageCode('zh-CN')).toBe('auto');
+    expect(migrateLanguageCode('zh-TW')).toBe('auto');
+    expect(migrateLanguageCode('ru')).toBe('ru');
     expect(migrateLanguageCode('auto')).toBe('auto');
     expect(migrateLanguageCode(null)).toBeNull();
     expect(migrateLanguageCode(undefined)).toBeUndefined();
@@ -22,14 +24,10 @@ describe('migrateLanguageCode', () => {
 
 describe('resolveAutoLanguage（OS 偏好 → 受支持语言）', () => {
   it.each([
-    [['zh-Hans-CN'], 'zh-CN'],
-    [['zh-CN'], 'zh-CN'],
-    [['zh-SG'], 'zh-CN'],
-    [['zh'], 'zh-CN'],
-    [['zh-Hant-TW'], 'zh-TW'],
-    [['zh-TW'], 'zh-TW'],
-    [['zh-HK'], 'zh-TW'],
-    [['zh-MO'], 'zh-TW'],
+    // 中文界面已移除：中文系统按其余偏好 / en-US 解析
+    [['zh-Hans-CN'], 'en-US'],
+    [['zh-TW'], 'en-US'],
+    [['zh-CN', 'ru-RU'], 'ru'],
     [['fa-IR'], 'fa'],
     [['fa'], 'fa'],
     [['ru-RU'], 'ru'],
@@ -59,12 +57,12 @@ describe('resolveEffectiveLanguage（选择 + 系统 → 实际语言）', () =>
   it('auto / 未设 → 按系统解析', () => {
     expect(resolveEffectiveLanguage(AUTO_LANGUAGE, ['fa-IR'])).toBe('fa');
     expect(resolveEffectiveLanguage(null, ['ru'])).toBe('ru');
-    expect(resolveEffectiveLanguage(undefined, ['zh-Hant-TW'])).toBe('zh-TW');
+    expect(resolveEffectiveLanguage(undefined, ['zh-Hant-TW'])).toBe('en-US');
   });
 
   it('具体码 → 用它（fa-IR 先迁移成 fa）', () => {
     expect(resolveEffectiveLanguage('fa-IR', ['ru'])).toBe('fa');
-    expect(resolveEffectiveLanguage('zh-CN', ['ru'])).toBe('zh-CN');
+    expect(resolveEffectiveLanguage('zh-CN', ['ru'])).toBe('ru'); // 旧中文选择 → auto → 系统
     expect(resolveEffectiveLanguage('fa', [])).toBe('fa');
   });
 
@@ -73,9 +71,11 @@ describe('resolveEffectiveLanguage（选择 + 系统 → 实际语言）', () =>
     expect(resolveEffectiveLanguage('klingon', ['de'])).toBe('en-US');
   });
 
-  it('常量自洽：DEFAULT 在受支持集、fa 在集、无 fa-IR', () => {
+  it('常量自洽：DEFAULT 在受支持集、fa 在集、无 fa-IR、无中文', () => {
     expect(SUPPORTED_LANGUAGES).toContain(DEFAULT_LANGUAGE);
     expect(SUPPORTED_LANGUAGES).toContain('fa');
     expect(SUPPORTED_LANGUAGES as readonly string[]).not.toContain('fa-IR');
+    expect(SUPPORTED_LANGUAGES as readonly string[]).not.toContain('zh-CN');
+    expect(SUPPORTED_LANGUAGES as readonly string[]).not.toContain('zh-TW');
   });
 });
