@@ -129,6 +129,19 @@ export const hostToExcludeCidr = (host: string): string | null => {
 };
 
 /**
+ * 节点「自身」主机名：address + TLS SNI（tlsSettings.serverName）。节点域名直连路由 / DNS rule1（真实解析）/ 错误归因
+ * 共用此单一真值。REALITY 的 SNI 是伪装目标（借第三方站点握手，如 claude.ai、api.openai.com、www.apple.com），
+ * 不是节点自身——收进来会把这些真实站点整体沉降到直连 + 真实解析（真机实证：7 个 REALITY 节点 SNI=claude.ai →
+ * 浏览器 claude.ai 绕过代理、被墙超时）。故 REALITY 只取 address；到节点的连接仍由 address 兜住防回流
+ * （IP 节点走 ip_cidr；域名 REALITY 节点的回流连接带伪装 SNI，此兜底随之放弃——伪装站点恒直连的代价更大）。
+ */
+export function nodeOwnHosts(s: ServerConfig): string[] {
+  const hosts = [s.address];
+  if (s.security !== 'reality') hosts.push(s.tlsSettings?.serverName ?? '');
+  return hosts.filter((h): h is string => !!h && h.length > 0);
+}
+
+/**
  * issue #147：有效「off 单上游 id」——优先新模型 nodeResolverSingle；缺失（未迁移 / 旧单测仅设
  * deprecated nodeDomainResolver）→ 回退 legacy 档位映射，保证零行为变化。
  */

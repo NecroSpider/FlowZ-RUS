@@ -42,6 +42,7 @@ import type {
 import {
   isIpv4Host,
   isIpv6Host,
+  nodeOwnHosts,
   getNodeResolverTag,
   getDomesticResolverTag,
   DNS_NODE_RACE_TAG,
@@ -354,21 +355,14 @@ export function buildDnsConfig(
   const dnsRules: SingBoxDnsRule[] = [];
 
   // 代理服务器域名必须使用真实 DNS 解析（避免 FakeIP 劫持产生死循环）。
-  // #57 rule1 全量化：遍历【全部】节点的 address + tlsSettings.serverName（过滤 IP 字面量），而非仅当前选中节点——
+  // #57 rule1 全量化：遍历【全部】节点的 nodeOwnHosts（address + 非 REALITY 的 SNI，过滤 IP 字面量），而非仅当前选中节点——
   //   修热切换 query 侧缺口：原先只含 selectedServer，热切换到其它节点后该节点域名查询会落 FakeIP/dns-local。
   // 去掉过宽的 domain_keyword（exact domain + suffix 已对节点域名全覆盖，keyword 易误伤同名子串）。
   // server 取 getNodeResolverTag(config,'rule')：yandex/缺省忠实回 dns-domestic（国内 DNS，与基线一致，
   //   不随 dial 的 dns-bootstrap 统一）；ali=dns-ali；dnspod=dns-node；TUN+system 强制 dns-node 防递归。
-  const nodeDomains = Array.from(
-    new Set(
-      config.servers.flatMap((s) => {
-        const ds: string[] = [];
-        if (s.address) ds.push(s.address);
-        if (s.tlsSettings?.serverName) ds.push(s.tlsSettings.serverName);
-        return ds;
-      })
-    )
-  ).filter((d) => !!d && !isIpv4Host(d) && !isIpv6Host(d));
+  const nodeDomains = Array.from(new Set(config.servers.flatMap((s) => nodeOwnHosts(s)))).filter(
+    (d) => !!d && !isIpv4Host(d) && !isIpv6Host(d)
+  );
   if (nodeDomains.length) {
     // 观测：超大订阅下 rule1 域名规模（不设上限，trie 匹配千级无压力；异常膨胀时据此定位）。
     log('info', `DNS rule1 节点域名规则: ${nodeDomains.length} 个域名`);

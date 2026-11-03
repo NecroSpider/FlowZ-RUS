@@ -66,6 +66,7 @@ import {
   applyRuleSetPrune,
   buildIdToTagMap,
   getNodeResolverTag,
+  nodeOwnHosts,
 } from './singbox-config-helpers';
 import { buildDnsConfig } from './singbox-dns-builder';
 import { buildRouteConfig } from './singbox-route-builder';
@@ -8534,11 +8535,11 @@ rm -f "$STOPFLAG"
     return resolvedMessage;
   }
 
-  /** 当前配置的全部节点域名集（address + serverName，去 IP 字面量，小写）。错误归因判定被解析域名是否为节点域名。 */
+  /** 当前配置的全部节点域名集（nodeOwnHosts，去 IP 字面量，小写）。错误归因判定被解析域名是否为节点域名。 */
   private collectNodeDomains(): Set<string> {
     const set = new Set<string>();
     for (const s of this.currentConfig?.servers || []) {
-      for (const d of [s.address, s.tlsSettings?.serverName]) {
+      for (const d of nodeOwnHosts(s)) {
         if (d && !isIpv4Host(d) && !isIpv6Host(d)) set.add(d.toLowerCase());
       }
     }

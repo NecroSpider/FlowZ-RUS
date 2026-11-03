@@ -44,6 +44,7 @@ import {
   isIpv4Host,
   isIpv6Host,
   hostToExcludeCidr,
+  nodeOwnHosts,
   DOMESTIC_BANK_AND_STOCK_DOMAINS,
   effectiveCustomRules,
   effectiveAppRules,
@@ -346,15 +347,13 @@ export function buildRouteConfig(
   //   去掉过宽的 domain_keyword（会误匹配任意"含该域名串"的无关域名）。
   // 仅用户显式填的 IP-literal 节点用 ip_cidr 排除（专用 IP、非共享，安全）。
   // 扩展到全部节点(不止选中)：切节点 / detour 前置代理无需重生成配置即被豁免。
+  // 主机名取 nodeOwnHosts：REALITY 的伪装 SNI（claude.ai 等第三方站点）不收，否则这些站点恒被直连。
   // 必须放在其他规则之前，否则可能被 geosite-cn 匹配导致死循环。
   {
     const ipSet = new Set<string>();
     const domainSet = new Set<string>();
     for (const s of config.servers) {
-      const hosts = [s.address, s.tlsSettings?.serverName].filter(
-        (h): h is string => !!h && h.length > 0
-      );
-      for (const host of hosts) {
+      for (const host of nodeOwnHosts(s)) {
         const cidr = isIpv4Host(host) || isIpv6Host(host) ? hostToExcludeCidr(host) : null;
         if (cidr) ipSet.add(cidr);
         else domainSet.add(host);

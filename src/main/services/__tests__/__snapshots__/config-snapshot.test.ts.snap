@@ -17761,13 +17761,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "a.example.com",
-            "apple.com",
           ],
           "domain_suffix": [
             "a.example.com",
             ".a.example.com",
-            "apple.com",
-            ".apple.com",
           ],
           "server": "dns-domestic",
         },
@@ -18279,11 +18276,9 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain": [
             "a.example.com",
-            "apple.com",
           ],
           "domain_suffix": [
             ".a.example.com",
-            ".apple.com",
           ],
           "outbound": "direct",
         },
