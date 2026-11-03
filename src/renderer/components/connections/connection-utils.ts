@@ -2,7 +2,9 @@
  * 连接信息页纯逻辑（无 React 依赖）：抽到独立 .ts 便于 jest（node env / testMatch *.test.ts）单测。
  * 含 per-conn 速率差分 + 隐私屏蔽判定 + 各列展示派生。
  */
-import type { ConnectionEntry } from '../../../shared/types';
+import { validateRuleValue } from '../../../shared/rules';
+import { isIpv4, cidrOverlapsAny } from '../../../shared/ip';
+import type { Rule, RuleAction, ConnectionEntry } from '../../../shared/types';
 
 /** 上一帧累计字节缓存（按连接 id）：用于跨两帧差分算 per-conn 速率。 */
 export type RateState = Map<string, { up: number; down: number; at: number }>;
@@ -165,4 +167,16 @@ export function parseRule(rule: string, rulePayload?: string): RuleView {
   }
   const full = r && p ? `${r}: ${p}` : r || p;
   return { type: r, action: '', full };
+}
+
+/** Prefer the original domain; never persist a synthetic FakeIP as a destination rule. */
+export function ruleForConnection(c: ConnectionEntry, action: RuleAction = 'direct'): Rule | null {
+  const host = c.metadata?.host?.trim() || c.metadata?.destinationIP?.trim() || '';
+  if (!host) return null;
+  const ip = isIpv4(host) || host.includes(':');
+  const type = ip ? 'ipCidr' : 'domain';
+  const value = ip ? `${host}/${host.includes(':') ? 128 : 32}` : host;
+  if (!validateRuleValue(type, value)) return null;
+  if (ip && cidrOverlapsAny(value, ['198.18.0.0/15', '2001:2::/48'])) return null;
+  return { id: '', type, values: [value], action, enabled: true, remarks: host };
 }

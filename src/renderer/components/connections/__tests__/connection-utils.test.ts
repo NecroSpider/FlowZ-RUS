@@ -2,6 +2,7 @@
  * 连接信息页纯逻辑单测：per-conn 速率差分 + 隐私屏蔽判定 + 各列展示派生。
  */
 import {
+  ruleForConnection,
   computeConnSpeeds,
   shouldHideForPrivacy,
   destOf,
@@ -272,3 +273,53 @@ describe('parseRule — 规则列展示拆解（方案 B）', () => {
     expect(r.action).toBe('x');
   });
 });
+
+describe('connection routing rules', () => {
+  it('uses the original domain instead of its synthetic address', () => {
+    expect(
+      ruleForConnection(
+        entry({ metadata: { host: 'cdn.example.com', destinationIP: '198.18.0.1' } })
+      )
+    ).toMatchObject({
+      type: 'domain',
+      values: ['cdn.example.com'],
+      action: 'direct',
+      enabled: true,
+    });
+  });
+  it.each([
+    ['1.1.1.1', '1.1.1.1/32'],
+    ['2606:4700::1111', '2606:4700::1111/128'],
+  ])('restricts a literal destination %s to one address', (destinationIP, value) => {
+    expect(ruleForConnection(entry({ metadata: { destinationIP } }))).toMatchObject({
+      type: 'ipCidr',
+      values: [value],
+    });
+  });
+  it.each([
+    '198.18.0.1',
+    '198.19.255.255',
+    '2001:2::1',
+    '2001:0002:0000::abcd',
+    '',
+    'bad host',
+    '::invalid',
+  ])('does not offer a persistent rule for %s', (destinationIP) => {
+    expect(ruleForConnection(entry({ metadata: { destinationIP } }))).toBeNull();
+  });
+  it('does not infer an entire process or destination from missing metadata', () => {
+    expect(ruleForConnection(entry())).toBeNull();
+  });
+});
+
+it.each(['direct', 'proxy', 'block'] as const)(
+  'creates a %s rule for the selected destination',
+  (action) => {
+    expect(ruleForConnection(entry({ metadata: { host: 'example.com' } }), action)).toMatchObject({
+      type: 'domain',
+      values: ['example.com'],
+      action,
+      enabled: true,
+    });
+  }
+);

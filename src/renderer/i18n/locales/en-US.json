@@ -78,6 +78,9 @@
     "currentLevel": "Level"
   },
   "connections": {
+    "routeMenu": "Add routing rule",
+    "routeActions": { "direct": "Direct", "proxy": "Proxy", "block": "Block" },
+    "routeDescription": "This rule will be saved first. Applying it restarts the core and may interrupt current connections. You can edit the destination and action before saving.",
     "pageTitle": "Connections",
     "pageDesc": "Live view of active connections with per-connection rates",
     "active": "Active",

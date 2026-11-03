@@ -17,7 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Activity, Search, Pause, Play, X } from 'lucide-react';
+import { Activity, Search, Pause, Play, X, MoreHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc';
@@ -25,8 +25,17 @@ import { useStatsTopic } from '@/hooks/use-stats-topic';
 import { toast } from 'sonner';
 import { formatBytes } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { ConnectionEntry, ConnectionsSnapshot } from '../../../shared/types';
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu';
+import { RuleDialog } from '@/components/rules/rule-dialog';
+import type { Rule, RuleAction, ConnectionEntry, ConnectionsSnapshot } from '../../../shared/types';
+import {
+  ruleForConnection,
   computeConnSpeeds,
   destOf,
   sourceOf,
@@ -98,6 +107,8 @@ interface ConnectionRowProps {
   speed: ConnSpeed;
   onClose: (id: string) => void;
   closeLabel: string;
+  onRoute: (conn: ConnectionEntry, action: RuleAction) => void;
+  onMenuOpenChange: (open: boolean) => void;
 }
 
 /**
@@ -106,7 +117,16 @@ interface ConnectionRowProps {
  * 跳过 reconcile（2s 快照下 idle 连接行不再无谓重渲）。时长由内嵌 DurationCell 经共享 tick 自刷新，不入本比较。
  */
 const ConnectionRow = memo(
-  function ConnectionRow({ conn: c, speed: s, onClose, closeLabel }: ConnectionRowProps) {
+  function ConnectionRow({
+    conn: c,
+    speed: s,
+    onClose,
+    closeLabel,
+    onRoute,
+    onMenuOpenChange,
+  }: ConnectionRowProps) {
+    const { t } = useTranslation();
+    const selectedAction = useRef(false);
     const m = c.metadata || {};
     const proc = m.processPath || '-';
     const procName = proc === '-' ? '-' : proc.split(/[/\\]/).pop() || proc;
@@ -128,11 +148,49 @@ const ConnectionRow = memo(
     return (
       <tr className={blocked ? 'blocked' : undefined}>
         <td className="cx">
-          <button className="crow-x" title={closeLabel} onClick={() => onClose(c.id)}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
-            </svg>
-          </button>
+          <div className="flex items-center">
+            <DropdownMenu
+              onOpenChange={(open) => {
+                if (open) selectedAction.current = false;
+                onMenuOpenChange(open);
+              }}
+            >
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="btn ghost sm disabled:opacity-30"
+                  title={t('connections.routeMenu')}
+                  aria-label={t('connections.routeMenu')}
+                  disabled={!ruleForConnection(c)}
+                >
+                  <MoreHorizontal size={14} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                onCloseAutoFocus={(event) => {
+                  if (selectedAction.current) event.preventDefault();
+                }}
+              >
+                <DropdownMenuLabel>{t('connections.routeMenu')}</DropdownMenuLabel>
+                {(['direct', 'proxy', 'block'] as const).map((action) => (
+                  <DropdownMenuItem
+                    key={action}
+                    onSelect={() => {
+                      selectedAction.current = true;
+                      onRoute(c, action);
+                    }}
+                  >
+                    {t(`connections.routeActions.${action}`)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <button className="crow-x" title={closeLabel} onClick={() => onClose(c.id)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
         </td>
         <td>
           <span className={cn('pill', network === 'udp' ? 'udp' : 'tcp')} title={typeText}>
@@ -208,6 +266,8 @@ const ConnectionRow = memo(
   // destOf/sourceOf/typeOf/processPath）在 clash 连接生命周期内不可变（切节点创建新连接、不改已有 id），故不入比较。
   // ⚠️ 若上游（trimConnection / sing-box）改为对已有 id 回填/修正这些字段，须把对应字段纳入比较，否则行静默不更新。
   (prev, next) =>
+    prev.onRoute === next.onRoute &&
+    prev.onMenuOpenChange === next.onMenuOpenChange &&
     prev.onClose === next.onClose &&
     prev.closeLabel === next.closeLabel &&
     prev.conn.id === next.conn.id &&
@@ -227,6 +287,14 @@ export function ConnectionsTable() {
   const [sortKey, setSortKey] = useState<SortKey>('time');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [speeds, setSpeeds] = useState<Map<string, ConnSpeed>>(new Map());
+  const [ruleDraft, setRuleDraft] = useState<Rule | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Manual pause survives both menu dismissal and saving/cancelling the rule dialog.
+  const frozen = paused || menuOpen || ruleDraft !== null;
+  const handleRoute = useCallback((conn: ConnectionEntry, action: RuleAction) => {
+    const rule = ruleForConnection(conn, action);
+    if (rule) setRuleDraft(rule);
+  }, []);
   const [confirmCloseAll, setConfirmCloseAll] = useState(false);
 
   // per-conn 速率差分的上一帧缓存（不入 state，避免无谓重渲染）。
@@ -235,20 +303,24 @@ export function ConnectionsTable() {
   // 数据（§3.7）：连接明细改【订阅驱动 push】——订阅 'detail' topic，挂载即拿初始帧，之后 worker 每帧
   // push（取代旧每 PULL_INTERVAL_MS 拉 CONNECTIONS_GET + in-flight 守卫）。暂停（enabled=!paused → 退订）停流
   // （worker detail 逐级停机）+ 冻结当前帧；恢复重订拿最新初始帧。窗口隐藏由 useStatsTopic 自动退订。
-  const applyDetail = useCallback((snap: ConnectionsSnapshot) => {
-    // 速率差分照旧：push 帧带 worker 采样 at，computeConnSpeeds 以前后帧 + 采样间隔算速率（push 改造不影响差分）。
-    const { speeds: s, next } = computeConnSpeeds(snap.connections, rateRef.current, snap.at);
-    rateRef.current = next;
-    setSpeeds(s);
-    setConnections(snap.connections);
-  }, []);
-  useStatsTopic<ConnectionsSnapshot>('detail', applyDetail, !paused);
+  const applyDetail = useCallback(
+    (snap: ConnectionsSnapshot) => {
+      if (frozen) return;
+      // 速率差分照旧：push 帧带 worker 采样 at，computeConnSpeeds 以前后帧 + 采样间隔算速率（push 改造不影响差分）。
+      const { speeds: s, next } = computeConnSpeeds(snap.connections, rateRef.current, snap.at);
+      rateRef.current = next;
+      setSpeeds(s);
+      setConnections(snap.connections);
+    },
+    [frozen]
+  );
+  useStatsTopic<ConnectionsSnapshot>('detail', applyDetail, !frozen);
 
   // 时长列刷新与整表 reconcile 解耦（P3）：秒级 tick 下沉到模块级共享 store，仅 DurationCell 订阅、
   // 自刷新文本，不再随 setNow 重跑 visible.map + reconcile ≤500 行。暂停时冻结 tick（与快照冻结一致）。
   useEffect(() => {
-    setDurationTicking(!paused);
-  }, [paused]);
+    setDurationTicking(!frozen);
+  }, [frozen]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -381,7 +453,7 @@ export function ConnectionsTable() {
           <span className="l">{t('connections.active')}</span>
         </div>
         {/* 数据流态：暂停 → 中性静态点「已暂停」；运行且未暂停 → teal 呼吸点「实时」；未运行不显（空态已说明）。 */}
-        {paused ? (
+        {frozen ? (
           <span className="pill idle">
             <span
               className="inline-block h-1.5 w-1.5 rounded-full"
@@ -448,7 +520,7 @@ export function ConnectionsTable() {
                 style={{ tableLayout: 'fixed', width: '100%', minWidth: 720 }}
               >
                 <colgroup>
-                  <col style={{ width: 34 }} />
+                  <col style={{ width: 78 }} />
                   <col style={{ width: 54 }} />
                   <col />
                   <col />
@@ -479,6 +551,8 @@ export function ConnectionsTable() {
                       key={c.id}
                       conn={c}
                       speed={speeds.get(c.id) ?? ZERO_SPEED}
+                      onRoute={handleRoute}
+                      onMenuOpenChange={setMenuOpen}
                       onClose={handleClose}
                       closeLabel={t('connections.close')}
                     />
@@ -515,6 +589,18 @@ export function ConnectionsTable() {
         )}
       </div>
 
+      <RuleDialog
+        open={ruleDraft !== null}
+        mode="add"
+        rule={ruleDraft ?? undefined}
+        prepend
+        description={t('connections.routeDescription')}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRuleDraft(null);
+          }
+        }}
+      />
       <AlertDialog open={confirmCloseAll} onOpenChange={setConfirmCloseAll}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -58,11 +58,20 @@ interface RuleDialogProps {
   onOpenChange: (open: boolean) => void;
   mode: 'add' | 'edit';
   rule?: Rule;
+  prepend?: boolean;
+  description?: string;
 }
 
 const DEFAULT_TYPE: RuleType = 'domain';
 
-export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) {
+export function RuleDialog({
+  open,
+  onOpenChange,
+  mode,
+  rule,
+  prepend,
+  description,
+}: RuleDialogProps) {
   const { t } = useTranslation();
   const addCustomRule = useAppStore((state) => state.addCustomRule);
   const updateCustomRule = useAppStore((state) => state.updateCustomRule);
@@ -112,7 +121,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
     setFocusedType(null);
     setPickerType(null);
     setSubmitAttempted(false);
-    if (mode === 'edit' && rule) {
+    if (rule) {
       // 多条件优先；无 conditions 退化为单条件 [{type,values}]。去重类型（桶按类型键）、合并同类型值，保序。
       const conds: RuleCondition[] =
         rule.conditions && rule.conditions.length > 0
@@ -274,7 +283,13 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
           id: `rule_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
           ...base,
         };
-        await addCustomRule(newRule);
+        if (prepend) {
+          const { config, saveConfig } = useAppStore.getState();
+          if (!config) throw new Error('Configuration is unavailable');
+          await saveConfig({ ...config, customRules: [newRule, ...(config.customRules ?? [])] });
+        } else {
+          await addCustomRule(newRule);
+        }
         toast.success(t('rules.ruleAdded'));
       } else if (rule) {
         const updated: Rule = { ...rule, ...base };
@@ -387,7 +402,9 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
               {mode === 'add' ? t('rules.addRule') : t('rules.editRule')}
             </DialogTitle>
             {/* 副标题去可见（用户反馈：与「备注名」字段重复）；保 sr-only 供 radix a11y（DialogDescription 必需）。 */}
-            <DialogDescription className="sr-only">{t('rules.ruleDialogDesc')}</DialogDescription>
+            <DialogDescription className={description ? 'mt-2 text-sm' : 'sr-only'}>
+              {description || t('rules.ruleDialogDesc')}
+            </DialogDescription>
           </div>
         </div>
 
