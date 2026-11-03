@@ -4094,8 +4094,8 @@ done
         this.pendingEndpoints,
         // §15 主核测速探测池：注入 K 个 dns-probe-exit-k server + inbound 键控 rule。空=不注入。
         this.probePoolPorts,
-        // V37 出口伴测 / 出口 IP 探测（§17.5）：注入 dns-probe-exit-proxy(223.5.5.5 DoH:443) + probe-proxy-in inbound rule
-        // ——治 WG/WARP 伴测无值，且 China-reachable+DoH/TCP 全栈通（不踩 TS-exit UDP 弱腿、不踩大陆出口 dns.google 超时）。
+        // V37 出口伴测 / 出口 IP 探测（§17.5）：注入 dns-probe-exit-proxy(EXIT_RESOLVER_IP DoH:443) + probe-proxy-in inbound rule
+        // ——治 WG/WARP 伴测无值，且 DoH/TCP 全栈通（不踩 TS-exit UDP 弱腿）。
         this.probeProxyPort
       ),
       inbounds: buildInbounds(config, resolvedIps, {
@@ -4283,7 +4283,7 @@ done
       // 此处用 isEndpointProtocol 单一真值（tailscale 已上方 return null 排除，剩余 endpoint 协议即 wireguard）。
       if (isEndpointProtocol(server.protocol)) {
         // #58：测速 WG endpoint 的域名 server（如 WARP）需 dial 级 domain_resolver——与下方普通协议同传
-        // 'dns-direct'（对齐测速临时配置的 route.default_domain_resolver: 'dns-direct'，223.5.5.5 UDP）。
+        // 'dns-direct'（对齐测速临时配置的 route.default_domain_resolver: 'dns-direct'，Yandex IP-DoH）。
         // 缺它则 1.14 域名拨号无确定解析上游 → 测速超时（IP-server 节点不受影响，isIpLiteral 内部跳过下发）。
         return buildWireGuardEndpoint(server, tag, 'dns-direct');
       }

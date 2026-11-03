@@ -38,6 +38,7 @@ interface SpeedTestRunContext {
 }
 import { isEndpointProtocol, isSpeedTestable } from '../../shared/endpoint-routes';
 import { normalizeDuration } from '../../shared/duration';
+import { DOH_YANDEX_IP, EXIT_RESOLVER_IP } from '../../shared/dns';
 
 /** 基于 UDP/QUIC 的协议，需要走真实代理测速 */
 const UDP_PROTOCOLS = new Set(['hysteria2', 'tuic']);
@@ -470,7 +471,7 @@ export class SpeedTestService {
       const serverPortMap = new Map<string, number>(); // serverId → HTTP proxy port
       usable.forEach((u, idx) => serverPortMap.set(u.server.id, ports[idx]));
 
-      // 2. 生成临时 sing-box 配置（每节点独立 HTTP 入站 → 该节点出站；端点目标解析走穿隧道 223.5.5.5，geo 正确）
+      // 2. 生成临时 sing-box 配置（每节点独立 HTTP 入站 → 该节点出站；端点目标解析走穿隧道 EXIT_RESOLVER_IP，geo 正确）
       const config = this.generateProxyTestConfig(usable, serverPortMap);
       tempConfig = config;
 
@@ -814,8 +815,15 @@ export class SpeedTestService {
     const endpoints: Record<string, unknown>[] = [];
     const routeRules: Record<string, unknown>[] = [];
     // 解析节点 server 地址的国内 DNS（见下「两类解析不变量」）；端点另加穿隧道 DNS（dns-exit-<id8>）。
+    // Yandex IP-DoH（上游为 AliDNS UDP 53）：节点域名不以明文 UDP 交给运营商路径（防劫持/投毒、不外泄节点域名）。
     const dnsServers: Record<string, unknown>[] = [
-      { tag: 'dns-direct', type: 'udp', server: '223.5.5.5', server_port: 53 },
+      {
+        tag: 'dns-direct',
+        type: 'https',
+        server: DOH_YANDEX_IP,
+        server_port: 443,
+        path: '/dns-query',
+      },
     ];
     const dnsRules: Record<string, unknown>[] = [];
 
@@ -831,19 +839,18 @@ export class SpeedTestService {
       if (isEndpointProtocol(outbound.type as string)) {
         endpoints.push(outbound);
         // 端点是 L3（运 IP 包、不认域名）→ sing-box 强制**本地解析**目标域名（wireguard/endpoint.go 空 QueryOptions，
-        // 过 dns.rules + default）。默认 dns-direct(223.5.5.5) 从**本机**解析 → 本机 geo 的 IP；但端点出口可能在别处
-        // （境外 WARP / 国内自建 WG），本机 geo IP 出口够不着 → 超时/失真。故把目标解析经 inbound 键控 dns.rule 定向到
-        // 「穿本节点隧道」的 223.5.5.5：查询从**出口**发出，AliDNS（有大陆节点 + ECS）按**出口地理**返 IP（境外出口→境外 IP、
-        // 国内出口→国内 IP），出口恒够得着。真机双证：WARP→142.251.x(境外)/204、国内 WG→58.63.x(国内)/204；1.1.1.1 因
-        // anycast 无大陆 PoP、在国内出口反挂（74.125.x 境外 IP 墙内不可达），故用 223.5.5.5 单形态覆盖境内外。
+        // 过 dns.rules + default）。默认 dns-direct 从**本机**解析 → 本机 geo 的 IP；但端点出口可能在别处
+        // （境外 WARP / 自建 WG），本机 geo IP 出口够不着 → 超时/失真。故把目标解析经 inbound 键控 dns.rule 定向到
+        // 「穿本节点隧道」的 EXIT_RESOLVER_IP：查询从**出口**发出，按**出口地理**(ECS)返 IP，出口恒够得着。
+        // 上游用 AliDNS 223.5.5.5 以覆盖大陆出口；本 fork 出口不在大陆，用 Google（见 shared/dns EXIT_RESOLVER_IP）。
         // endpoint 级 domain_resolver 只管 peer 地址、禁指向隧道 DNS（peer 解析死锁 FATAL，实测）。
         const exitDnsTag = `dns-exit-${id8}`;
         dnsServers.push({
           tag: exitDnsTag,
           type: 'udp',
-          server: '223.5.5.5',
+          server: EXIT_RESOLVER_IP,
           server_port: 53,
-          detour: tag, // 查询穿本端点隧道 → AliDNS 按出口地理(ECS)返 IP
+          detour: tag, // 查询穿本端点隧道 → 按出口地理(ECS)返 IP
         });
         // 族别偏好（语义不变，写法迁移）：WG localAddress 含 v6 → v4 优先但保留 v6（避免 v6 优先落不可达）；
         // 纯 v4 → 只取 A（消 v6 解析噪声）。
@@ -892,7 +899,7 @@ export class SpeedTestService {
     //    解析**，不经本机 dns-direct（代理 dialer 只拨 server 地址、destination 进协议头）。各节点量到自身真实路径。
     //    ⚠️ 勿引入 sniff / outbound.domain_strategy / 针对目标的本地解析——会破坏此不变量。
     //  · 端点（WG/WARP…L3）：**必本地解析**目标（内核强制）。故上方用 inbound 键控 dns.rule 把端点的目标解析压到穿隧道
-    //    223.5.5.5（AliDNS ECS 按出口地理返 IP、geo 正确、单形态覆盖境内外出口）；default_domain_resolver 仍解节点 server 地址。
+    //    EXIT_RESOLVER_IP（ECS 按出口地理返 IP、geo 正确）；default_domain_resolver 仍解节点 server 地址。
     // ⚠️ 恒不下发顶层 `dns.strategy`：端点族别偏好靠上方的 query_type 规则项表达，而「无顶层 strategy」
     // 正是「省略 prefer_ipv4 == prefer_ipv4」这一等价性的前提（顶层若为 prefer_ipv6，端点解析会翻成 v6 优先，
     // 实测确证）。要加顶层 strategy 必须同时重新推导端点规则，别只加一半。单测锁死本不变量。
@@ -1150,8 +1157,8 @@ export class SpeedTestService {
         host: '127.0.0.1',
         port: proxyPort,
         method: 'CONNECT',
-        path: '223.5.5.5:53',
-        headers: { Host: '223.5.5.5:53' },
+        path: `${EXIT_RESOLVER_IP}:53`,
+        headers: { Host: `${EXIT_RESOLVER_IP}:53` },
         timeout,
       });
       connectReq.on('error', () => finish(new Error('dns-probe-connect-error')));

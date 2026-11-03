@@ -8,6 +8,7 @@
  * scope 仅节点域名解析，不碰系统 DNS。
  */
 import * as dgram from 'dgram';
+import * as http2 from 'http2';
 import {
   raceForward,
   type UpstreamQueryFn,
@@ -19,15 +20,20 @@ import { decodeDnsQuestion, buildAnswerResponse } from '../../shared/dns-wire';
 const TYPE_A = 1;
 const TYPE_AAAA = 28;
 const PER_UPSTREAM_TIMEOUT_MS = 1500;
+// HTTP/2 DoH 会话空闲多久后关闭（期间同一上游的查询复用连接，省每次 TLS 握手）。
+const H2_SESSION_IDLE_MS = 60_000;
 
 type LogFn = (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
 
-/** 单上游一次查询（无 timeout 包装）：DoH(https) fetch / UDP dgram / system 解析。dot 暂不支持（FAIL，由他者兜，二期）。 */
+/** 单上游一次查询（无 timeout 包装）：DoH(https) fetch / HTTP/2 / UDP dgram / system 解析。dot 暂不支持（FAIL，由他者兜，二期）。 */
 async function queryOneUpstream(
   up: ResolveUpstream,
   query: Uint8Array,
   signal: AbortSignal
 ): Promise<Uint8Array> {
+  if (up.kind === 'doh' && !up.dot && up.http2) {
+    return h2DohQuery(`https://${up.ip}:${up.port ?? 443}`, up.path || '/dns-query', query, signal);
+  }
   if (up.kind === 'doh' && !up.dot) {
     const url = `https://${up.ip}:${up.port ?? 443}${up.path || '/dns-query'}`;
     const resp = await fetch(url, {
@@ -46,6 +52,92 @@ async function queryOneUpstream(
     return systemQuery(query);
   }
   throw new Error(`unsupported upstream kind: ${up.kind}${up.dot ? ' (dot)' : ''}`);
+}
+
+/** HTTP/2 DoH 会话缓存（按 origin 复用）。会话出错 / 关闭 / goaway 即出缓存，下次查询重连。 */
+const h2Sessions = new Map<string, http2.ClientHttp2Session>();
+
+function getH2Session(origin: string): http2.ClientHttp2Session {
+  const cached = h2Sessions.get(origin);
+  if (cached && !cached.closed && !cached.destroyed) return cached;
+  const session = http2.connect(origin);
+  const drop = () => {
+    if (h2Sessions.get(origin) === session) h2Sessions.delete(origin);
+  };
+  session.on('error', drop); // 必须挂 error 监听，否则连接失败会成为未捕获异常；请求侧由 stream error 收尾
+  session.on('close', drop);
+  session.on('goaway', drop);
+  session.setTimeout(H2_SESSION_IDLE_MS, () => session.close());
+  session.unref();
+  h2Sessions.set(origin, session);
+  return session;
+}
+
+/** 关闭全部 HTTP/2 DoH 会话（race server stop 时调）。 */
+export function closeH2DohSessions(): void {
+  for (const s of h2Sessions.values()) {
+    try {
+      s.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  h2Sessions.clear();
+}
+
+/** DoH over HTTP/2（RFC 8484 POST）：TLS 按 IP 校验证书（IP SAN）。非 200 / 流错误 / signal 取消 → reject。 */
+function h2DohQuery(
+  origin: string,
+  path: string,
+  query: Uint8Array,
+  signal: AbortSignal
+): Promise<Uint8Array> {
+  return new Promise<Uint8Array>((resolve, reject) => {
+    if (signal.aborted) return reject(new Error('aborted'));
+    let req: http2.ClientHttp2Stream;
+    try {
+      const body = Buffer.from(query);
+      req = getH2Session(origin).request({
+        ':method': 'POST',
+        ':path': path,
+        'content-type': 'application/dns-message',
+        accept: 'application/dns-message',
+        'content-length': body.length,
+      });
+      req.end(body);
+    } catch (e) {
+      return reject(e);
+    }
+    let status = 0;
+    const chunks: Buffer[] = [];
+    let done = false;
+    const finish = (fn: () => void) => {
+      if (done) return;
+      done = true;
+      signal.removeEventListener('abort', onAbort);
+      fn();
+    };
+    const onAbort = () =>
+      finish(() => {
+        req.close(http2.constants.NGHTTP2_CANCEL);
+        reject(new Error('aborted'));
+      });
+    signal.addEventListener('abort', onAbort, { once: true });
+    req.on('response', (headers) => {
+      status = Number(headers[':status']) || 0;
+    });
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () =>
+      finish(() =>
+        status === 200
+          ? resolve(new Uint8Array(Buffer.concat(chunks)))
+          : reject(new Error(`doh ${status}`))
+      )
+    );
+    req.on('error', (e) => finish(() => reject(e)));
+    // 流被对端重置等无 end/error 的关闭：立即失败（end 之后的 close 已被 done 挡住）。
+    req.on('close', () => finish(() => reject(new Error('doh stream closed'))));
+  });
 }
 
 /** UDP 明文查询：发 query 到 ip:port，收首个响应。signal 触发即取消。 */
@@ -265,5 +357,6 @@ export class NodeDnsRaceServer {
     }
     this.socket = null;
     this.port = 0;
+    closeH2DohSessions();
   }
 }

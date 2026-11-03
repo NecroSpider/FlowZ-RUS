@@ -294,7 +294,7 @@ export interface TunModeConfig {
 }
 
 export interface DnsConfig {
-  domesticDns: string; // 国内 DNS，默认 https://doh.pub/dns-query
+  domesticDns: string; // 国内 DNS，默认 Yandex https://77.88.8.8/dns-query（上游默认 doh.pub）
   foreignDns: string; // 海外 DNS，默认 https://dns.google/dns-query
   enableFakeIp: boolean; // 是否启用 FakeIP（systemProxy / TUN 统一生效，纯看此开关，见 usesFakeIp）
   // FakeIP 开关统一一次性迁移标记：存量旧默认 enableFakeIp:false 多非用户意图，
@@ -313,15 +313,17 @@ export interface DnsConfig {
   // 开 → domain_resolver 指本地 race server（dns-node-race）：多上游 DoH 并发 race（最快非空 wins），多 A 透传给内核 DialSerial 逐个重试。
   // 关 → domain_resolver 按 nodeResolverSingle 指【单上游】（逃生阀，退回单点）。与上游选择正交（设计 §9.1）。旧配置无 → 视为开。
   resolveNodeDomainsAhead?: boolean;
-  // race【on】勾选的上游 id 列表（内置 'ali'|'dnspod'|'system' + 自定义 id）。Tier1(ali/dnspod/自定义DoH)抢跑、上限 3；
-  // Tier2(system/自定义UDP)兜底不占额度。空 → 回退默认 ['ali','dnspod']。缺省即默认。
+  // race【on】勾选的上游 id 列表（内置 'yandex'|'yandex2'|'ali'|'dnspod'|'system' + 自定义 id）。Tier1(DoH)抢跑、上限 3；
+  // Tier2(system/自定义UDP)兜底不占额度。空 → 回退默认 ['yandex','yandex2']。缺省即默认。
   nodeResolverPool?: string[];
-  // race【off】单选的上游 id。缺省 'ali'。与 pool 各存各的，切换互不覆盖。
+  // race【off】单选的上游 id。缺省 'yandex'。与 pool 各存各的，切换互不覆盖。
   nodeResolverSingle?: string;
   // 用户自定义上游（强制纯 IP：parseDnsServerSpec.isDomain 为 true 拒绝）。id 稳定供 pool/single 引用。
   nodeResolverCustom?: CustomDnsUpstream[];
   // 旧 nodeDomainResolver → 新多源模型一次性迁移标记（参照 fakeIpToggleMigrated）。undefined=未迁移。
   nodeResolverMigrated?: boolean;
+  // 中国 DNS 默认值（doh.pub / AliDNS+DNSPod）→ Yandex 一次性迁移标记（ConfigManager.migrateDnsDefaults）。undefined=未迁移。
+  dnsDefaultsMigrated?: boolean;
   // TUN 模式强制接管系统 DNS（SystemDnsManager）：缺省/true=开（默认）。on-link 的 LAN/ISP DNS 不进 TUN →
   // hijack-dns 看不到 → 需代理的域名走系统解析得到真实/错族 IP（双栈站 ERR_CONNECTION_CLOSED / 真 v6 泄漏）。
   // 开 → TUN 启动把系统 DNS 改为可路由的 8.8.8.8 使其经 TUN 被 hijack；停止/退出/崩溃还原。

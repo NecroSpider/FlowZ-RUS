@@ -1,9 +1,9 @@
 /**
  * 测速临时 config 的「端点目标解析」单测（纯 config 生成，无网络）。
  * 端点(WG/WARP)是 L3、目标域名必被本地解析：默认 dns-direct 从本机解析 → 本机 geo IP、端点出口够不着 → 超时/失真。
- * 修复(单形态):端点目标解析经 inbound 键控 dns.rule 定向到「穿本节点隧道」的 223.5.5.5(AliDNS 有大陆节点 + ECS,
- * 按出口地理返 IP → 境外/国内出口都对；1.1.1.1 因 anycast 无大陆 PoP、国内出口反挂,故用 223.5.5.5)。
- * 验:端点单入站、穿隧道 dns server(223.5.5.5/detour)、inbound 键控 dns.rule(disable_cache)、纯代理零变化。
+ * 修复(单形态):端点目标解析经 inbound 键控 dns.rule 定向到「穿本节点隧道」的 EXIT_RESOLVER_IP(Google 8.8.8.8,
+ * ECS 按出口地理返 IP；上游用 AliDNS 223.5.5.5 覆盖大陆出口，本 fork 出口不在大陆)。
+ * 验:端点单入站、穿隧道 dns server(8.8.8.8/detour)、inbound 键控 dns.rule(disable_cache)、纯代理零变化。
  *
  * 2026-07 迁移(sing-box 1.14.0):rule-action 的 legacy `strategy` 已废弃(run 时 WARN、1.16.0 移除),且与同一份
  * dns 配置内任何 query_type/ip_version 规则**互斥**(共存 → run 与 check 双双 FATAL)。改用 query_type 规则项表达:
@@ -37,15 +37,15 @@ const vless = (id: string): Usable => ({
   outbound: { type: 'vless', tag: `out-${id.slice(0, 8)}`, uuid: 'x' },
 });
 
-describe('测速临时 config:端点目标解析穿隧道 223.5.5.5（单形态）', () => {
-  it('WG 端点:单入站 + 穿隧道 223.5.5.5 dns server(detour) + inbound 键控 dns.rule(AAAA 抑制 + 禁缓存)', () => {
+describe('测速临时 config:端点目标解析穿隧道 8.8.8.8（单形态）', () => {
+  it('WG 端点:单入站 + 穿隧道 8.8.8.8 dns server(detour) + inbound 键控 dns.rule(AAAA 抑制 + 禁缓存)', () => {
     const cfg = gen([wg('wgnode01', ['172.16.0.2/32'])], [21001]);
     expect(cfg.inbounds.map((i: any) => i.tag)).toEqual(['http-in-wgnode01']); // 单入站(无 local 兜底)
     expect(cfg.endpoints).toHaveLength(1); // WG 进 endpoints[]
     expect(cfg.route.rules.filter((r: any) => r.outbound === 'out-wgnode01')).toHaveLength(1);
-    // 穿隧道 DNS server(223.5.5.5，detour 指向本端点 tag)
+    // 穿隧道 DNS server(8.8.8.8，detour 指向本端点 tag)
     expect(cfg.dns.servers.find((s: any) => s.tag === 'dns-exit-wgnode01')).toMatchObject({
-      server: '223.5.5.5',
+      server: '8.8.8.8',
       detour: 'out-wgnode01',
     });
     // 纯 v4 localAddress(旧 ipv4_only):AAAA 抑制规则必须**在前**,route catch-all 在后

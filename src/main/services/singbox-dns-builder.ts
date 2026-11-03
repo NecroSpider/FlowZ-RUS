@@ -7,7 +7,15 @@
 
 import * as path from 'path';
 import type { UserConfig } from '../../shared/types';
-import { parseDnsServerSpec, type ParsedDnsServer } from '../../shared/dns';
+import {
+  DEFAULT_DOMESTIC_DNS,
+  DEFAULT_FOREIGN_DNS,
+  DOH_ALIDNS_IP,
+  DOH_YANDEX_IP,
+  EXIT_RESOLVER_IP,
+  parseDnsServerSpec,
+  type ParsedDnsServer,
+} from '../../shared/dns';
 import { dedupe } from '../../shared/collections';
 import { ruleConditions } from '../../shared/rules';
 import { normalizeNeighborDomain, isSourceDeviceMatchSupported } from '../../shared/neighbor';
@@ -92,7 +100,7 @@ export function buildDnsConfig(
   // §15 主核测速探测池：K 个 dns-probe-exit-k server + K 条 inbound 键控 rule 的端口数（allocateProbePorts 3+K）。
   // 空/缺省=不注入池（FakeIP/R1 路径字节不变，回退临时核）。
   probePoolPorts: number[] = [],
-  // V37 出口伴测 / 出口 IP 探测（probe-proxy-in）端口（>0=就绪）：生成 dns-probe-exit-proxy server(223.5.5.5 DoH:443,
+  // V37 出口伴测 / 出口 IP 探测（probe-proxy-in）端口（>0=就绪）：生成 dns-probe-exit-proxy server(EXIT_RESOLVER_IP DoH:443,
   // detour=proxy-selector) + inbound 键控 rule，把探测目标域名解析绕过 S0/S1、穿当前出口隧道解析（解析视角=出口 geo 正确），
   // 且 transport(DoH/TCP)+resolver(China-reachable) 全栈通（治 WG/WARP 伴测无值 · 不踩 TS-exit UDP 弱腿 · 不踩大陆出口
   // dns.google 超时）。null/缺省=不注入（无 probe-proxy-in）。
@@ -102,8 +110,8 @@ export function buildDnsConfig(
 
   // 获取用户 DNS 配置，不存在则使用默认值
   const userDnsConfig = config.dnsConfig || {
-    domesticDns: 'https://doh.pub/dns-query',
-    foreignDns: 'https://dns.google/dns-query',
+    domesticDns: DEFAULT_DOMESTIC_DNS,
+    foreignDns: DEFAULT_FOREIGN_DNS,
     enableFakeIp: false,
   };
 
@@ -116,10 +124,10 @@ export function buildDnsConfig(
   // 用户自定义 DNS：解析 domesticDns/foreignDns（https DoH / tls DoT / udp / 裸 IP），非法或空回退默认并告警。
   const DEFAULT_DOMESTIC: ParsedDnsServer = {
     type: 'https',
-    server: 'doh.pub',
+    server: DOH_YANDEX_IP,
     port: 443,
     path: '/dns-query',
-    isDomain: true,
+    isDomain: false,
   };
   const DEFAULT_FOREIGN: ParsedDnsServer = {
     type: 'https',
@@ -131,7 +139,10 @@ export function buildDnsConfig(
   const domestic = parseDnsServerSpec(userDnsConfig.domesticDns) ?? DEFAULT_DOMESTIC;
   const foreign = parseDnsServerSpec(userDnsConfig.foreignDns) ?? DEFAULT_FOREIGN;
   if (userDnsConfig.domesticDns && !parseDnsServerSpec(userDnsConfig.domesticDns)) {
-    log('warn', `国内 DNS 无法解析，已回退默认 doh.pub: ${userDnsConfig.domesticDns}`);
+    log(
+      'warn',
+      `国内 DNS 无法解析，已回退默认 ${DEFAULT_DOMESTIC_DNS}: ${userDnsConfig.domesticDns}`
+    );
   }
   if (userDnsConfig.foreignDns && !parseDnsServerSpec(userDnsConfig.foreignDns)) {
     log('warn', `境外 DNS 无法解析，已回退默认 dns.google: ${userDnsConfig.foreignDns}`);
@@ -149,16 +160,26 @@ export function buildDnsConfig(
 
   // sing-box 1.13+ 新格式：每个 server 必须有显式 type 字段。
   // 关键架构：Win TUN 下 svchost 系统 DNS 若配置为公网 IP，type:'local'(getaddrinfo) 的查询会被 TUN 劫持回自身形成
-  // 死循环；且需避免 UDP 53 屏蔽（223.5.5.5 UDP 曾有此缺陷）。故用 DoH IP Bootstrap（dns-bootstrap）：向 223.5.5.5:443
-  // 直发 DoH 包，靠 route 规则把该地址直连放行绕过 TUN（非 DNS detour，见 generateRouteConfig）。关键路径（节点域名 /
-  // doh.pub / default_domain_resolver）均以它为 resolver，免疫 UDP 53 限速/劫持/投毒。
+  // 死循环；且需避免 UDP 53 屏蔽（223.5.5.5 UDP 曾有此缺陷）。故用 DoH IP Bootstrap（dns-bootstrap）：向 Yandex
+  // 77.88.8.8:443 直发 DoH 包（上游为 AliDNS 223.5.5.5），靠 route 规则把该地址直连放行绕过 TUN（非 DNS detour，见
+  // generateRouteConfig）。关键路径（节点域名 / DoH 域名 / default_domain_resolver）均以它为 resolver，免疫 UDP 53
+  // 限速/劫持/投毒。
   const dnsServers: SingBoxDnsServer[] = [
     {
       // 引导解析（DoH over IP）：关键路径的解析器。server 已是 IP，无需 domain_resolver。
       // 相比 UDP 53，对运营商的 UDP 53 限速/劫持/投毒免疫，避免节点域名解析失败导致断流。
       tag: 'dns-bootstrap',
       type: 'https',
-      server: '223.5.5.5',
+      server: DOH_YANDEX_IP,
+      server_port: 443,
+      path: '/dns-query',
+    },
+    {
+      // 节点域名解析器可选档「AliDNS」（off 单选 ali）：AliDNS IP-DoH 223.5.5.5。dns-bootstrap 改用 Yandex 后，
+      // ali 档不能再借 dns-bootstrap，故单列；与 dns-node 同理恒加进 servers，未被引用时核不主动连接。
+      tag: 'dns-ali',
+      type: 'https',
+      server: DOH_ALIDNS_IP,
       server_port: 443,
       path: '/dns-query',
     },
@@ -178,15 +199,16 @@ export function buildDnsConfig(
       tag: 'dns-local',
       type: 'local',
     },
-    // 国内直连 DNS（用户可自定义，默认 doh.pub DoH）
+    // 国内直连 DNS（用户可自定义，默认 Yandex IP-DoH）
     buildUserDns('dns-domestic', domestic),
     // 远程代理 DNS（用户可自定义，默认 dns.google DoH）。必须走代理 detour，
     // 否则在境内直接发起会因 GFW 拦截/污染导致 FakeIP 映射失败或 TTL 极短产生大量无效解析。
     buildUserDns('dns-remote', foreign, selectedServerTag),
   ];
 
-  // §15 主核测速探测池 DNS server：K 个 dns-probe-exit-k（**223.5.5.5 over DoH:443**，detour=probe-selector-k）。端点
-  // （WG/WARP/TS）经 probe-in-k 测速时目标域名 dial 解析穿被测节点隧道 → AliDNS ECS 按出口地理返 IP（geo 正确）。
+  // §15 主核测速探测池 DNS server：K 个 dns-probe-exit-k（**EXIT_RESOLVER_IP over DoH:443**，detour=probe-selector-k）。
+  // 端点（WG/WARP/TS）经 probe-in-k 测速时目标域名 dial 解析穿被测节点隧道 → ECS 按出口地理返 IP（geo 正确）。
+  // 上游用 AliDNS 223.5.5.5（大陆出口可达），本 fork 换 Google（见 shared/dns EXIT_RESOLVER_IP）。
   // §17.6：transport 从 udp:53 换 DoH:443——与伴测 dns-probe-exit-proxy(§17.5) 同解，治 **TS 池测速超时**（udp 出 tsnet
   //   userspace gVisor 是弱腿，真机实证 TS 卡片/分组/全部测速全超时；DoH/TCP 穿 tsnet 可达，D1 伴测已证）。223.5.5.5
   //   China-reachable + DoH 对 WG/WARP 亦通（D3 WARP 伴测 DoH 已证），取代原 udp（镜像临时核 dns-exit，仅 WG/WARP proven、
@@ -195,14 +217,14 @@ export function buildDnsConfig(
     dnsServers.push({
       tag: `dns-probe-exit-${k}`,
       type: 'https',
-      server: '223.5.5.5',
+      server: EXIT_RESOLVER_IP,
       server_port: 443,
       path: '/dns-query',
       detour: `probe-selector-${k}`,
     });
   }
 
-  // V37 出口伴测 / 出口 IP 探测专用出口 DNS（§17.5）：**223.5.5.5 over DoH:443**，detour=selectedServerTag(proxy-selector，
+  // V37 出口伴测 / 出口 IP 探测专用出口 DNS（§17.5）：**EXIT_RESOLVER_IP over DoH:443**（上游 223.5.5.5），detour=selectedServerTag(proxy-selector，
   // 随热切换跟当前节点)。使探测目标域名穿当前出口隧道解析、AliDNS ECS 按出口 geo 返可达 IP。选 223.5.5.5-DoH 的第一性：
   //   · China-reachable：治大陆出口（Dalutone 等，真机实证 dns.google 8.8.4.4:443 穿大陆 context deadline exceeded 16s → 检测超时）；
   //   · TCP/DoH：穿 tsnet userspace gVisor 可达（治 TS-exit——udp 53 出 tsnet 是弱腿；DoH:443/TCP 真机实证 75ms 通）；
@@ -215,7 +237,7 @@ export function buildDnsConfig(
     dnsServers.push({
       tag: 'dns-probe-exit-proxy',
       type: 'https',
-      server: '223.5.5.5',
+      server: EXIT_RESOLVER_IP,
       server_port: 443,
       path: '/dns-query',
       detour: selectedServerTag,
@@ -335,8 +357,8 @@ export function buildDnsConfig(
   // #57 rule1 全量化：遍历【全部】节点的 address + tlsSettings.serverName（过滤 IP 字面量），而非仅当前选中节点——
   //   修热切换 query 侧缺口：原先只含 selectedServer，热切换到其它节点后该节点域名查询会落 FakeIP/dns-local。
   // 去掉过宽的 domain_keyword（exact domain + suffix 已对节点域名全覆盖，keyword 易误伤同名子串）。
-  // server 取 getNodeResolverTag(config,'rule')：auto 忠实回 dns-domestic（doh.pub DoH，与基线一致，
-  //   不随 dial 的 dns-bootstrap 统一）；dnspod=dns-node；TUN+system 强制 dns-node 防递归。
+  // server 取 getNodeResolverTag(config,'rule')：yandex/缺省忠实回 dns-domestic（国内 DNS，与基线一致，
+  //   不随 dial 的 dns-bootstrap 统一）；ali=dns-ali；dnspod=dns-node；TUN+system 强制 dns-node 防递归。
   const nodeDomains = Array.from(
     new Set(
       config.servers.flatMap((s) => {

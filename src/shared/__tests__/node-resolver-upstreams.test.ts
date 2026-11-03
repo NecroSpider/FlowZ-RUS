@@ -92,10 +92,17 @@ describe('resolveUpstreams — 分 Tier + 去重 + 上限 + 回退', () => {
     expect(r.tier1.map((u) => u.id)).toEqual(['ali', 'dnspod', 'c1']); // 第 4 个 c2 被截
   });
 
-  it('空 Tier1（仅 system / 全无效）→ 回退默认 [ali,dnspod]', () => {
-    expect(resolveUpstreams(['system']).tier1.map((u) => u.id)).toEqual(['ali', 'dnspod']);
-    expect(resolveUpstreams(['unknown-id']).tier1.map((u) => u.id)).toEqual(['ali', 'dnspod']);
-    expect(resolveUpstreams([]).tier1.map((u) => u.id)).toEqual(['ali', 'dnspod']);
+  it('空 Tier1（仅 system / 全无效）→ 回退默认 [yandex,yandex2]', () => {
+    expect(resolveUpstreams(['system']).tier1.map((u) => u.id)).toEqual(['yandex', 'yandex2']);
+    expect(resolveUpstreams(['unknown-id']).tier1.map((u) => u.id)).toEqual(['yandex', 'yandex2']);
+    expect(resolveUpstreams([]).tier1.map((u) => u.id)).toEqual(['yandex', 'yandex2']);
+  });
+
+  it('内置 Yandex 上游走 HTTP/2（Yandex DoH 不接受 HTTP/1.1），AliDNS/DNSPod 保持 fetch', () => {
+    expect(BUILTIN_UPSTREAMS.yandex).toMatchObject({ ip: '77.88.8.8', http2: true, tier: 1 });
+    expect(BUILTIN_UPSTREAMS.yandex2).toMatchObject({ ip: '77.88.8.1', http2: true, tier: 1 });
+    expect(BUILTIN_UPSTREAMS.ali.http2).toBeUndefined();
+    expect(BUILTIN_UPSTREAMS.dnspod.http2).toBeUndefined();
   });
 
   it('自定义非纯 IP（域名）→ 跳过，不进结果', () => {

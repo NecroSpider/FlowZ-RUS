@@ -133,9 +133,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -150,9 +157,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -451,6 +457,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -628,6 +636,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -811,9 +821,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -828,9 +845,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -1108,6 +1124,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -1270,6 +1288,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -1454,9 +1474,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -1471,9 +1498,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -1744,6 +1770,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -1907,6 +1935,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -2091,9 +2121,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -2108,9 +2145,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -2169,6 +2205,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "240.0.0.0/4",
           "fc00::/7",
           "fe80::/10",
+          "77.88.8.8/32",
+          "77.88.8.1/32",
           "223.5.5.5/32",
           "223.6.6.6/32",
           "1.12.12.12/32",
@@ -2412,6 +2450,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -2574,6 +2614,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -2748,9 +2790,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -3032,6 +3081,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -3196,6 +3247,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -3361,9 +3414,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -3378,9 +3438,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -3647,6 +3706,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -3809,6 +3870,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -3931,9 +3994,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -3948,9 +4018,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -4212,6 +4281,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -4374,6 +4445,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -4496,9 +4569,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -4513,9 +4593,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -4789,6 +4868,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -4951,6 +5032,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -5068,9 +5151,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -5085,9 +5175,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -5349,6 +5438,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -5511,6 +5602,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -5685,9 +5778,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -5702,9 +5802,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -6001,6 +6100,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -6163,6 +6264,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -6337,9 +6440,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -6354,9 +6464,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -6642,6 +6751,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -6804,6 +6915,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -6988,9 +7101,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -7005,9 +7125,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -7066,6 +7185,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "240.0.0.0/4",
           "fc00::/7",
           "fe80::/10",
+          "77.88.8.8/32",
+          "77.88.8.1/32",
           "223.5.5.5/32",
           "223.6.6.6/32",
           "1.12.12.12/32",
@@ -7316,6 +7437,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -7478,6 +7601,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -7652,9 +7777,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -7669,9 +7801,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -7954,6 +8085,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -8116,6 +8249,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -8290,9 +8425,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -8307,9 +8449,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -8586,6 +8727,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -8767,6 +8910,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -8982,9 +9127,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -8999,9 +9151,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -9268,6 +9419,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -9406,6 +9559,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -9580,9 +9735,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -9597,9 +9759,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -9866,6 +10027,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -10028,6 +10191,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -10194,9 +10359,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -10211,9 +10383,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -10480,6 +10651,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -10642,6 +10815,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -10789,9 +10964,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -10806,9 +10988,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -11080,6 +11261,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -11242,6 +11425,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -11419,9 +11604,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -11436,9 +11628,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -11710,6 +11901,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -11874,6 +12067,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -12060,9 +12255,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -12077,9 +12279,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -12096,7 +12297,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "detour": "proxy-selector",
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "8.8.8.8",
           "server_port": 443,
           "tag": "dns-probe-exit-proxy",
           "type": "https",
@@ -12380,6 +12581,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -12542,6 +12745,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -12716,9 +12921,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -12733,9 +12945,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -13012,6 +13223,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -13181,6 +13394,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -13360,9 +13575,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -13377,9 +13599,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -13656,6 +13877,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -13832,6 +14055,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -14011,9 +14236,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -14028,9 +14260,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -14297,6 +14528,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -14471,6 +14704,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -14645,9 +14880,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -14662,9 +14904,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -14940,6 +15181,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -15102,6 +15345,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -15276,9 +15521,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -15293,9 +15545,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -15562,6 +15813,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -15724,6 +15977,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -15898,9 +16153,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -15915,9 +16177,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -16212,6 +16473,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -16374,6 +16637,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -16526,9 +16791,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -16543,9 +16815,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -16649,6 +16920,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -16806,6 +17079,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -16953,9 +17228,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -16970,9 +17252,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -17252,6 +17533,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -17414,6 +17697,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -17591,9 +17876,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -17608,9 +17900,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -17921,6 +18212,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -18085,6 +18378,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -18260,9 +18555,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -18277,9 +18579,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -18568,6 +18869,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -18734,6 +19037,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -18908,9 +19213,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -18925,9 +19237,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -19216,6 +19527,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -19383,6 +19696,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -19557,9 +19872,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -19574,9 +19896,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -19843,6 +20164,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -20005,6 +20328,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -20179,9 +20504,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -20196,9 +20528,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -20477,6 +20808,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -20639,6 +20972,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -20808,9 +21143,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -20825,9 +21167,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -21106,6 +21447,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -21268,6 +21611,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -21429,9 +21774,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -21446,9 +21798,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -21715,6 +22066,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -21877,6 +22230,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -22024,9 +22379,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -22041,9 +22403,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -22440,6 +22801,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -22602,6 +22965,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -22783,9 +23148,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -22800,9 +23172,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -23082,6 +23453,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -23244,6 +23617,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],
@@ -23419,9 +23794,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "servers": [
         {
           "path": "/dns-query",
-          "server": "223.5.5.5",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-ali",
           "type": "https",
         },
         {
@@ -23436,9 +23818,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "local",
         },
         {
-          "domain_resolver": "dns-bootstrap",
           "path": "/dns-query",
-          "server": "doh.pub",
+          "server": "77.88.8.8",
           "server_port": 443,
           "tag": "dns-domestic",
           "type": "https",
@@ -23732,6 +24113,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
@@ -23894,6 +24277,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "action": "route",
           "ip_cidr": [
+            "77.88.8.8/32",
+            "77.88.8.1/32",
             "223.5.5.5/32",
             "1.12.12.12/32",
           ],

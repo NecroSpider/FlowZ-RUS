@@ -10,7 +10,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/store/app-store';
-import { parseDnsServerSpec, DNS_TIMEOUT_MIN_MS, DNS_TIMEOUT_MAX_MS } from '@shared/dns';
+import {
+  parseDnsServerSpec,
+  DNS_TIMEOUT_MIN_MS,
+  DNS_TIMEOUT_MAX_MS,
+  DEFAULT_DOMESTIC_DNS,
+  DEFAULT_FOREIGN_DNS,
+} from '@shared/dns';
 import {
   BUILTIN_UPSTREAMS,
   isValidCustomUpstreamSpec,
@@ -62,8 +68,8 @@ const LOCAL_PORT_MIN = 1024;
 const LOCAL_PORT_MAX = 65535;
 
 const DNS_DEFAULTS = {
-  domesticDns: 'https://doh.pub/dns-query',
-  foreignDns: 'https://dns.google/dns-query',
+  domesticDns: DEFAULT_DOMESTIC_DNS,
+  foreignDns: DEFAULT_FOREIGN_DNS,
 } as const;
 
 /**
@@ -157,8 +163,8 @@ export function NetworkSettings() {
     const updated = { ...config };
     if (!updated.dnsConfig) {
       updated.dnsConfig = {
-        domesticDns: 'https://doh.pub/dns-query',
-        foreignDns: 'https://dns.google/dns-query',
+        domesticDns: DNS_DEFAULTS.domesticDns,
+        foreignDns: DNS_DEFAULTS.foreignDns,
         enableFakeIp: true, // 与新装默认一致（usesFakeIp 已统一为纯看开关）
       };
     }
@@ -1195,7 +1201,7 @@ function NodeResolverSection({
     () => dns?.nodeResolverCustom ?? [],
     [dns?.nodeResolverCustom]
   );
-  // pool 缺省 = DEFAULT_POOL_IDS（ali+dnspod）；显式空数组才视为「全不勾」由后端回退默认（此处只如实回显）。
+  // pool 缺省 = DEFAULT_POOL_IDS（yandex+yandex2）；显式空数组才视为「全不勾」由后端回退默认（此处只如实回显）。
   const pool: string[] = dns?.nodeResolverPool ?? [...DEFAULT_POOL_IDS];
   const single = dns?.nodeResolverSingle ?? DEFAULT_SINGLE_ID;
 
@@ -1209,8 +1215,10 @@ function NodeResolverSection({
     [custom]
   );
 
-  // 抢跑段（Tier1）= 内置 ali/dnspod + 自定义 tier1；兜底段（Tier2）= 自定义 tier2 + system（恒置底）。
+  // 抢跑段（Tier1）= 内置 yandex/yandex2/ali/dnspod + 自定义 tier1；兜底段（Tier2）= 自定义 tier2 + system（恒置底）。
   const tier1Items: { id: string; label: string; custom?: CustomDnsUpstream }[] = [
+    { id: 'yandex', label: t('settings.advanced.nodeResolverYandex') },
+    { id: 'yandex2', label: t('settings.advanced.nodeResolverYandex2') },
     { id: 'ali', label: t('settings.advanced.nodeResolverAli') },
     { id: 'dnspod', label: t('settings.advanced.nodeResolverDnspod') },
     ...customTier1.map((c) => ({ id: c.id, label: c.spec, custom: c })),
@@ -1273,9 +1281,10 @@ function NodeResolverSection({
     });
   };
 
-  // race off：单选内置上游（ali / dnspod / system）。off 单上游暂不支持自定义（§E 二期未实现）。
+  // race off：单选内置上游（yandex / ali / dnspod / system）。off 单上游暂不支持自定义（§E 二期未实现）。
   if (!raceOn) {
     const singleItems = [
+      { id: 'yandex', label: t('settings.advanced.nodeResolverYandex') },
       { id: 'ali', label: t('settings.advanced.nodeResolverAli') },
       { id: 'dnspod', label: t('settings.advanced.nodeResolverDnspod') },
       {
@@ -1285,7 +1294,7 @@ function NodeResolverSection({
           (isLinux && isTun ? ` (${t('settings.advanced.nodeResolverExperimental')})` : ''),
       },
     ];
-    // single 若为陈旧/自定义 id（非内置）→ 回显 ali，与后端「未知 single 走 ali 基线」一致，避免空白选择。
+    // single 若为陈旧/自定义 id（非内置）→ 回显 yandex，与后端「未知 single 走基线（Yandex）」一致，避免空白选择。
     const singleValue = singleItems.some((it) => it.id === single) ? single : DEFAULT_SINGLE_ID;
     return (
       <>

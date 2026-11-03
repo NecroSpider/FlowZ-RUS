@@ -14,6 +14,7 @@ import type {
   DnsConfig,
 } from '../../shared/types';
 import { parseDnsServerSpec, isIpv6Literal } from '../../shared/dns';
+import { DEFAULT_SINGLE_ID } from '../../shared/node-resolver-upstreams';
 import { ruleConditions } from '../../shared/rules';
 import { getAppPreset } from '../../shared/app-rules-preset';
 import { BUILTIN_GEO_RULESETS } from './builtin-geo-rulesets';
@@ -134,7 +135,7 @@ export const hostToExcludeCidr = (host: string): string | null => {
 function effectiveSingleResolverId(dns: DnsConfig | undefined): string {
   if (dns?.nodeResolverSingle) return dns.nodeResolverSingle;
   const legacy = dns?.nodeDomainResolver ?? 'auto';
-  return legacy === 'dnspod' ? 'dnspod' : legacy === 'system' ? 'system' : 'ali';
+  return legacy === 'dnspod' ? 'dnspod' : legacy === 'system' ? 'system' : DEFAULT_SINGLE_ID;
 }
 
 /**
@@ -145,8 +146,9 @@ function effectiveSingleResolverId(dns: DnsConfig | undefined): string {
  * issue #147：消费从 deprecated nodeDomainResolver 切到新模型 nodeResolverSingle（off 单上游 id）。
  * 本步产出与旧档位【完全等价】的内置 tag（零行为变化）；race-on(resolveNodeDomainsAhead) 指 dns-node-race
  * 的接入随 buildDnsConfig 生成 race server 一并落（设计 §7 / Task#5），此处暂不区分 on/off。
- *  - ali（默认）→ dial=dns-bootstrap(AliDNS IP-DoH 223.5.5.5) / rule=dns-domestic(doh.pub DoH)。
- *             两路径基线本就不同档，统一会把 rule1 从 doh.pub 悄改成 AliDNS，违反「默认零行为变化」。
+ *  - yandex（默认）→ dial=dns-bootstrap(Yandex IP-DoH 77.88.8.8) / rule=dns-domestic(国内 DNS，默认同为 Yandex)。
+ *             两路径基线本就不同档：用户改了国内 DNS 时 rule1 跟随它，dial 仍走固定的 bootstrap。
+ *  - ali      → dns-ali（AliDNS IP-DoH 223.5.5.5；上游默认档，dns-bootstrap 改 Yandex 后单列）
  *  - dnspod   → dns-node（DNSPod IP-DoH 1.12.12.12）
  *  - system   → dns-local（系统 DNS）；INV-1：TUN 下 rule ctx 强制 dns-node（IP-DoH）防递归——
  *             节点域名查询若落 dns-local，其上游可能再经 TUN 被 hijack-dns 劫持回 DNS rules 形成软死循环。
@@ -176,12 +178,13 @@ export function getNodeResolverTag(
     return DNS_NODE_RACE_TAG;
   }
   const single = effectiveSingleResolverId(config?.dnsConfig);
+  if (single === 'ali') return 'dns-ali';
   if (single === 'dnspod') return 'dns-node';
   if (single === 'system') {
     if (ctx === 'rule' && config?.proxyModeType === 'tun') return 'dns-node'; // INV-1
     return 'dns-local';
   }
-  // 'ali' / 自定义（自定义 server 见 Task#5）/ 缺省：忠实保留两路径各自基线解析器，逐字节回现状。
+  // 'yandex' / 自定义（自定义 server 见 Task#5）/ 缺省：两路径各自基线解析器。
   return ctx === 'dial' ? 'dns-bootstrap' : 'dns-domestic';
 }
 

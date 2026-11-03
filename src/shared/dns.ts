@@ -1,14 +1,36 @@
 import { isIpv4 } from './ip';
 
 /**
- * 节点域名解析器（#57 resolve-ahead）实际启用的 IP-DoH 上游 IP：AliDNS 223.5.5.5 + DNSPod 1.12.12.12。
+ * 内置 IP-DoH 上游 IP：Yandex DNS 77.88.8.8 / 77.88.8.1（本 fork 默认：dns-bootstrap、国内 DNS、节点解析 race 池），
+ * AliDNS 223.5.5.5 + DNSPod 1.12.12.12（上游默认，现仅作可选档）。Yandex DoH 只认 HTTP/2（HTTP/1.1 直接断连）。
  * 单一真值——node-domain-resolver 的 DoH URL、route 直连放行、Windows TUN route_exclude 全派生自此，
  * 杜绝「新增/更换 DoH 上游 IP，却漏同步到 exclude → 该上游连接命中 TUN CIDR 回流死循环」（#57 类回环）。
- * 不变量：这两个 IP【必须】∈ BOOTSTRAP_DIRECT_DNS_IPS（单测护栏断言），否则其 :443 DoH 不被直连放行。
+ * 不变量：这些 IP【必须】∈ BOOTSTRAP_DIRECT_DNS_IPS（单测护栏断言），否则其 :443 DoH 不被直连放行。
  */
+export const DOH_YANDEX_IP = '77.88.8.8';
+export const DOH_YANDEX_ALT_IP = '77.88.8.1';
 export const DOH_ALIDNS_IP = '223.5.5.5';
 export const DOH_DNSPOD_IP = '1.12.12.12';
-export const DOH_UPSTREAM_IPS: readonly string[] = [DOH_ALIDNS_IP, DOH_DNSPOD_IP];
+export const DOH_UPSTREAM_IPS: readonly string[] = [
+  DOH_YANDEX_IP,
+  DOH_YANDEX_ALT_IP,
+  DOH_ALIDNS_IP,
+  DOH_DNSPOD_IP,
+];
+
+/** 国内（直连）DNS 默认值：Yandex IP-DoH（IP 字面量，无需引导解析）。 */
+export const DEFAULT_DOMESTIC_DNS = `https://${DOH_YANDEX_IP}/dns-query`;
+export const DEFAULT_FOREIGN_DNS = 'https://dns.google/dns-query';
+/** 上游默认国内 DNS（腾讯 DNSPod DoH）：仅供一次性迁移识别「未改过的旧默认」。 */
+export const LEGACY_DOMESTIC_DNS = 'https://doh.pub/dns-query';
+
+/**
+ * 「穿出口隧道」解析用的 DNS IP：探测 / 测速目标域名经当前或被测节点的出口解析（detour / CONNECT 经代理），
+ * 使返回的 IP 对出口可达且就近。Google 8.8.8.8：全球 anycast + ECS，按出口地理返 IP。查询经隧道发出，
+ * 不直连、无需进 BOOTSTRAP_DIRECT_DNS_IPS。上游为大陆出口可达选 AliDNS；本 fork 出口不在大陆，Yandex 又会
+ * 按其俄罗斯节点返 IP（境外出口测到绕路的 CDN 节点），故用 Google。与 CONTROLLED_TUN_DNS_IP 同值、语义独立。
+ */
+export const EXIT_RESOLVER_IP = '8.8.8.8';
 
 /**
  * sing-box route 在 hijack-dns 之前「直连放行」的国内 bootstrap DNS IP（:53/:443）。单一真值：
@@ -16,9 +38,12 @@ export const DOH_UPSTREAM_IPS: readonly string[] = [DOH_ALIDNS_IP, DOH_DNSPOD_IP
  *   - SystemDnsManager 受控 DNS IP 的选择守卫引用——受控 IP 绝不能落在此列表，否则其 :53 查询被该
  *     直连规则放行、逃逸 hijack-dns，DNS 接管失效（见 docs/design/dns-ipv6-takeover.md）；
  *   - singbox-inbounds-builder 的 Windows TUN route_exclude 引用（防 WFP 进程匹配失效时回流死循环）。
- * 含 DoH 上游 IP（DOH_UPSTREAM_IPS：223.5.5.5 + 1.12.12.12）+ AliDNS 备 + DNSPod/114 公共 DNS。
+ * 含 DoH 上游 IP（DOH_UPSTREAM_IPS：Yandex 77.88.8.8/77.88.8.1 + 223.5.5.5 + 1.12.12.12）+ AliDNS 备 +
+ * DNSPod/114 公共 DNS。
  */
 export const BOOTSTRAP_DIRECT_DNS_IPS: readonly string[] = [
+  DOH_YANDEX_IP, // 77.88.8.8（Yandex IP-DoH：dns-bootstrap / 国内 DNS 默认 / race 池默认）
+  DOH_YANDEX_ALT_IP, // 77.88.8.1（Yandex 备，race 池默认第二路）
   DOH_ALIDNS_IP, // 223.5.5.5（AliDNS IP-DoH 上游）
   '223.6.6.6',
   DOH_DNSPOD_IP, // 1.12.12.12（DNSPod IP-DoH 上游，#57）

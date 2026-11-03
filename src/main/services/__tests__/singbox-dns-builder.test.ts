@@ -200,6 +200,29 @@ describe('根治 §3.6：dns-bootstrap-udp 已删 + DoH server 域名解析改 I
   });
 });
 
+describe('本 fork：DNS 默认 Yandex（不再用中国 DNS）', () => {
+  it('dns-bootstrap = Yandex IP-DoH；dns-ali 单列 AliDNS（仅 ali 单选档引用）', () => {
+    const dns = build(baseConfig([tsNode()], 'ts1'));
+    expect(dns.servers.find((s) => s.tag === 'dns-bootstrap')).toMatchObject({
+      type: 'https',
+      server: '77.88.8.8',
+      server_port: 443,
+      path: '/dns-query',
+    });
+    expect(dns.servers.find((s) => s.tag === 'dns-ali')).toMatchObject({
+      type: 'https',
+      server: '223.5.5.5',
+    });
+  });
+
+  it('无 dnsConfig → dns-domestic 为 Yandex IP-DoH（IP 字面量，无需 domain_resolver）', () => {
+    const cfg = { ...baseConfig([tsNode()], 'ts1'), dnsConfig: undefined } as UserConfig;
+    const domestic = build(cfg).servers.find((s) => s.tag === 'dns-domestic');
+    expect(domestic).toMatchObject({ type: 'https', server: '77.88.8.8', server_port: 443 });
+    expect(domestic).not.toHaveProperty('domain_resolver');
+  });
+});
+
 /**
  * singbox-dns-builder P2b/P2c 单测：乐观 DNS 缓存(optimistic) + DNS 查询超时(timeout) 映射。
  *
@@ -372,13 +395,13 @@ describe('buildDnsConfig — §15 主核测速探测池', () => {
     buildDnsConfig(poolConfig(), 'proxy-selector', null, new Map(), noopLog, 0, [], poolPorts);
 
   // §17.6：池 dns-probe-exit-k transport udp→DoH:443（治 TS 池测速超时，udp 出 tsnet gVisor 弱腿；与 §17.5 伴测同解）。
-  it('probePoolPorts → K 个 dns-probe-exit-k server（223.5.5.5 DoH:443 detour=probe-selector-k）', () => {
+  it('probePoolPorts → K 个 dns-probe-exit-k server（8.8.8.8 DoH:443 detour=probe-selector-k）', () => {
     const dns = buildPool([1, 2, 3]);
     for (let k = 0; k < 3; k++) {
       const s = dns.servers.find((x) => x.tag === `dns-probe-exit-${k}`);
       expect(s).toBeTruthy();
       expect(s!.type).toBe('https'); // DoH（非 udp）：穿 tsnet gVisor 可达，治 TS 池测速超时
-      expect(s!.server).toBe('223.5.5.5');
+      expect(s!.server).toBe('8.8.8.8');
       expect(s!.server_port).toBe(443);
       expect((s as { path?: string }).path).toBe('/dns-query');
       expect(s!.detour).toBe(`probe-selector-${k}`);
@@ -416,14 +439,14 @@ describe('buildDnsConfig — §15 主核测速探测池', () => {
     ).toBe(false);
   });
 
-  // §17.5：出口伴测 / 出口 IP 探测（probe-proxy-in）专用出口 DNS = 223.5.5.5 over DoH:443，detour=selectedServerTag。
+  // §17.5：出口伴测 / 出口 IP 探测（probe-proxy-in）专用出口 DNS = EXIT_RESOLVER_IP(8.8.8.8) over DoH:443，detour=selectedServerTag。
   // China-reachable 治大陆出口（dns.google 8.8.4.4:443 穿大陆 16s 超时，真机实证）+ TCP/DoH 穿 tsnet 治 TS-exit（udp 弱腿）。
-  it('probeProxyPort → dns-probe-exit-proxy server(223.5.5.5 DoH:443, detour=selectedServerTag) + probe-proxy-in rule 指它', () => {
+  it('probeProxyPort → dns-probe-exit-proxy server(8.8.8.8 DoH:443, detour=selectedServerTag) + probe-proxy-in rule 指它', () => {
     const dns = buildDnsConfig(poolConfig(), 'proxy-selector', null, new Map(), noopLog, 0, [], [], 21002);
     const s = dns.servers.find((x) => x.tag === 'dns-probe-exit-proxy');
     expect(s).toBeTruthy();
     expect(s!.type).toBe('https'); // DoH（非 udp）：穿 tsnet gVisor 可达
-    expect(s!.server).toBe('223.5.5.5'); // AliDNS，China-reachable：治大陆出口
+    expect(s!.server).toBe('8.8.8.8'); // Google：ECS 按出口地理返 IP（本 fork 出口不在大陆）
     expect(s!.server_port).toBe(443);
     expect((s as { path?: string }).path).toBe('/dns-query');
     expect(s!.detour).toBe('proxy-selector'); // 随主 selector 跟当前节点（geo 正确 + 热切换自动跟随）

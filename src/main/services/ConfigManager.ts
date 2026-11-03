@@ -27,7 +27,19 @@ import {
 } from '../../shared/rules';
 import { defaultAppRules, seedDefaultAppRules } from '../../shared/app-rules-preset';
 import { DEFAULT_SPEED_TEST_URL } from '../../shared/speed-test';
-import { DNS_TIMEOUT_MIN_MS, DNS_TIMEOUT_MAX_MS } from '../../shared/dns';
+import {
+  DEFAULT_DOMESTIC_DNS,
+  DEFAULT_FOREIGN_DNS,
+  DNS_TIMEOUT_MIN_MS,
+  DNS_TIMEOUT_MAX_MS,
+  LEGACY_DOMESTIC_DNS,
+} from '../../shared/dns';
+import {
+  DEFAULT_POOL_IDS,
+  DEFAULT_SINGLE_ID,
+  LEGACY_POOL_IDS,
+  LEGACY_SINGLE_ID,
+} from '../../shared/node-resolver-upstreams';
 // 协议白名单 + 协议必填校验单一真值：与渲染侧首页连接闸门 isServerComplete 共用同一份
 // shared/server-completeness，杜绝「新增协议时主/渲染各自枚举漂移」（WireGuard 漏列致连接按钮
 // 恒置灰、anytls 曾在此漏校验，均属此类）。
@@ -192,6 +204,9 @@ export class ConfigManager implements IConfigManager {
       // 节点域名解析器一次性迁移（issue #147，幂等、绝不抛）：旧单选档位 nodeDomainResolver → 新多源 race 模型
       // nodeResolverPool(on 多选)+nodeResolverSingle(off 单选)。须在 migrateFakeIpToggle 之后（依赖 dnsConfig 已补齐）。
       await this.migrateNodeResolver(config);
+
+      // 中国 DNS 默认值 → Yandex 一次性迁移（本 fork，幂等、绝不抛）。须在 migrateNodeResolver 之后（依赖 pool/single 已落值）。
+      await this.migrateDnsDefaults(config);
 
       // 订阅代理策略一次性迁移（已发布布尔字段 subscriptionUpdateViaProxy@4eccd59 → 新三态，幂等、绝不抛）：
       // 旧 true（订阅经代理，常因订阅地址被墙而开）若不迁移会随字段改名静默退化为直连（被墙订阅拉取失败、无感）。
@@ -1033,8 +1048,8 @@ export class ConfigManager implements IConfigManager {
       if (!config.dnsConfig) {
         const modeType = (config.proxyModeType || 'systemProxy').toLowerCase();
         config.dnsConfig = {
-          domesticDns: 'https://doh.pub/dns-query',
-          foreignDns: 'https://dns.google/dns-query',
+          domesticDns: DEFAULT_DOMESTIC_DNS,
+          foreignDns: DEFAULT_FOREIGN_DNS,
           enableFakeIp: modeType !== 'systemproxy', // tun/manual → true；systemProxy → false（无现值可保留，回落开关默认）
           fakeIpToggleMigrated: true,
         };
@@ -1121,6 +1136,47 @@ export class ConfigManager implements IConfigManager {
   }
 
   /**
+   * 国内 DNS / 节点解析默认值一次性迁移（本 fork，幂等 dnsDefaultsMigrated 守卫、绝不抛）：上游默认的中国 DNS
+   * （国内 DNS=腾讯 doh.pub、节点解析 race 池=AliDNS+DNSPod、单选=AliDNS）→ Yandex。只改「仍等于旧默认」的值，
+   * 用户自己改过的保留。地区分流显式选了中国大陆（regionRouting.region==='cn'）→ 跳过且不置位：之后切到别的地区，
+   * 下次启动再迁。
+   */
+  private async migrateDnsDefaults(config: UserConfig): Promise<void> {
+    try {
+      const dns = config.dnsConfig;
+      if (!dns || dns.dnsDefaultsMigrated === true) return;
+      if (config.regionRouting?.region === 'cn') return;
+      const changed: string[] = [];
+      if (dns.domesticDns === LEGACY_DOMESTIC_DNS) {
+        dns.domesticDns = DEFAULT_DOMESTIC_DNS;
+        changed.push('domesticDns');
+      }
+      const pool = dns.nodeResolverPool;
+      if (
+        pool &&
+        pool.length === LEGACY_POOL_IDS.length &&
+        LEGACY_POOL_IDS.every((id) => pool.includes(id))
+      ) {
+        dns.nodeResolverPool = [...DEFAULT_POOL_IDS];
+        changed.push('nodeResolverPool');
+      }
+      if (dns.nodeResolverSingle === LEGACY_SINGLE_ID) {
+        dns.nodeResolverSingle = DEFAULT_SINGLE_ID;
+        changed.push('nodeResolverSingle');
+      }
+      dns.dnsDefaultsMigrated = true;
+      if (changed.length) {
+        this.log('info', `DNS 默认值已从中国 DNS 迁移到 Yandex：${changed.join(', ')}`);
+      }
+      await this.saveConfig(config).catch((e) =>
+        this.log('warn', `DNS 默认值迁移后落盘失败（不阻断，下次重试）: ${e}`)
+      );
+    } catch (e) {
+      this.log('warn', `DNS 默认值迁移失败（吞掉，不影响启动）: ${e}`);
+    }
+  }
+
+  /**
    * TUN 默认值（stack + mtu）一次性迁移（幂等、绝不抛）：存量值多为旧版本写死后持久化的结果，
    * 而非用户真实选择（旧 UI 既不暴露 stack 也不暴露 mtu）→ 归 'auto'，由解析期按 PLATFORM_DEFAULT_STACK /
    * PLATFORM_DEFAULT_MTU **当前表**落值。
@@ -1181,16 +1237,17 @@ export class ConfigManager implements IConfigManager {
 
       // 默认 DNS 配置
       dnsConfig: {
-        domesticDns: 'https://doh.pub/dns-query',
-        foreignDns: 'https://dns.google/dns-query',
+        domesticDns: DEFAULT_DOMESTIC_DNS,
+        foreignDns: DEFAULT_FOREIGN_DNS,
         enableFakeIp: true, // 新装默认开（usesFakeIp 已统一为纯看开关；存量经 migrateFakeIpToggle 一次性迁移）
         fakeIpToggleMigrated: true, // 新装无需迁移：直接落 effective 默认，标记防 migrate 再改写
         fakeIpTunAutoEnable: false, // 新装 enableFakeIp 已 true，无迁移冻结待纠正（对齐 fakeIpToggleMigrated 新装置位）
         takeoverSystemDns: true, // TUN 模式接管系统 DNS 默认开（缺省本已 ?? true 视为开，此处显式声明）
-        // issue #147 节点域名解析（多源 race）：新装默认 race-on、池=AliDNS+DNSPod；off 单选默认 Ali。
-        nodeResolverPool: ['ali', 'dnspod'],
-        nodeResolverSingle: 'ali',
+        // issue #147 节点域名解析（多源 race）：新装默认 race-on、池=Yandex×2；off 单选默认 Yandex。
+        nodeResolverPool: [...DEFAULT_POOL_IDS],
+        nodeResolverSingle: DEFAULT_SINGLE_ID,
         nodeResolverMigrated: true, // 新装无需迁移：直接落新模型默认，标记防 migrate 再改写
+        dnsDefaultsMigrated: true, // 新装已是 Yandex 默认，无需中国 DNS 迁移
       },
 
       customRuleSets: [], // 默认空

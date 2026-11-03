@@ -2,22 +2,29 @@
  * 节点域名解析上游模型（issue #147 多源 race）。纯逻辑、无 I/O，UI 校验 + 主进程 race server 共用、可逐项单测。
  *
  * 设计 docs/design/issue147-node-dns-race-resolver.md §9：
- *  - 内置上游单一真值（ali/dnspod/system），IP 派生自 shared/dns 的 DOH_*_IP（杜绝硬编漂移）。
+ *  - 内置上游单一真值（yandex/yandex2/ali/dnspod/system），IP 派生自 shared/dns 的 DOH_*_IP（杜绝硬编漂移）。
  *  - 自定义上游强制纯 IP（parseDnsServerSpec.isDomain 拒绝）：零 bootstrap + route 直连放行确定。
  *  - Tier1（加密 DoH/DoT）抢跑、上限 3；Tier2（明文 UDP / system）兜底不占额度、不与 DoH 抢跑。
  *  - canonical 去重：内置与等价自定义合并（先去重再数上限）。
  */
-import { DOH_ALIDNS_IP, DOH_DNSPOD_IP, parseDnsServerSpec } from './dns';
+import {
+  DOH_ALIDNS_IP,
+  DOH_DNSPOD_IP,
+  DOH_YANDEX_ALT_IP,
+  DOH_YANDEX_IP,
+  parseDnsServerSpec,
+} from './dns';
 import type { CustomDnsUpstream } from './types';
 
 /** 一个解析上游 = 一种解析方式 + 其 Tier。 */
 export interface ResolveUpstream {
-  id: string; // 'ali' | 'dnspod' | 'system' | 自定义 id
+  id: string; // 'yandex' | 'yandex2' | 'ali' | 'dnspod' | 'system' | 自定义 id
   kind: 'doh' | 'udp' | 'system'; // doh: DoH/DoT over IP（fetch/TLS）; udp: 明文 UDP; system: 系统 DNS
   ip?: string; // 纯 IP（doh/udp；system 无）
   port?: number;
   path?: string; // 仅 DoH(https)
   dot?: boolean; // doh kind 下是否 DoT(tls)——实现侧区分 DoH(fetch) vs DoT(TLS)
+  http2?: boolean; // DoH 走 HTTP/2（Yandex 只认 h2，HTTP/1.1 直接断连）；缺省走 fetch（HTTP/1.1）
   tier: 1 | 2; // Tier1 抢跑（加密）/ Tier2 兜底（明文 UDP / system）
 }
 
@@ -25,18 +32,39 @@ export interface ResolveUpstream {
 export const MAX_TIER1_UPSTREAMS = 3;
 
 /** 内置上游 id。 */
-export type BuiltinUpstreamId = 'ali' | 'dnspod' | 'system';
+export type BuiltinUpstreamId = 'yandex' | 'yandex2' | 'ali' | 'dnspod' | 'system';
 
 /** 内置上游单一真值（id → ResolveUpstream），IP 派生 DOH_*_IP，杜绝硬编漂移。 */
 export const BUILTIN_UPSTREAMS: Record<BuiltinUpstreamId, ResolveUpstream> = {
+  yandex: {
+    id: 'yandex',
+    kind: 'doh',
+    ip: DOH_YANDEX_IP,
+    port: 443,
+    path: '/dns-query',
+    http2: true,
+    tier: 1,
+  },
+  yandex2: {
+    id: 'yandex2',
+    kind: 'doh',
+    ip: DOH_YANDEX_ALT_IP,
+    port: 443,
+    path: '/dns-query',
+    http2: true,
+    tier: 1,
+  },
   ali: { id: 'ali', kind: 'doh', ip: DOH_ALIDNS_IP, port: 443, path: '/dns-query', tier: 1 },
   dnspod: { id: 'dnspod', kind: 'doh', ip: DOH_DNSPOD_IP, port: 443, path: '/dns-query', tier: 1 },
   system: { id: 'system', kind: 'system', tier: 2 },
 };
 
-/** 解析档位的初始默认（race on 多选 / off 单选）。 */
-export const DEFAULT_POOL_IDS: readonly string[] = ['ali', 'dnspod'];
-export const DEFAULT_SINGLE_ID = 'ali';
+/** 解析档位的初始默认（race on 多选 / off 单选）：Yandex 两个 anycast IP。 */
+export const DEFAULT_POOL_IDS: readonly string[] = ['yandex', 'yandex2'];
+export const DEFAULT_SINGLE_ID = 'yandex';
+/** 上游默认（AliDNS + DNSPod）：仅供一次性迁移识别「未改过的旧默认」。 */
+export const LEGACY_POOL_IDS: readonly string[] = ['ali', 'dnspod'];
+export const LEGACY_SINGLE_ID = 'ali';
 
 /**
  * 自定义上游 spec → ResolveUpstream；**强制纯 IP**（parseDnsServerSpec.isDomain 拒绝），非法/域名返回 null。
@@ -86,7 +114,7 @@ export interface ResolvedUpstreams {
  * 解析上游 id 列表 → Tier1/Tier2 分桶 + canonical 去重 + Tier1 上限 3。
  * @param ids 勾选(pool)/单选([single]) 的上游 id。无效 id / 自定义解析失败 / 重复 → 跳过。
  * @param custom 自定义上游定义。
- * 空 Tier1（全不勾/全无效/仅 Tier2）→ 回退默认 [ali,dnspod]，防误配致无抢跑上游全断（设计 §9.3 校验闸）。
+ * 空 Tier1（全不勾/全无效/仅 Tier2）→ 回退默认 [yandex,yandex2]，防误配致无抢跑上游全断（设计 §9.3 校验闸）。
  */
 export function resolveUpstreams(
   ids: readonly string[],
@@ -111,9 +139,9 @@ export function resolveUpstreams(
       tier2.push(up);
     }
   }
-  // 空 Tier1 → 回退默认 [ali,dnspod]（race 需至少一个抢跑上游）。去重防与已有 Tier2 重复。
+  // 空 Tier1 → 回退默认 [yandex,yandex2]（race 需至少一个抢跑上游）。去重防与已有 Tier2 重复。
   if (tier1.length === 0) {
-    tier1.push(BUILTIN_UPSTREAMS.ali, BUILTIN_UPSTREAMS.dnspod);
+    tier1.push(BUILTIN_UPSTREAMS.yandex, BUILTIN_UPSTREAMS.yandex2);
   }
   const directIps: string[] = [];
   for (const u of [...tier1, ...tier2]) {
