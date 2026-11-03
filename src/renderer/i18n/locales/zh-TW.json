@@ -1618,6 +1618,8 @@
       "parseDetail": "內容不是有效訂閱（Clash/sing-box/Base64 均無法解析）",
       "emptyTitle": "訂閱為空",
       "emptyDetail": "擷取成功但沒有可用節點",
+      "transportTitle": "節點傳輸層不受支援",
+      "transportDetail": "該訂閱的節點使用 sing-box 核心不支援的傳輸層（如 XHTTP）。請向服務商索取 WebSocket、gRPC、HTTPUpgrade 或 TCP 節點。",
       "unknownTitle": "新增失敗",
       "unknownDetail": "無法驗證訂閱，請稍後重試或聯絡機場"
     },

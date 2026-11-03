@@ -1618,6 +1618,8 @@
       "parseDetail": "内容不是有效订阅（Clash/sing-box/Base64 均无法解析）",
       "emptyTitle": "订阅为空",
       "emptyDetail": "拉取成功但没有可用节点",
+      "transportTitle": "节点传输层不受支持",
+      "transportDetail": "该订阅的节点使用 sing-box 内核不支持的传输层（如 XHTTP）。请向服务商索取 WebSocket、gRPC、HTTPUpgrade 或 TCP 节点。",
       "unknownTitle": "添加失败",
       "unknownDetail": "无法验证订阅，请稍后重试或联系机场"
     },

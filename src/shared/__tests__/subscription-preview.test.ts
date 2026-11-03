@@ -22,41 +22,41 @@ describe('classifySubscriptionError（订阅预检错误分类）', () => {
     expect(classifySubscriptionError({ code: 'ENOTFOUND' }).errorKind).toBe('dns');
     expect(classifySubscriptionError({ code: 'EAI_AGAIN' }).errorKind).toBe('dns');
     expect(classifySubscriptionError({ code: 'ETIMEDOUT' }).errorKind).toBe('timeout');
-    expect(classifySubscriptionError({ code: 'UND_ERR_CONNECT_TIMEOUT' }).errorKind).toBe('timeout');
+    expect(classifySubscriptionError({ code: 'UND_ERR_CONNECT_TIMEOUT' }).errorKind).toBe(
+      'timeout'
+    );
     expect(classifySubscriptionError({ code: 'ABORT_ERR' }).errorKind).toBe('timeout');
     expect(classifySubscriptionError({ code: 'ECONNREFUSED' }).errorKind).toBe('refused');
     expect(classifySubscriptionError({ code: 'EHOSTUNREACH' }).errorKind).toBe('refused');
   });
 
   it('Electron net::ERR_* / 英文关键字兜底（code 藏在 message）', () => {
-    expect(
-      classifySubscriptionError({ message: 'net::ERR_NAME_NOT_RESOLVED' }).errorKind
-    ).toBe('dns');
-    expect(classifySubscriptionError({ message: 'request to x failed, ERR_TIMED_OUT' }).errorKind).toBe(
-      'timeout'
+    expect(classifySubscriptionError({ message: 'net::ERR_NAME_NOT_RESOLVED' }).errorKind).toBe(
+      'dns'
     );
     expect(
-      classifySubscriptionError({ message: 'net::ERR_CONNECTION_REFUSED' }).errorKind
-    ).toBe('refused');
-    expect(
-      classifySubscriptionError({ message: 'The operation was aborted' }).errorKind
+      classifySubscriptionError({ message: 'request to x failed, ERR_TIMED_OUT' }).errorKind
     ).toBe('timeout');
+    expect(classifySubscriptionError({ message: 'net::ERR_CONNECTION_REFUSED' }).errorKind).toBe(
+      'refused'
+    );
+    expect(classifySubscriptionError({ message: 'The operation was aborted' }).errorKind).toBe(
+      'timeout'
+    );
   });
 
   it('本项目确定性中文文案：体积/协议/空/SSRF/解析', () => {
-    expect(classifySubscriptionError({ message: '订阅响应体积超过上限 10MB，已拒绝' }).errorKind).toBe(
-      'toolarge'
-    );
+    expect(
+      classifySubscriptionError({ message: '订阅响应体积超过上限 10MB，已拒绝' }).errorKind
+    ).toBe('toolarge');
     expect(
       classifySubscriptionError({ message: '订阅地址协议不支持（仅允许 http/https）: https://x' })
         .errorKind
     ).toBe('scheme');
-    expect(classifySubscriptionError({ message: 'sing-box 订阅解析得到 0 个可用节点' }).errorKind).toBe(
-      'empty'
-    );
     expect(
-      classifySubscriptionError({ message: '拒绝访问内网/本机地址' }).errorKind
-    ).toBe('ssrf');
+      classifySubscriptionError({ message: 'sing-box 订阅解析得到 0 个可用节点' }).errorKind
+    ).toBe('empty');
+    expect(classifySubscriptionError({ message: '拒绝访问内网/本机地址' }).errorKind).toBe('ssrf');
     expect(classifySubscriptionError({ message: '重定向次数超过上限' }).errorKind).toBe('ssrf');
     expect(
       classifySubscriptionError({ message: 'Clash YAML 解析失败: bad indentation' }).errorKind
@@ -69,8 +69,17 @@ describe('classifySubscriptionError（订阅预检错误分类）', () => {
   it('http 文案优先于 refused：empty/scheme/toolarge 是主动 throw 文案，先于网络码判', () => {
     // 体积超限文案 + 恰好 message 含 refused 关键字（极端），体积优先（本项目主动 throw 稳定文案）
     expect(
-      classifySubscriptionError({ message: '订阅响应体积超过上限，connection refused 噪声' }).errorKind
+      classifySubscriptionError({ message: '订阅响应体积超过上限，connection refused 噪声' })
+        .errorKind
     ).toBe('toolarge');
+  });
+
+  it('节点全部栽在内核不支持的传输层（xhttp）→ transport，先于 empty（文案同含「0 个可用节点」）', () => {
+    expect(
+      classifySubscriptionError({
+        message: '订阅中的节点都使用内核不支持的传输层（xhttp），解析得到 0 个可用节点',
+      })
+    ).toEqual({ errorKind: 'transport' });
   });
 
   it('未覆盖形态 → unknown（不误判，UI 给通用文案 + 原始 message 上报）', () => {

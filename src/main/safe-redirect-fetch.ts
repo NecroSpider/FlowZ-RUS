@@ -47,6 +47,12 @@ export interface SafeRedirectFetchOptions<R extends MinimalResponse> {
   headers?: Record<string, string>;
   /** 仅实际经代理（proxied socks 出口、本机内网不可达）时豁免 FlowZ FakeIP；直连/端口回退传 false。 */
   exemptFakeIp: boolean;
+  /**
+   * 起始 URL 由用户亲手填写（主订阅）：首跳不做内网判定——公司内网（经工作 VPN 解析到 10.x）/ 局域网面板 /
+   * 本机 subconverter 都是合法订阅源，而 SSRF 要防的是「远端内容驱使本机去拉内网」。重定向目标仍逐跳复检。
+   * provider 等来自订阅正文的地址不得传 true。
+   */
+  trustInitialUrl?: boolean;
   /** 重定向上限（含首跳之外的跳数），默认 5。 */
   maxRedirects?: number;
   signal?: AbortSignal;
@@ -85,8 +91,8 @@ export async function safeRedirectFetch<R extends MinimalResponse>(
   const lookup: DnsLookupAll = opts.lookup ?? ((h) => dnsPromises.lookup(h, { all: true }));
   let currentUrl = opts.url;
 
-  // 首跳 guard（起始 URL 协议由调用方保证为 http(s)）。
-  await guard(new URL(currentUrl), lookup, opts.exemptFakeIp);
+  // 首跳 guard（起始 URL 协议由调用方保证为 http(s)）；用户亲手填写的起始 URL 免检（见 trustInitialUrl）。
+  if (!opts.trustInitialUrl) await guard(new URL(currentUrl), lookup, opts.exemptFakeIp);
 
   let response: R | null = null;
   for (let hop = 0; hop <= maxRedirects; hop++) {

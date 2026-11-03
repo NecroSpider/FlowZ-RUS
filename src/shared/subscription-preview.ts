@@ -22,6 +22,7 @@ export type SubscriptionErrorKind =
   | 'toolarge' // 响应体积超上限
   | 'parse' // 拉到内容但非有效订阅格式
   | 'empty' // 解析成功但 0 节点
+  | 'transport' // 节点全部使用内核不支持的传输层（如 xhttp）
   | 'unknown'; // 未归类
 
 export interface SubscriptionPreviewResult {
@@ -53,9 +54,10 @@ export interface SubscriptionErrorSignal {
  *  3) Electron net::ERR_* 与中文/英文文案关键字兜底（net.fetch 常把 code 藏在 message）。
  * 真机若出现未覆盖的 message 形态 → 落 unknown（UI 给通用文案 + 原始 message 供上报），不误判。
  */
-export function classifySubscriptionError(
-  sig: SubscriptionErrorSignal
-): { errorKind: SubscriptionErrorKind; httpStatus?: number } {
+export function classifySubscriptionError(sig: SubscriptionErrorSignal): {
+  errorKind: SubscriptionErrorKind;
+  httpStatus?: number;
+} {
   const status = sig.httpStatus;
   if (typeof status === 'number' && status >= 400) {
     return { errorKind: 'http', httpStatus: status };
@@ -69,6 +71,7 @@ export function classifySubscriptionError(
   // 因为这些是本项目主动 throw、文案稳定）。
   if (/体积超过上限|too large|导入内容过大/.test(msg)) return { errorKind: 'toolarge' };
   if (/协议不支持|仅允许 http/.test(msg)) return { errorKind: 'scheme' };
+  if (/不支持的传输层/.test(msg)) return { errorKind: 'transport' };
   if (/0 个可用节点|得到 0 个|为空/.test(msg)) return { errorKind: 'empty' };
   if (/内网|本机|私有地址|ssrf|loopback|private|重定向次数超过/.test(m) || /内网|本机/.test(msg))
     return { errorKind: 'ssrf' };
@@ -91,7 +94,10 @@ export function classifySubscriptionError(
     return { errorKind: 'refused' };
 
   // 解析类文案（parseSubscriptionContent 的结构/格式错误）。
-  if (/解析失败|无法识别|结构异常|格式错误|不是有效|parse|yaml|json/.test(m) || /解析|识别|格式/.test(msg))
+  if (
+    /解析失败|无法识别|结构异常|格式错误|不是有效|parse|yaml|json/.test(m) ||
+    /解析|识别|格式/.test(msg)
+  )
     return { errorKind: 'parse' };
 
   return { errorKind: 'unknown' };
@@ -111,5 +117,6 @@ export const SUBSCRIPTION_ERROR_I18N_KEY: Record<
   toolarge: { title: 'sub.preview.toolargeTitle', detail: 'sub.preview.toolargeDetail' },
   parse: { title: 'sub.preview.parseTitle', detail: 'sub.preview.parseDetail' },
   empty: { title: 'sub.preview.emptyTitle', detail: 'sub.preview.emptyDetail' },
+  transport: { title: 'sub.preview.transportTitle', detail: 'sub.preview.transportDetail' },
   unknown: { title: 'sub.preview.unknownTitle', detail: 'sub.preview.unknownDetail' },
 };

@@ -671,7 +671,9 @@ export class SubscriptionService {
     signal?: AbortSignal,
     conditional?: { etag?: string; lastModified?: string },
     /** 设备标识头（x-hwid 等）：只给主订阅地址，provider 地址来自订阅正文、不发。 */
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
+    /** 主订阅地址（用户亲手填写）→ 首跳免内网判定；provider 地址来自订阅正文、恒 false。 */
+    trustInitialUrl = false
   ): Promise<{
     text: string;
     userInfo?: SubscriptionConfig['userInfo'];
@@ -735,6 +737,7 @@ export class SubscriptionService {
       url,
       userAgent,
       exemptFakeIp: viaProxiedSession,
+      trustInitialUrl,
       ...(Object.keys(reqHeaders).length ? { headers: reqHeaders } : {}),
       ...(signal ? { signal } : {}),
     });
@@ -978,6 +981,8 @@ export class SubscriptionService {
     // ②解析失败的行（原只有散落 warn）——最终 info 一并给出，用户不翻告警也能看出「导入不全」。
     let failedLines = 0;
     const unsupportedSchemes = new Map<string, number>();
+    // 内核不支持的传输层（如 Xray 的 xhttp）：单独计数，全部节点都栽在这上面时给出明确原因而非「格式错误」。
+    const unsupportedTransports = new Map<string, number>();
     for (const line of lines) {
       if (this.protocolParser.isSupported(line)) {
         try {
@@ -988,6 +993,10 @@ export class SubscriptionService {
           servers.push(server);
         } catch (e: any) {
           failedLines++;
+          const transport = /不支持的传输层类型: (\S+)/.exec(e?.message ?? '')?.[1];
+          if (transport) {
+            unsupportedTransports.set(transport, (unsupportedTransports.get(transport) ?? 0) + 1);
+          }
           this.logManager.addLog('warn', `解析订阅中的节点失败: ${e.message}`, 'Subscription');
         }
       } else if (line.includes('://')) {
@@ -1007,6 +1016,12 @@ export class SubscriptionService {
       // URL-list/Base64 分支 0 节点也必须 throw（与 Clash/sing-box 对齐），不返回空集 →
       // 防 reconcile 删光存量节点 + 清 selectedServerId（正常订阅不会 0 节点）。
       const hadUrlLines = lines.some((l) => l.includes('://'));
+      const transportFails = [...unsupportedTransports.values()].reduce((a, b) => a + b, 0);
+      if (throwOnEmpty && transportFails > 0 && transportFails === failedLines) {
+        throw new Error(
+          `订阅中的节点都使用内核不支持的传输层（${[...unsupportedTransports.keys()].join(', ')}），解析得到 0 个可用节点`
+        );
+      }
       if (throwOnEmpty) {
         throw new Error(
           hadUrlLines
@@ -1172,7 +1187,8 @@ export class SubscriptionService {
         ua,
         AbortSignal.timeout(SubscriptionService.MAIN_FETCH_TIMEOUT_MS),
         conditional,
-        await this.deviceHeadersOrNone(sendHwid)
+        await this.deviceHeadersOrNone(sendHwid),
+        true
       );
       // §16.3.4：304 → 内容无变化，短路 parse/reconcile（零节点扰动）。
       if (notModified) {
@@ -1235,7 +1251,8 @@ export class SubscriptionService {
         userAgent,
         AbortSignal.timeout(SubscriptionService.MAIN_FETCH_TIMEOUT_MS),
         undefined,
-        await this.deviceHeadersOrNone(opts.sendHwid !== false)
+        await this.deviceHeadersOrNone(opts.sendHwid !== false),
+        true
       );
       const { servers } = await this.parseSubscriptionContent(text.trim(), tempSubId, {
         allowProviders: true,

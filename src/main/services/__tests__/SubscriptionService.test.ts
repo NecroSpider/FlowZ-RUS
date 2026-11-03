@@ -267,55 +267,77 @@ describe('partial → merge-only（reconcile 不删 leftover）', () => {
 });
 
 describe('H1 SSRF DNS rebinding', () => {
-  it('域名解析到 127.0.0.1 → 拒绝（不发 fetch）', async () => {
+  // 主订阅地址由用户亲手填写 → 首跳免内网判定（公司内网经工作 VPN 解析到 10.x、局域网面板、本机 subconverter 都合法；
+  // 真机实证：sub.prx.k8s.zebrains.team → 10.175.0.31 原先被拒）。SSRF 防的是「远端内容驱使本机去拉内网」——
+  // provider 地址（来自订阅正文）与重定向目标仍逐个过 guard（见下方用例与 H2）。
+  it.each([
+    ['127.0.0.1', 'https://local.example.com/c'],
+    ['10.175.0.31', 'https://sub.corp.example/c'],
+    ['192.168.0.5', 'https://panel.lan.example/c'],
+  ])('主订阅地址解析到 %s → 放行（用户亲手填写）', async (address, url) => {
     const log = new FakeLog();
     const svc = newService(log);
-    mockLookup.mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
-    mockFetch.mockResolvedValue(makeResponse({ body: '' }));
-    await expect(svc.fetchSubscription('https://evil.example.com/c', SUB_ID)).rejects.toThrow(
-      /本机\/内网\/link-local/
-    );
-    expect(mockFetch).not.toHaveBeenCalled();
+    mockLookup.mockResolvedValue([{ address, family: 4 }]);
+    const body = JSON.stringify({
+      proxies: [{ name: 'ok', type: 'vless', server: '1.2.3.4', port: 443, uuid: 'u' }],
+    });
+    mockFetch.mockResolvedValue(makeResponse({ body }));
+    const r = await svc.fetchSubscription(url, SUB_ID);
+    expect(r.servers).toHaveLength(1);
   });
 
-  it('域名解析到 169.254.169.254（云元数据）→ 拒绝', async () => {
+  it('主订阅为字面内网 IP / localhost（本机 subconverter）→ 放行', async () => {
     const log = new FakeLog();
     const svc = newService(log);
-    mockLookup.mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
-    await expect(svc.fetchSubscription('https://metadata.example.com/c', SUB_ID)).rejects.toThrow(
-      /本机\/内网\/link-local/
-    );
+    const body = JSON.stringify({
+      proxies: [{ name: 'ok', type: 'vless', server: '1.2.3.4', port: 443, uuid: 'u' }],
+    });
+    mockFetch.mockImplementation(async () => makeResponse({ body })); // 每次新响应（body 只能读一次）
+    await expect(svc.fetchSubscription('http://127.0.0.1:25500/c', SUB_ID)).resolves.toBeTruthy();
+    await expect(svc.fetchSubscription('http://localhost/c', SUB_ID)).resolves.toBeTruthy();
   });
 
-  it('域名解析到内网 10.x → 拒绝', async () => {
-    const log = new FakeLog();
-    const svc = newService(log);
-    mockLookup.mockResolvedValue([{ address: '10.1.2.3', family: 4 }]);
-    await expect(svc.fetchSubscription('https://x.example.com/c', SUB_ID)).rejects.toThrow(
-      /本机\/内网/
-    );
-  });
+  it.each([['127.0.0.1'], ['169.254.169.254'], ['10.1.2.3']])(
+    'provider 地址（来自订阅正文）解析到 %s → 拒绝，不发请求',
+    async (address) => {
+      const log = new FakeLog();
+      const svc = newService(log);
+      mockLookup.mockImplementation(async (host: string) =>
+        host === 'prov.example.com'
+          ? [{ address, family: 4 }]
+          : [{ address: '93.184.216.34', family: 4 }]
+      );
+      const main = JSON.stringify({
+        proxies: [{ name: 'inline', type: 'vless', server: '1.1.1.1', port: 443, uuid: 'a' }],
+        'proxy-providers': { p1: { type: 'http', url: 'https://prov.example.com/p1' } },
+      });
+      mockFetch.mockResolvedValue(makeResponse({ body: main }));
+      const r = await svc.fetchSubscription('https://sub.example.com/c', SUB_ID);
+      expect(r.servers.map((x) => x.name)).toContain('inline');
+      expect(mockFetch.mock.calls.some(([u]) => String(u).includes('prov.example.com'))).toBe(
+        false
+      );
+    }
+  );
 
-  it('多解析结果含一个内网 IP → 拒绝（逐 IP 校验）', async () => {
+  it('provider 多解析结果含一个内网 IP → 拒绝（逐 IP 校验）', async () => {
     const log = new FakeLog();
     const svc = newService(log);
-    mockLookup.mockResolvedValue([
-      { address: '93.184.216.34', family: 4 },
-      { address: '192.168.0.5', family: 4 },
-    ]);
-    await expect(svc.fetchSubscription('https://x.example.com/c', SUB_ID)).rejects.toThrow(
-      /本机\/内网/
+    mockLookup.mockImplementation(async (host: string) =>
+      host === 'prov.example.com'
+        ? [
+            { address: '93.184.216.34', family: 4 },
+            { address: '192.168.0.5', family: 4 },
+          ]
+        : [{ address: '93.184.216.34', family: 4 }]
     );
-  });
-
-  it('字面内网 IP host（localhost/127.0.0.1）直接拒（不查 DNS）', async () => {
-    const log = new FakeLog();
-    const svc = newService(log);
-    await expect(svc.fetchSubscription('http://127.0.0.1:9090/c', SUB_ID)).rejects.toThrow(
-      /本机\/内网/
-    );
-    await expect(svc.fetchSubscription('http://localhost/c', SUB_ID)).rejects.toThrow(/本机\/内网/);
-    expect(mockLookup).not.toHaveBeenCalled();
+    const main = JSON.stringify({
+      proxies: [{ name: 'inline', type: 'vless', server: '1.1.1.1', port: 443, uuid: 'a' }],
+      'proxy-providers': { p1: { type: 'http', url: 'https://prov.example.com/p1' } },
+    });
+    mockFetch.mockResolvedValue(makeResponse({ body: main }));
+    await svc.fetchSubscription('https://sub.example.com/c', SUB_ID);
+    expect(mockFetch.mock.calls.some(([u]) => String(u).includes('prov.example.com'))).toBe(false);
   });
 
   it('解析到公网 IP → 放行', async () => {

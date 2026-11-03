@@ -44,6 +44,49 @@ async function expectReason(p: Promise<unknown>, reason: SafeFetchError['reason'
 }
 
 describe('safeRedirectFetch', () => {
+  // 主订阅地址由用户亲手填写：公司内网（经工作 VPN 解析到 10.x）/ 局域网面板合法，首跳免内网判定；
+  // 真机实证：sub.prx.k8s.zebrains.team 经 VPN DNS → 10.175.0.31，原先被拒「订阅地址解析到本机/内网」。
+  it('trustInitialUrl：首跳解析到内网也放行（不调 lookup）', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(makeResp(200));
+    const lookup = jest.fn().mockResolvedValue(INTERNAL);
+    const r = await safeRedirectFetch<FakeResp>({
+      ...base,
+      fetchImpl,
+      url: 'https://sub.corp.example/token',
+      lookup,
+      trustInitialUrl: true,
+    });
+    expect(r.status).toBe(200);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('trustInitialUrl：重定向到内网仍被拦（只免首跳）', async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(makeResp(302, 'http://169.254.169.254/latest'));
+    const lookup = jest.fn().mockResolvedValue(META);
+    await expectReason(
+      safeRedirectFetch<FakeResp>({
+        ...base,
+        fetchImpl,
+        url: 'https://sub.example.com/x',
+        lookup,
+        trustInitialUrl: true,
+      }),
+      'ssrf'
+    );
+  });
+
+  it('默认（provider 等不可信地址）首跳解析到内网 → 拒', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(makeResp(200));
+    const lookup = jest.fn().mockResolvedValue(INTERNAL);
+    await expectReason(
+      safeRedirectFetch<FakeResp>({ ...base, fetchImpl, url: 'https://p.example/x', lookup }),
+      'ssrf'
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('首跳公网 → 返回终态响应，下发 redirect:manual + UA', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(makeResp(200));
     const lookup = jest.fn().mockResolvedValue(PUBLIC);
