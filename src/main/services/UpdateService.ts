@@ -1,3 +1,4 @@
+import { isPrereleaseVersion } from '../../shared/update-channel';
 /**
  * 更新检查服务
  * 通过 GitHub API 检查新版本并支持下载
@@ -173,7 +174,10 @@ export class UpdateService {
       const releases = await this.fetchReleases();
 
       const validReleases = releases
-        .filter((r: any) => includePrerelease || !r.prerelease)
+        .filter(
+          (r: any) =>
+            !r.draft && (includePrerelease || !isPrereleaseVersion(r.tag_name, r.prerelease))
+        )
         .sort(
           (a: any, b: any) =>
             new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
@@ -223,7 +227,7 @@ export class UpdateService {
         downloadUrl: asset.browser_download_url,
         fileSize: asset.size,
         publishedAt: latestRelease.published_at,
-        isPrerelease: latestRelease.prerelease,
+        isPrerelease: isPrereleaseVersion(latestRelease.tag_name, latestRelease.prerelease),
         fileName: asset.name,
       };
 
@@ -278,7 +282,28 @@ export class UpdateService {
     }
   }
 
+  private async confirmPrerelease(updateInfo: UpdateInfo): Promise<boolean> {
+    if (!isPrereleaseVersion(updateInfo.version, updateInfo.isPrerelease)) return true;
+    const options = {
+      type: 'warning' as const,
+      title: mt('updPrereleaseTitle'),
+      message: `${mt('updPrereleaseTitle')}: ${updateInfo.version}`,
+      detail: mt('updPrereleaseWarning'),
+      buttons: [mt('updPrereleaseDownload'), mt('updBtnCancel')],
+      defaultId: 1,
+      cancelId: 1,
+    };
+    const win = this.mainWindow && !this.mainWindow.isDestroyed() ? this.mainWindow : null;
+    const { response } = win
+      ? await dialog.showMessageBox(win, options)
+      : await dialog.showMessageBox(options);
+    return response === 0;
+  }
+
   async downloadUpdate(updateInfo: UpdateInfo): Promise<string | null> {
+    if (!(await this.confirmPrerelease(updateInfo))) {
+      throw Object.assign(new Error('Prerelease download cancelled'), { code: 'UPDATE_CANCELLED' });
+    }
     // 手动下载不传 cancel token → 不可取消、与弹窗流的取消 token 完全隔离（无跨流污染）。
     try {
       this.logManager.addLog('info', `Downloading update: ${updateInfo.version}`, 'UpdateService');
@@ -601,7 +626,11 @@ export class UpdateService {
   /** 弹窗静态文案（按当前语言 mt 渲染进载荷；弹窗页无 i18n runtime，E5）。 */
   private popupLabels(): UpdatePopupLabels {
     return {
-      remindTitle: mt('updRemindTitle'),
+      remindTitle:
+        this.currentUpdateInfo &&
+        isPrereleaseVersion(this.currentUpdateInfo.version, this.currentUpdateInfo.isPrerelease)
+          ? mt('updPrereleaseTitle')
+          : mt('updRemindTitle'),
       progressTitle: mt('updProgressTitle'),
       doneTitle: mt('updDoneTitle'),
       errorTitle: mt('updErrorTitle'),
@@ -815,6 +844,10 @@ export class UpdateService {
    * 的「不触碰 mainWindow 进度」语义一致）。
    */
   async downloadUpdateWithProgress(updateInfo: UpdateInfo): Promise<string | null> {
+    if (!(await this.confirmPrerelease(updateInfo))) {
+      this.closeUpdatePopup();
+      return null;
+    }
     this.currentUpdateInfo = updateInfo;
     const downloadDir = app.getPath('temp');
     const filePath = path.join(downloadDir, updateInfo.fileName);

@@ -779,6 +779,7 @@
       "manualDownload": "دانلود دستی",
       "downloadComplete": "دانلود کامل شد، در حال نصب...",
       "unknownError": "خطای نامشخص",
+      "prereleaseWarning": "نسخه آزمایشی: ممکن است خطا داشته باشد. پیش از دانلود تأیید لازم است.",
       "checkingUpdate": "در حال بررسی به‌روزرسانی‌ها...",
       "checkUpdateFail": "بررسی به‌روزرسانی ناموفق بود",
       "cannotConnectServer": "نمی‌توان به سرور به‌روزرسانی متصل شد",

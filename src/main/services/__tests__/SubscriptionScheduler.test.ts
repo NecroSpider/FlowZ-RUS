@@ -283,3 +283,15 @@ describe('SubscriptionScheduler §2 自动刷新分流', () => {
     expect(applyConfigForcingRestart).toHaveBeenCalledTimes(1); // 规则目标(被引用)被改 → 恒重启，虽 OFF
   });
 });
+
+it('discards an automatic refresh when its URL was edited while the provider responded', async () => {
+  const config = makeConfig();
+  const { run, fetchSubscription, configManager } = makeScheduler(config, false);
+  fetchSubscription.mockImplementationOnce(async () => {
+    config.subscriptions[0].url = 'http://new-url';
+    return { notModified: true, etag: 'old-url-etag' };
+  });
+  await run();
+  expect(configManager.saveConfig).not.toHaveBeenCalled();
+  expect(config.subscriptions[0].url).toBe('http://new-url');
+});

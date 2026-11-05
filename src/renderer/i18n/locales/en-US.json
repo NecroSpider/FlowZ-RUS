@@ -779,6 +779,7 @@
       "manualDownload": "Manual Download",
       "downloadComplete": "Download complete, installing...",
       "unknownError": "Unknown error",
+      "prereleaseWarning": "Test version: may contain bugs. Confirmation is required before downloading.",
       "checkingUpdate": "Checking for updates...",
       "checkUpdateFail": "Update check failed",
       "cannotConnectServer": "Cannot connect to update server",

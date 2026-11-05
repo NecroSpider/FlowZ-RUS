@@ -1,3 +1,4 @@
+import { isPrereleaseVersion } from '../../../shared/update-channel';
 import { X, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { UpdateInfo } from '../../../shared/types/update';
@@ -29,7 +30,11 @@ export function AppUpdateBanner({
       </span>
       <div className="aub-tx">
         <b>{t('settings.about.foundUpdate', { version: updateInfo.version })}</b>
-        <span>{t('settings.about.clickToInstall')}</span>
+        <span>
+          {isPrereleaseVersion(updateInfo.version, updateInfo.isPrerelease)
+            ? t('settings.about.prereleaseWarning')
+            : t('settings.about.clickToInstall')}
+        </span>
       </div>
       <button type="button" className="btn flow sm" disabled={downloading} onClick={onUpdate}>
         {downloading && <Loader2 className="h-3 w-3 animate-spin" />}

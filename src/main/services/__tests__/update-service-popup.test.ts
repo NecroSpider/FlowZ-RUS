@@ -133,3 +133,70 @@ describe('UpdateService.localizeDownloadError 错误本地化映射（Low-5）',
     setMainLanguage('en-US');
   });
 });
+
+describe('prerelease confirmation and stable channel', () => {
+  const info = {
+    version: 'v9.0.0',
+    isPrerelease: true,
+    fileName: 'test.exe',
+    downloadUrl: 'https://example.com/test.exe',
+    fileSize: 1,
+  };
+  afterEach(() => jest.restoreAllMocks());
+
+  it('cancel prevents downloading from settings and is distinguishable from a network error', async () => {
+    const { dialog } = require('electron');
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    const svc = new UpdateService(log) as any;
+    const download = jest.spyOn(svc, 'downloadFile');
+    await expect(svc.downloadUpdate(info)).rejects.toMatchObject({ code: 'UPDATE_CANCELLED' });
+    expect(download).not.toHaveBeenCalled();
+    expect(dialog.showMessageBox).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'warning', defaultId: 1, cancelId: 1 })
+    );
+  });
+
+  it('cancel also prevents popup downloads, while explicit acceptance permits the download', async () => {
+    const { dialog } = require('electron');
+    const svc = new UpdateService(log) as any;
+    const download = jest.spyOn(svc, 'downloadFile').mockResolvedValue(undefined);
+    jest.spyOn(svc, 'verifyInstaller').mockResolvedValue(undefined);
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    await expect(svc.downloadUpdateWithProgress(info)).resolves.toBeNull();
+    expect(download).not.toHaveBeenCalled();
+    dialog.showMessageBox.mockResolvedValue({ response: 0 });
+    await expect(svc.downloadUpdate(info)).resolves.toContain('test.exe');
+    expect(download).toHaveBeenCalledTimes(1);
+  });
+
+  it('stable downloads do not request prerelease consent', async () => {
+    const { dialog } = require('electron');
+    dialog.showMessageBox.mockClear();
+    const svc = new UpdateService(log) as any;
+    jest.spyOn(svc, 'downloadFile').mockResolvedValue(undefined);
+    jest.spyOn(svc, 'verifyInstaller').mockResolvedValue(undefined);
+    await svc.downloadUpdate({ ...info, isPrerelease: false });
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('ordinary checks exclude drafts, flagged prereleases and unflagged beta tags', async () => {
+    const svc = new UpdateService(log) as any;
+    jest.spyOn(svc, 'fetchReleases').mockResolvedValue([
+      { tag_name: 'v9.0.3', draft: true, published_at: '2026-11-04' },
+      { tag_name: 'v9.0.2', prerelease: true, published_at: '2026-11-03' },
+      { tag_name: 'v9.0.1-beta.1', prerelease: false, published_at: '2026-11-02' },
+      { tag_name: 'v9.0.0', prerelease: false, published_at: '2026-11-01' },
+    ]);
+    jest
+      .spyOn(svc, 'findSuitableAsset')
+      .mockReturnValue({ name: 'test.exe', browser_download_url: info.downloadUrl, size: 1 });
+    expect((await svc.checkForUpdate()).updateInfo).toMatchObject({
+      version: 'v9.0.0',
+      isPrerelease: false,
+    });
+    expect((await svc.checkForUpdate(true)).updateInfo).toMatchObject({
+      version: 'v9.0.2',
+      isPrerelease: true,
+    });
+  });
+});

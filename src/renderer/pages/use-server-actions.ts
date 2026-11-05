@@ -3,7 +3,8 @@
  * 收口 store(saveConfig/deleteServer/loadConfig) + 订阅 IPC + toast + 纯变更逻辑(server-mutations)；
  * 页面只保留对话框/Tab 等本地 UI 态。saveServer/saveSubscription 需对话框的 editing 目标，故由调用方传入。
  */
-import { useState } from 'react';
+import { useSyncExternalStore } from 'react';
+import { backgroundTasks } from '@/lib/background-tasks';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
@@ -39,9 +40,11 @@ export function useServerActions() {
   const loadConfig = useAppStore((s) => s.loadConfig);
   // 「删了会不会触发整核重启/重新生效」的判定输入：核未运行则无核可重启（下方 restart 谓词据此闸掉「配置已重新生效」谎报）。
   const proxyRunning = useAppStore((s) => !!s.connectionStatus?.proxyCore?.running);
-  // 单槽 string|null → 多槽 Set：并发更新多个订阅时后发者会覆盖前者的 subId，导致前者 spinner 提前熄灭。
-  // 用 Set 让每个在更新的订阅各自持有独立 spinner；不可变更新（new Set）保证 React 感知引用变化。
-  const [updatingSubIds, setUpdatingSubIds] = useState<Set<string>>(new Set());
+  // Shared task state survives navigation; each subscription has an independent request.
+  const activeTasks = useSyncExternalStore(backgroundTasks.subscribe, backgroundTasks.getSnapshot);
+  const updatingSubIds = new Set(
+    [...activeTasks].filter((key) => key.startsWith('subscription:')).map((key) => key.slice(13))
+  );
 
   const servers = config?.servers || [];
 
@@ -192,25 +195,11 @@ export function useServerActions() {
     if (res.success) await loadConfig();
   };
 
-  const updateSubscriptionServers = async (subId: string) => {
-    // 进入更新态：把本 subId 加入 Set（不可变更新，避免并发更新互相覆盖 spinner）。
-    setUpdatingSubIds((prev) => {
-      const next = new Set(prev);
-      next.add(subId);
-      return next;
-    });
-    try {
+  const updateSubscriptionServers = (subId: string) =>
+    backgroundTasks.run(`subscription:${subId}`, async () => {
       const res = await apiUpdateSubscriptionServers(subId);
       if (res.success) await loadConfig();
-    } finally {
-      // 退出更新态：仅移除本 subId，其它并发更新中的订阅 spinner 不受影响。
-      setUpdatingSubIds((prev) => {
-        const next = new Set(prev);
-        next.delete(subId);
-        return next;
-      });
-    }
-  };
+    });
 
   const saveSubscription = async (
     subData: Omit<SubscriptionConfig, 'id' | 'createdAt'>,
@@ -254,10 +243,11 @@ export function useServerActions() {
     const res = await addSubscription(subData);
     // 新增失败（api-wrapper 已 toast）→ ok:false，对话框不关。
     if (!res.success || !res.data) return { ok: false };
-    // tab 修复：先 loadConfig 让新订阅立即进入 config（分组/tab 即时可见），再拉取其节点；
-    // 最后返回新 sub 供调用方 setTabOverride 切到该订阅分组。
+    // Show the saved subscription immediately; fetching its nodes must not keep the dialog open.
     await loadConfig();
-    await updateSubscriptionServers(res.data.id);
+    void updateSubscriptionServers(res.data.id).catch((error) => {
+      console.error('Background subscription refresh failed:', error);
+    });
     return { ok: true, sub: res.data };
   };
 

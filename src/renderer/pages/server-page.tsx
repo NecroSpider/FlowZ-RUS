@@ -418,7 +418,6 @@ export function ServerPage() {
                   type="button"
                   className="btn ghost sm"
                   onClick={() => handleEditSubscription(sub)}
-                  disabled={isUpdating}
                 >
                   <Edit />
                   {t('servers.edit')}

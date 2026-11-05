@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { backgroundTasks } from '@/lib/background-tasks';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import {
@@ -41,7 +42,8 @@ export function AboutSettings() {
   const proxyModeType = useAppStore((s) => s.config?.proxyModeType);
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const activeTasks = useSyncExternalStore(backgroundTasks.subscribe, backgroundTasks.getSnapshot);
+  const checkingUpdate = activeTasks.has('app-update-check');
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const progressUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -100,6 +102,10 @@ export function AboutSettings() {
         progressUnsubscribeRef.current = null;
       }
 
+      if (downloadResult.cancelled) {
+        setDownloading(false);
+        return;
+      }
       if (downloadResult.success && downloadResult.data) {
         toast.info(t('settings.about.downloadComplete'));
         setDownloading(false);
@@ -126,56 +132,54 @@ export function AboutSettings() {
     }
   };
 
-  const handleCheckUpdate = async () => {
-    setCheckingUpdate(true);
-    // 进度 toast 捕获 id：结果各分支带 { id } 原地替换（loading→success/error），不残留「正在检查」；声明在 try 外供 catch 引用。
-    const updateToastId = toast.loading(t('settings.about.checkingUpdate'));
-    try {
-      const response = await checkForUpdates();
+  const handleCheckUpdate = () =>
+    backgroundTasks.run('app-update-check', async () => {
+      // 进度 toast 捕获 id：结果各分支带 { id } 原地替换（loading→success/error），不残留「正在检查」；声明在 try 外供 catch 引用。
+      const updateToastId = toast.loading(t('settings.about.checkingUpdate'));
+      try {
+        const response = await checkForUpdates();
 
-      if (!response || !response.success) {
+        if (!response || !response.success) {
+          toast.error(t('settings.about.checkUpdateFail'), {
+            id: updateToastId,
+            description: response?.error || t('settings.about.cannotConnectServer'),
+          });
+          return;
+        }
+
+        const data = response.data;
+        if (!data) {
+          toast.error(t('settings.about.checkUpdateFail'), {
+            id: updateToastId,
+            description: t('settings.about.invalidData'),
+          });
+          return;
+        }
+
+        if (data.hasUpdate && data.updateInfo) {
+          const updateInfo = data.updateInfo;
+          setAvailableAppUpdate(updateInfo); // 常驻入口（toast 8s 后消失，卡片持久）
+          toast.success(t('settings.about.foundUpdate', { version: updateInfo.version }), {
+            id: updateToastId,
+            description: t('settings.about.clickToInstall'),
+            action: {
+              label: t('settings.about.updateNow'),
+              onClick: () => handleDownloadAndInstall(updateInfo),
+            },
+            duration: 8000,
+          });
+        } else {
+          setAvailableAppUpdate(null); // 已是最新：清除可能残留的旧 banner
+          toast.success(t('settings.about.alreadyLatest'), { id: updateToastId });
+        }
+      } catch (error) {
+        console.error('Failed to check for updates:', error);
         toast.error(t('settings.about.checkUpdateFail'), {
           id: updateToastId,
-          description: response?.error || t('settings.about.cannotConnectServer'),
+          description: error instanceof Error ? error.message : t('settings.about.networkError'),
         });
-        return;
       }
-
-      const data = response.data;
-      if (!data) {
-        toast.error(t('settings.about.checkUpdateFail'), {
-          id: updateToastId,
-          description: t('settings.about.invalidData'),
-        });
-        return;
-      }
-
-      if (data.hasUpdate && data.updateInfo) {
-        const updateInfo = data.updateInfo;
-        setAvailableAppUpdate(updateInfo); // 常驻入口（toast 8s 后消失，卡片持久）
-        toast.success(t('settings.about.foundUpdate', { version: updateInfo.version }), {
-          id: updateToastId,
-          description: t('settings.about.clickToInstall'),
-          action: {
-            label: t('settings.about.updateNow'),
-            onClick: () => handleDownloadAndInstall(updateInfo),
-          },
-          duration: 8000,
-        });
-      } else {
-        setAvailableAppUpdate(null); // 已是最新：清除可能残留的旧 banner
-        toast.success(t('settings.about.alreadyLatest'), { id: updateToastId });
-      }
-    } catch (error) {
-      console.error('Failed to check for updates:', error);
-      toast.error(t('settings.about.checkUpdateFail'), {
-        id: updateToastId,
-        description: error instanceof Error ? error.message : t('settings.about.networkError'),
-      });
-    } finally {
-      setCheckingUpdate(false);
-    }
-  };
+    });
 
   const handleOpenGitHub = async () => {
     const url = versionInfo?.repositoryUrl || REPOSITORY_URL;

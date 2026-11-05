@@ -1,3 +1,4 @@
+import { getSubscriptionConfigEditor, subscriptionRequestKey } from './subscription-config-editor';
 /**
  * 订阅自动更新调度器
  *
@@ -130,6 +131,7 @@ export class SubscriptionScheduler {
       // 阶段 1：仅做网络拉取（不触碰 config），收集到期订阅的抓取结果
       const fetched: Array<{
         subId: string;
+        requestKey: string;
         name: string;
         servers: typeof config.servers;
         userInfo: (typeof subs)[number]['userInfo'];
@@ -175,6 +177,7 @@ export class SubscriptionScheduler {
           const conditional = sub.hasProviders
             ? undefined
             : { etag: sub.etag, lastModified: sub.lastModified };
+          const requestKey = subscriptionRequestKey(config, sub);
           const result = await this.subscriptionService.fetchSubscription(
             sub.url,
             sub.id,
@@ -185,6 +188,7 @@ export class SubscriptionScheduler {
           );
           fetched.push({
             subId: sub.id,
+            requestKey,
             name: sub.name,
             servers: result.servers,
             userInfo: result.userInfo,
@@ -212,116 +216,117 @@ export class SubscriptionScheduler {
       // 阶段 2：重载最新 config，逐订阅对账并合并，单次落盘。
       // 关键：reconcile 针对「重载后的最新 servers」做，且只替换该订阅自己的节点 —— 期间渲染端对
       // 自建节点/其它订阅/其它设置的写入不会被本次后台更新覆盖（缩小读改写丢更新窗口）。
-      const fresh = await this.configManager.loadConfig();
-      const nowIso = new Date().toISOString();
-      let updated = 0;
-      // F-A：仅「真实节点增/删/改」置位——304 / 内容等价的 200 不置。ON 开关据此只在真变更时 auto-apply，
-      //   不在无变化的周期刷新空转重启（否则 ON 用户每个订阅更新间隔无谓断流一次）。
-      let nodesChanged = false;
-      // §2 矩阵 line 88「改/删被引用节点恒立即重启」（扩 F14）：被引用节点=选中/规则目标/detour链/
-      //   endpoint（referencedServerIds 单一真值，与 canSkip 同口径）。循环前后各取一次引用集（refOld/refNext），
-      //   任一被引用节点被本轮刷新增/删/改 → 运行核路由陈旧 → 恒重启对齐（不受开关，同手动路径 canSkip）。判据：
-      //   删=不在最终 servers；增=新 id（不在 oldIds）；改=updatedAt===nowIso（reconcile 对内容变节点写本轮时间戳）。
-      const refOld = referencedServerIds(fresh); // 循环前 fresh=旧 config
-      const oldIds = new Set(fresh.servers.map((s) => s.id));
-      // F14 逃死节点：仅当被下架的是「选中」节点才 reselect 存活出口（规则目标等被引用节点下架无需 reselect，
-      //   重启后 generate 阶段处理悬空目标）。
-      const selId =
-        fresh.selectedServerId && !isDirectSelection(fresh.selectedServerId)
-          ? fresh.selectedServerId
-          : null;
-      for (const f of fetched) {
-        const sub = fresh.subscriptions?.find((x) => x.id === f.subId);
-        if (!sub) continue; // 订阅在此期间被删除 → 跳过
-        // §16.3.4：304 无变化 → 仅刷元数据（lastUpdated + validators），不 reconcile（零节点扰动、绝不误删）。
-        if (f.notModified) {
-          sub.lastUpdated = nowIso;
-          if (f.etag) sub.etag = f.etag;
-          if (f.lastModified) sub.lastModified = f.lastModified;
-          updated++;
-          continue;
-        }
-        const oldServers = fresh.servers.filter((s) => s.subscriptionId === f.subId);
-        const {
-          servers: kept,
-          deletedIds,
-          contentChanged,
-        } = SubscriptionService.reconcileServers(oldServers, f.servers, nowIso);
-        // L-5：200 但内容等价（contentChanged=false，非 partial）→ 仅刷元数据 + validators，不替换 servers（避免顺序 churn）。
-        if (!contentChanged && !f.partial) {
+      await getSubscriptionConfigEditor(this.configManager)(async (fresh) => {
+        const nowIso = new Date().toISOString();
+        let updated = 0;
+        // F-A：仅「真实节点增/删/改」置位——304 / 内容等价的 200 不置。ON 开关据此只在真变更时 auto-apply，
+        //   不在无变化的周期刷新空转重启（否则 ON 用户每个订阅更新间隔无谓断流一次）。
+        let nodesChanged = false;
+        // §2 矩阵 line 88「改/删被引用节点恒立即重启」（扩 F14）：被引用节点=选中/规则目标/detour链/
+        //   endpoint（referencedServerIds 单一真值，与 canSkip 同口径）。循环前后各取一次引用集（refOld/refNext），
+        //   任一被引用节点被本轮刷新增/删/改 → 运行核路由陈旧 → 恒重启对齐（不受开关，同手动路径 canSkip）。判据：
+        //   删=不在最终 servers；增=新 id（不在 oldIds）；改=updatedAt===nowIso（reconcile 对内容变节点写本轮时间戳）。
+        const refOld = referencedServerIds(fresh); // 循环前 fresh=旧 config
+        const oldIds = new Set(fresh.servers.map((s) => s.id));
+        // F14 逃死节点：仅当被下架的是「选中」节点才 reselect 存活出口（规则目标等被引用节点下架无需 reselect，
+        //   重启后 generate 阶段处理悬空目标）。
+        const selId =
+          fresh.selectedServerId && !isDirectSelection(fresh.selectedServerId)
+            ? fresh.selectedServerId
+            : null;
+        for (const f of fetched) {
+          const sub = fresh.subscriptions?.find((x) => x.id === f.subId);
+          if (!sub || subscriptionRequestKey(fresh, sub) !== f.requestKey) continue; // 订阅在此期间被删除 → 跳过
+          // §16.3.4：304 无变化 → 仅刷元数据（lastUpdated + validators），不 reconcile（零节点扰动、绝不误删）。
+          if (f.notModified) {
+            sub.lastUpdated = nowIso;
+            if (f.etag) sub.etag = f.etag;
+            if (f.lastModified) sub.lastModified = f.lastModified;
+            updated++;
+            continue;
+          }
+          const oldServers = fresh.servers.filter((s) => s.subscriptionId === f.subId);
+          const {
+            servers: kept,
+            deletedIds,
+            contentChanged,
+          } = SubscriptionService.reconcileServers(oldServers, f.servers, nowIso);
+          // L-5：200 但内容等价（contentChanged=false，非 partial）→ 仅刷元数据 + validators，不替换 servers（避免顺序 churn）。
+          if (!contentChanged && !f.partial) {
+            sub.lastUpdated = nowIso;
+            if (f.userInfo) sub.userInfo = f.userInfo;
+            sub.etag = f.etag;
+            sub.lastModified = f.lastModified;
+            sub.hasProviders = f.hasProviders;
+            updated++;
+            continue;
+          }
+          // partial（Clash provider 部分失败）→ merge-only：M1 provider 级精确——只保留失败 provider 名下的
+          // 下架节点，成功 provider 的真下架正常删除。
+          let finalKept = kept;
+          if (f.partial && deletedIds.size > 0) {
+            const leftover = SubscriptionService.leftoverToKeep(
+              oldServers,
+              deletedIds,
+              f.failedProviders
+            );
+            finalKept = [...kept, ...leftover];
+          }
+          const others = fresh.servers.filter((s) => s.subscriptionId !== f.subId);
+          fresh.servers = [...others, ...finalKept];
           sub.lastUpdated = nowIso;
           if (f.userInfo) sub.userInfo = f.userInfo;
+          // §16.3.4：回写验证器 + hasProviders（下次条件 GET / provider 豁免）。自动路径**不 force-restart**（§16.3.4b③ 不变量）。
+          // L-3：200 路径无条件写 etag/lastModified（含清除），服务端撤 validator 后不残留旧值致伪 304。
           sub.etag = f.etag;
           sub.lastModified = f.lastModified;
           sub.hasProviders = f.hasProviders;
+          nodesChanged = true; // 走到 merge 路径 = contentChanged 或 partial → 真实节点变更
           updated++;
-          continue;
         }
-        // partial（Clash provider 部分失败）→ merge-only：M1 provider 级精确——只保留失败 provider 名下的
-        // 下架节点，成功 provider 的真下架正常删除。
-        let finalKept = kept;
-        if (f.partial && deletedIds.size > 0) {
-          const leftover = SubscriptionService.leftoverToKeep(
-            oldServers,
-            deletedIds,
-            f.failedProviders
-          );
-          finalKept = [...kept, ...leftover];
-        }
-        const others = fresh.servers.filter((s) => s.subscriptionId !== f.subId);
-        fresh.servers = [...others, ...finalKept];
-        sub.lastUpdated = nowIso;
-        if (f.userInfo) sub.userInfo = f.userInfo;
-        // §16.3.4：回写验证器 + hasProviders（下次条件 GET / provider 豁免）。自动路径**不 force-restart**（§16.3.4b③ 不变量）。
-        // L-3：200 路径无条件写 etag/lastModified（含清除），服务端撤 validator 后不残留旧值致伪 304。
-        sub.etag = f.etag;
-        sub.lastModified = f.lastModified;
-        sub.hasProviders = f.hasProviders;
-        nodesChanged = true; // 走到 merge 路径 = contentChanged 或 partial → 真实节点变更
-        updated++;
-      }
 
-      if (updated > 0) {
-        const liveIds = new Set(fresh.servers.map((s) => s.id));
-        // §2 矩阵 line 88：任一被引用节点（refOld∪refNext，覆盖被删节点的旧引用 + 新增/改后的新引用）被本轮刷新
-        //   增/删/改 → 运行核路由陈旧 → 恒重启对齐（同手动路径 canSkip 口径，不受开关）。
-        const refNext = referencedServerIds(fresh); // 循环后 fresh=新 config（selectedServerId 仍=原 selId，reselect 在下方）
-        let referencedAffected = false;
-        for (const id of new Set([...refOld, ...refNext])) {
-          const node = fresh.servers.find((s) => s.id === id);
-          if (!node || !oldIds.has(id) || node.updatedAt === nowIso) {
-            referencedAffected = true; // 删（!node）/ 增（新 id）/ 改（本轮时间戳）
-            break;
+        if (updated > 0) {
+          const liveIds = new Set(fresh.servers.map((s) => s.id));
+          // §2 矩阵 line 88：任一被引用节点（refOld∪refNext，覆盖被删节点的旧引用 + 新增/改后的新引用）被本轮刷新
+          //   增/删/改 → 运行核路由陈旧 → 恒重启对齐（同手动路径 canSkip 口径，不受开关）。
+          const refNext = referencedServerIds(fresh); // 循环后 fresh=新 config（selectedServerId 仍=原 selId，reselect 在下方）
+          let referencedAffected = false;
+          for (const id of new Set([...refOld, ...refNext])) {
+            const node = fresh.servers.find((s) => s.id === id);
+            if (!node || !oldIds.has(id) || node.updatedAt === nowIso) {
+              referencedAffected = true; // 删（!node）/ 增（新 id）/ 改（本轮时间戳）
+              break;
+            }
           }
+          // F14：被下架的若是「选中」节点 → reselect 存活出口逃死节点（pickFallbackExit：无 latency 取首个候选，空则 direct）。
+          const selectedDelisted = !!selId && !liveIds.has(selId);
+          if (selectedDelisted) {
+            // 候选须过可用性谓词（排 subnet-only 组网节点，防静默直连，#291）；空则 DIRECT 哨兵。
+            fresh.selectedServerId =
+              pickViableFallbackExit(fresh.servers.filter((s) => liveIds.has(s.id))) ??
+              DIRECT_SERVER_ID;
+          }
+          // 落盘 + 通知 UI（渲染端/托盘刷新 + 差集重算）。
+          await this.configManager.saveConfig(fresh);
+          this.notifyConfigChanged(fresh);
+          // 变更源分流（§2 矩阵）：①被引用节点被增/删/改 = 正确性恒重启（不受开关）；②restartOnNodeChange ON 且**真有
+          //   节点变更**（nodesChanged，非 304/内容等价空转）= auto-apply 全量入核。默认（OFF 且被引用节点未受影响）只落盘、
+          //   新增未引用节点进「待应用」差集守「不打断连接」。applyConfigForcingRestart 内部 guard 代理未运行/换核窗口 + 单飞去抖。
+          if (referencedAffected || (fresh.restartOnNodeChange === true && nodesChanged)) {
+            this.applyConfigForcingRestart(fresh);
+          }
+          this.logManager.addLog(
+            'info',
+            `[${reason}] Subscription auto-update done: ${updated} succeeded, ${failed} failed` +
+              (selectedDelisted
+                ? ' (selected node was removed; re-selected exit and restarted)'
+                : referencedAffected
+                  ? ' (referenced nodes changed; restarted to sync)'
+                  : ''),
+            'SubScheduler'
+          );
         }
-        // F14：被下架的若是「选中」节点 → reselect 存活出口逃死节点（pickFallbackExit：无 latency 取首个候选，空则 direct）。
-        const selectedDelisted = !!selId && !liveIds.has(selId);
-        if (selectedDelisted) {
-          // 候选须过可用性谓词（排 subnet-only 组网节点，防静默直连，#291）；空则 DIRECT 哨兵。
-          fresh.selectedServerId =
-            pickViableFallbackExit(fresh.servers.filter((s) => liveIds.has(s.id))) ??
-            DIRECT_SERVER_ID;
-        }
-        // 落盘 + 通知 UI（渲染端/托盘刷新 + 差集重算）。
-        await this.configManager.saveConfig(fresh);
-        this.notifyConfigChanged(fresh);
-        // 变更源分流（§2 矩阵）：①被引用节点被增/删/改 = 正确性恒重启（不受开关）；②restartOnNodeChange ON 且**真有
-        //   节点变更**（nodesChanged，非 304/内容等价空转）= auto-apply 全量入核。默认（OFF 且被引用节点未受影响）只落盘、
-        //   新增未引用节点进「待应用」差集守「不打断连接」。applyConfigForcingRestart 内部 guard 代理未运行/换核窗口 + 单飞去抖。
-        if (referencedAffected || (fresh.restartOnNodeChange === true && nodesChanged)) {
-          this.applyConfigForcingRestart(fresh);
-        }
-        this.logManager.addLog(
-          'info',
-          `[${reason}] Subscription auto-update done: ${updated} succeeded, ${failed} failed` +
-            (selectedDelisted
-              ? ' (selected node was removed; re-selected exit and restarted)'
-              : referencedAffected
-                ? ' (referenced nodes changed; restarted to sync)'
-                : ''),
-          'SubScheduler'
-        );
-      }
+      });
     } finally {
       this.isRunning = false;
     }

@@ -466,6 +466,22 @@ const MESSAGES = {
   },
 
   // —— App 更新弹窗（独立 mini 更新窗，UpdateService.createUpdatePopup；四态标题/文案/按钮） ——
+  updPrereleaseTitle: {
+    'en-US': 'Test version (prerelease)',
+    ru: 'Тестовая версия (пререлиз)',
+    fa: 'نسخه آزمایشی (پیش‌انتشار)',
+  },
+  updPrereleaseWarning: {
+    'en-US':
+      'This version is intended for testing and may contain bugs. Download it only if you want to participate in testing.',
+    ru: 'Эта версия предназначена для тестирования и может содержать ошибки. Скачивайте её, только если хотите участвовать в тестировании.',
+    fa: 'این نسخه برای آزمایش است و ممکن است خطا داشته باشد. تنها برای شرکت در آزمایش آن را دانلود کنید.',
+  },
+  updPrereleaseDownload: {
+    'en-US': 'Download test version',
+    ru: 'Скачать тестовую версию',
+    fa: 'دانلود نسخه آزمایشی',
+  },
   updRemindTitle: {
     'en-US': 'New version available',
     ru: 'Доступна новая версия',

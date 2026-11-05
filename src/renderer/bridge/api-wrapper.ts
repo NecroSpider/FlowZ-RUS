@@ -109,13 +109,16 @@ export async function checkForUpdates(): Promise<
 > {
   try {
     const result = await api.update.check();
+    if (result.error) return { success: false, error: result.error };
     return { success: true, data: result };
   } catch (error: any) {
     return { success: false, error: error?.message };
   }
 }
 
-export async function downloadUpdate(updateInfo: any): Promise<ApiResponse<string>> {
+export async function downloadUpdate(
+  updateInfo: any
+): Promise<ApiResponse<string> & { cancelled?: boolean }> {
   try {
     const result = await api.update.download(updateInfo);
     if (result.success && result.filePath) {
@@ -123,6 +126,7 @@ export async function downloadUpdate(updateInfo: any): Promise<ApiResponse<strin
     }
     return { success: false, error: result.error || i18n.t('apiToast.downloadFailed') };
   } catch (error: any) {
+    if (error?.code === 'UPDATE_CANCELLED') return { success: false, cancelled: true };
     return { success: false, error: error?.message };
   }
 }

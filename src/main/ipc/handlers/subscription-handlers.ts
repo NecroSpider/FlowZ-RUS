@@ -1,3 +1,7 @@
+import {
+  getSubscriptionConfigEditor,
+  subscriptionRequestKey,
+} from '../../services/subscription-config-editor';
 import { IpcMainInvokeEvent, dialog } from 'electron';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -22,6 +26,7 @@ export function registerSubscriptionHandlers(
   configManager: ConfigManager,
   applyConfigForcingRestart?: (config: UserConfig) => void
 ): void {
+  const editConfig = getSubscriptionConfigEditor(configManager);
   registerIpcHandler<
     { subscription: Omit<SubscriptionConfig, 'id' | 'createdAt'> },
     SubscriptionConfig
@@ -31,64 +36,80 @@ export function registerSubscriptionHandlers(
       _event: IpcMainInvokeEvent,
       args: { subscription: Omit<SubscriptionConfig, 'id' | 'createdAt'> }
     ) => {
-      const config = await configManager.loadConfig();
-      if (!config.subscriptions) {
-        config.subscriptions = [];
-      }
+      return editConfig(async (config) => {
+        if (!config.subscriptions) {
+          config.subscriptions = [];
+        }
 
-      const now = new Date().toISOString();
-      const newSubscription: SubscriptionConfig = {
-        ...args.subscription,
-        id: randomUUID(),
-        createdAt: now,
-      };
+        const now = new Date().toISOString();
+        const newSubscription: SubscriptionConfig = {
+          ...args.subscription,
+          id: randomUUID(),
+          createdAt: now,
+        };
 
-      config.subscriptions.push(newSubscription);
-      await configManager.saveConfig(config);
+        config.subscriptions.push(newSubscription);
+        await configManager.saveConfig(config);
 
-      return newSubscription;
+        return newSubscription;
+      });
     }
   );
 
   registerIpcHandler<{ subscription: SubscriptionConfig }, void>(
     IPC_CHANNELS.SUBSCRIPTION_UPDATE,
     async (_event: IpcMainInvokeEvent, args: { subscription: SubscriptionConfig }) => {
-      const config = await configManager.loadConfig();
-      if (!config.subscriptions) return;
+      return editConfig(async (config) => {
+        if (!config.subscriptions) return;
 
-      const index = config.subscriptions.findIndex((s) => s.id === args.subscription.id);
-      if (index === -1) {
-        throw new Error(`Subscription not found: ${args.subscription.id}`);
-      }
+        const index = config.subscriptions.findIndex((s) => s.id === args.subscription.id);
+        if (index === -1) {
+          throw new Error(`Subscription not found: ${args.subscription.id}`);
+        }
 
-      config.subscriptions[index] = args.subscription;
-      await configManager.saveConfig(config);
+        const previous = config.subscriptions[index];
+        const incoming = args.subscription;
+        config.subscriptions[index] = {
+          ...previous,
+          name: incoming.name,
+          url: incoming.url,
+          autoUpdate: incoming.autoUpdate,
+          userAgent: incoming.userAgent,
+          updateViaProxy: incoming.updateViaProxy,
+          sendHwid: incoming.sendHwid,
+          ...(previous.url !== incoming.url
+            ? { etag: undefined, lastModified: undefined, hasProviders: undefined }
+            : {}),
+        };
+        await configManager.saveConfig(config);
+      });
     }
   );
 
   registerIpcHandler<{ subscriptionId: string }, void>(
     IPC_CHANNELS.SUBSCRIPTION_DELETE,
     async (_event: IpcMainInvokeEvent, args: { subscriptionId: string }) => {
-      const config = await configManager.loadConfig();
-      if (!config.subscriptions) return;
+      return editConfig(async (config) => {
+        if (!config.subscriptions) return;
 
-      const index = config.subscriptions.findIndex((s) => s.id === args.subscriptionId);
-      if (index === -1) {
-        throw new Error(`Subscription not found: ${args.subscriptionId}`);
-      }
-
-      config.subscriptions.splice(index, 1);
-
-      config.servers = config.servers.filter((s) => s.subscriptionId !== args.subscriptionId);
-
-      if (config.selectedServerId) {
-        const stillExists = config.servers.some((s) => s.id === config.selectedServerId);
-        if (!stillExists) {
-          config.selectedServerId = null;
+        const index = config.subscriptions.findIndex((s) => s.id === args.subscriptionId);
+        if (index === -1) {
+          throw new Error(`Subscription not found: ${args.subscriptionId}`);
         }
-      }
 
-      await configManager.saveConfig(config);
+        config.subscriptions.splice(index, 1);
+
+        config.servers = config.servers.filter((s) => s.subscriptionId !== args.subscriptionId);
+
+        if (config.selectedServerId) {
+          const stillExists = config.servers.some((s) => s.id === config.selectedServerId);
+          if (!stillExists) {
+            config.selectedServerId = null;
+          }
+        }
+
+        await configManager.saveConfig(config);
+      });
     }
   );
 
@@ -103,6 +124,7 @@ export function registerSubscriptionHandlers(
         throw new Error(`Subscription not found: ${args.subscriptionId}`);
       }
 
+      const requestKey = subscriptionRequestKey(config, subscription);
       try {
         // §16.3.4：条件 GET——provider 型订阅豁免（主正文 304 会掩盖 provider 独立变化）；否则带上次 validator。
         const conditional = subscription.hasProviders
@@ -117,115 +139,124 @@ export function registerSubscriptionHandlers(
           subscription.sendHwid !== false
         );
 
-        // §16.3.4：304 无变化 → 仅刷元数据（lastUpdated + validators），不 reconcile、不 force-restart（零节点扰动）。
-        if (result.notModified) {
+        return await editConfig(async (config) => {
+          const current = config.subscriptions?.find((item) => item.id === args.subscriptionId);
+          if (!current || subscriptionRequestKey(config, current) !== requestKey) {
+            throw new Error(
+              'Subscription changed during refresh. Refresh again to load the current URL.'
+            );
+          }
+          const subscription = current;
+          // §16.3.4：304 无变化 → 仅刷元数据（lastUpdated + validators），不 reconcile、不 force-restart（零节点扰动）。
+          if (result.notModified) {
+            subscription.lastUpdated = new Date().toISOString();
+            if (result.etag) subscription.etag = result.etag;
+            if (result.lastModified) subscription.lastModified = result.lastModified;
+            await configManager.saveConfig(config);
+            return {
+              success: true,
+              addedServers: 0,
+              updatedServers: 0,
+              deletedServers: 0,
+              unchanged: true,
+            };
+          }
+
+          const fetchedServers = result.servers;
+
+          // 获取原来的该订阅下的节点，按稳定指纹对账（不依赖显示名）
+          const oldServers = config.servers.filter((s) => s.subscriptionId === subscription.id);
+          const {
+            servers: newServersToKeep,
+            added,
+            updated,
+            deleted,
+            deletedIds,
+            contentChanged,
+          } = SubscriptionService.reconcileServers(
+            oldServers,
+            fetchedServers,
+            new Date().toISOString()
+          );
+
+          // L-5：200 但节点集内容等价（contentChanged=false，非 partial）→ 仅刷元数据 + validators，不替换 servers
+          // （避免顺序 churn）、返回 unchanged（toast 显「订阅无变化」而非「更新 N 个」，与 304 口径一致）。
+          if (!contentChanged && !result.partial) {
+            subscription.lastUpdated = new Date().toISOString();
+            if (result.userInfo) subscription.userInfo = result.userInfo;
+            subscription.etag = result.etag;
+            subscription.lastModified = result.lastModified;
+            subscription.hasProviders = result.hasProviders;
+            await configManager.saveConfig(config);
+            return {
+              success: true,
+              addedServers: 0,
+              updatedServers: 0,
+              deletedServers: 0,
+              unchanged: true,
+            };
+          }
+
+          // partial（Clash provider 部分失败）→ merge-only 防穿仓：M1 改为 provider 级精确——只保留「失败 provider
+          // 名下」的下架节点（防某 provider 临时 503 误删其托管存量，FlowZ 无本地 path 缓存兜底），成功 provider
+          // 的真下架正常删除。
+          let finalKeep = newServersToKeep;
+          let finalDeleted = deleted;
+          if (result.partial && deletedIds.size > 0) {
+            const leftover = SubscriptionService.leftoverToKeep(
+              oldServers,
+              deletedIds,
+              result.failedProviders
+            );
+            finalKeep = [...newServersToKeep, ...leftover];
+            finalDeleted = deleted - leftover.length;
+          }
+          const otherServers = config.servers.filter((s) => s.subscriptionId !== subscription.id);
+          config.servers = [...otherServers, ...finalKeep];
+
+          // selectedServerId 被删且未被 leftover 保留（partial 精确删除后也可能删掉选中节点）→ 与 auto 路径 F14
+          // （SubscriptionScheduler ~:296-300）严格对称：reselect 存活出口逃死节点（pickFallbackExit 无 latency 取
+          // 首个候选），空则 DIRECT_SERVER_ID 哨兵。**不可置 null**：下方新增的 applyConfigForcingRestart 会让该 null
+          // 选择立即入核 → resolveGlobalExitTag(null) → proxy-selector default='direct' → 用户刚点「更新订阅」流量即
+          // 静默直连（traffic-leak），无任何提示。原实现置 null 与 auto 路径不对称，此处补齐。
+          if (
+            config.selectedServerId &&
+            deletedIds.has(config.selectedServerId) &&
+            !config.servers.some((s) => s.id === config.selectedServerId)
+          ) {
+            // 候选过可用性谓词（排 subnet-only 组网节点，防静默直连，#291）；空则 DIRECT 哨兵。
+            config.selectedServerId = pickViableFallbackExit(config.servers) ?? DIRECT_SERVER_ID;
+          }
+
           subscription.lastUpdated = new Date().toISOString();
-          if (result.etag) subscription.etag = result.etag;
-          if (result.lastModified) subscription.lastModified = result.lastModified;
-          await configManager.saveConfig(config);
-          return {
-            success: true,
-            addedServers: 0,
-            updatedServers: 0,
-            deletedServers: 0,
-            unchanged: true,
-          };
-        }
-
-        const fetchedServers = result.servers;
-
-        // 获取原来的该订阅下的节点，按稳定指纹对账（不依赖显示名）
-        const oldServers = config.servers.filter((s) => s.subscriptionId === subscription.id);
-        const {
-          servers: newServersToKeep,
-          added,
-          updated,
-          deleted,
-          deletedIds,
-          contentChanged,
-        } = SubscriptionService.reconcileServers(
-          oldServers,
-          fetchedServers,
-          new Date().toISOString()
-        );
-
-        // L-5：200 但节点集内容等价（contentChanged=false，非 partial）→ 仅刷元数据 + validators，不替换 servers
-        // （避免顺序 churn）、返回 unchanged（toast 显「订阅无变化」而非「更新 N 个」，与 304 口径一致）。
-        if (!contentChanged && !result.partial) {
-          subscription.lastUpdated = new Date().toISOString();
-          if (result.userInfo) subscription.userInfo = result.userInfo;
+          if (result.userInfo) {
+            subscription.userInfo = result.userInfo;
+          }
+          // §16.3.4：回写验证器 + hasProviders（下次条件 GET / provider 豁免）。
+          // L-3：200 路径**无条件**写 etag/lastModified（含清除）——服务端撤 validator 后不残留旧值，避免内容回滚伪 304。
           subscription.etag = result.etag;
           subscription.lastModified = result.lastModified;
           subscription.hasProviders = result.hasProviders;
+
           await configManager.saveConfig(config);
+
+          // §16.3.4b：手动更新 + 节点集真变化 → 强制核去抖重启，把新增/改址节点纳入主核（及测速池）→ 立即可测。
+          // applyConfigForcingRestart 内部 guard 代理未运行/换核窗口（不重启）；无变化不调（省一次重启抖动）。
+          // M-3：partial（provider 瞬时失败）下 leftoverToKeep 会全量恢复被判「删除」的节点 → 最终 config.servers 可能
+          // 与刷新前等价，但 contentChanged（reconcile 在 merge-back 前求值）仍为 true → 会误触整核重启（断连+打断测速）。
+          // 保守：partial 时不 force-restart（违反「无变化恒不重启」不划算）；真变化随下次成功刷新/结构性变更纳入。
+          if (contentChanged && !result.partial) {
+            applyConfigForcingRestart?.(config);
+          }
+
           return {
             success: true,
-            addedServers: 0,
-            updatedServers: 0,
-            deletedServers: 0,
-            unchanged: true,
+            addedServers: added,
+            updatedServers: updated,
+            deletedServers: finalDeleted,
+            userInfo: result.userInfo,
           };
-        }
-
-        // partial（Clash provider 部分失败）→ merge-only 防穿仓：M1 改为 provider 级精确——只保留「失败 provider
-        // 名下」的下架节点（防某 provider 临时 503 误删其托管存量，FlowZ 无本地 path 缓存兜底），成功 provider
-        // 的真下架正常删除。
-        let finalKeep = newServersToKeep;
-        let finalDeleted = deleted;
-        if (result.partial && deletedIds.size > 0) {
-          const leftover = SubscriptionService.leftoverToKeep(
-            oldServers,
-            deletedIds,
-            result.failedProviders
-          );
-          finalKeep = [...newServersToKeep, ...leftover];
-          finalDeleted = deleted - leftover.length;
-        }
-        const otherServers = config.servers.filter((s) => s.subscriptionId !== subscription.id);
-        config.servers = [...otherServers, ...finalKeep];
-
-        // selectedServerId 被删且未被 leftover 保留（partial 精确删除后也可能删掉选中节点）→ 与 auto 路径 F14
-        // （SubscriptionScheduler ~:296-300）严格对称：reselect 存活出口逃死节点（pickFallbackExit 无 latency 取
-        // 首个候选），空则 DIRECT_SERVER_ID 哨兵。**不可置 null**：下方新增的 applyConfigForcingRestart 会让该 null
-        // 选择立即入核 → resolveGlobalExitTag(null) → proxy-selector default='direct' → 用户刚点「更新订阅」流量即
-        // 静默直连（traffic-leak），无任何提示。原实现置 null 与 auto 路径不对称，此处补齐。
-        if (
-          config.selectedServerId &&
-          deletedIds.has(config.selectedServerId) &&
-          !config.servers.some((s) => s.id === config.selectedServerId)
-        ) {
-          // 候选过可用性谓词（排 subnet-only 组网节点，防静默直连，#291）；空则 DIRECT 哨兵。
-          config.selectedServerId = pickViableFallbackExit(config.servers) ?? DIRECT_SERVER_ID;
-        }
-
-        subscription.lastUpdated = new Date().toISOString();
-        if (result.userInfo) {
-          subscription.userInfo = result.userInfo;
-        }
-        // §16.3.4：回写验证器 + hasProviders（下次条件 GET / provider 豁免）。
-        // L-3：200 路径**无条件**写 etag/lastModified（含清除）——服务端撤 validator 后不残留旧值，避免内容回滚伪 304。
-        subscription.etag = result.etag;
-        subscription.lastModified = result.lastModified;
-        subscription.hasProviders = result.hasProviders;
-
-        await configManager.saveConfig(config);
-
-        // §16.3.4b：手动更新 + 节点集真变化 → 强制核去抖重启，把新增/改址节点纳入主核（及测速池）→ 立即可测。
-        // applyConfigForcingRestart 内部 guard 代理未运行/换核窗口（不重启）；无变化不调（省一次重启抖动）。
-        // M-3：partial（provider 瞬时失败）下 leftoverToKeep 会全量恢复被判「删除」的节点 → 最终 config.servers 可能
-        // 与刷新前等价，但 contentChanged（reconcile 在 merge-back 前求值）仍为 true → 会误触整核重启（断连+打断测速）。
-        // 保守：partial 时不 force-restart（违反「无变化恒不重启」不划算）；真变化随下次成功刷新/结构性变更纳入。
-        if (contentChanged && !result.partial) {
-          applyConfigForcingRestart?.(config);
-        }
-
-        return {
-          success: true,
-          addedServers: added,
-          updatedServers: updated,
-          deletedServers: finalDeleted,
-          userInfo: result.userInfo,
-        };
+        });
       } catch (error: any) {
         return {
           success: false,
