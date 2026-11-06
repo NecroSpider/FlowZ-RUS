@@ -1,5 +1,41 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { APP_PRESETS, defaultAppRules, seedDefaultAppRules } from '../app-rules-preset';
 import type { AppRule } from '../types';
+
+const DATA_DIR = path.resolve(__dirname, '../../../resources/data');
+const OWN_LISTS_DIR = path.resolve(__dirname, '../../../scripts/rule-sets');
+
+describe('app-rules-preset bundled rule sets', () => {
+  it('every preset geosite/geoip tag ships as a bundled .srs (offline, no 404 at startup)', () => {
+    const missing: string[] = [];
+    for (const p of APP_PRESETS) {
+      const files = [
+        // category-ai is stored upstream as category-ai-!cn (see builtin-geo-rulesets.ts)
+        ...p.geositeTags.map((t) => `geosite-${t === 'category-ai' ? 'category-ai-!cn' : t}.srs`),
+        ...(p.geoipTags ?? []).map((t) => `geoip-${t}.srs`),
+      ];
+      for (const f of files)
+        if (!fs.existsSync(path.join(DATA_DIR, f))) missing.push(`${p.id}: ${f}`);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('self-made lists (no upstream) keep their JSON source next to the compiled .srs', () => {
+    for (const tag of ['bungie', 'blitz']) {
+      expect(fs.existsSync(path.join(OWN_LISTS_DIR, `geosite-${tag}.json`))).toBe(true);
+      expect(fs.existsSync(path.join(DATA_DIR, `geosite-${tag}.srs`))).toBe(true);
+    }
+  });
+
+  it('Blitz.gg preset is a game preset routed by the self-made geosite-blitz list', () => {
+    const blitz = APP_PRESETS.find((p) => p.id === 'blitz');
+    expect(blitz).toBeDefined();
+    expect(blitz?.category).toBe('game');
+    expect(blitz?.geositeTags).toEqual(['blitz']);
+    expect(blitz?.processNames).toEqual(expect.arrayContaining(['Blitz.exe', 'Blitz']));
+  });
+});
 
 describe('app-rules-preset 默认注入', () => {
   it('已下线预设 apple / bilibili 不在 APP_PRESETS', () => {

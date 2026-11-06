@@ -75,7 +75,7 @@ const MRD_GEO_RAW = 'https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/
  * `sing-box rule-set compile -o resources/data/<tag>.srs`），在线更新也从本仓库 main 拉。
  */
 const FORK_DATA_RAW = 'https://raw.githubusercontent.com/NecroSpider/FlowZ-RUS/main/resources/data';
-const FORK_GEOSITE_TAGS = ['bungie'];
+const FORK_GEOSITE_TAGS = ['bungie', 'blitz'];
 const appGeoEntry = (cat: 'geosite' | 'geoip', tag: string): BuiltinGeoRuleSet => {
   // category-ai 在 MetaCubeX 用 category-ai-!cn（裸 category-ai 不单独成 .srs）；tag 仍为 geosite-category-ai（与 app-rule 生成对齐）。
   const srcName = cat === 'geosite' && tag === 'category-ai' ? 'category-ai-!cn' : tag;

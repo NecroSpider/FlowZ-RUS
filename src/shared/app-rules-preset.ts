@@ -308,6 +308,23 @@ export const APP_PRESETS: AppPreset[] = [
     category: 'game',
   },
   {
+    // Blitz.gg: League of Legends / VALORANT / TFT companion app. No upstream geosite-blitz, so the list is
+    // self-made (scripts/rule-sets): blitz.gg (site, API, CDN) + iesdev.com (stats/utils backend that blitz.gg
+    // itself preconnects to). Process names are unverified on real installs; domain matching does not depend on them.
+    id: 'blitz',
+    labelKey: 'blitz',
+    emoji: '⚡',
+    geositeTags: ['blitz'],
+    processNames: [
+      'Blitz.exe',
+      'Blitz', // macOS
+      'Blitz Helper',
+      'Blitz Helper (Renderer)',
+      'Blitz Helper (GPU)',
+    ],
+    category: 'game',
+  },
+  {
     id: 'disney',
     labelKey: 'disney',
     emoji: '🏰',

@@ -443,6 +443,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -1117,6 +1123,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -1766,6 +1778,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -2457,6 +2475,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -3095,6 +3119,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -3727,6 +3757,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -4307,6 +4343,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -4880,6 +4922,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -5462,6 +5510,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -6135,6 +6189,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -6789,6 +6849,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -7486,6 +7552,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -8141,6 +8213,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -8786,6 +8864,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -9479,6 +9563,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -10090,6 +10180,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -10725,6 +10821,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -11343,6 +11445,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -11990,6 +12098,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -12667,6 +12781,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -13326,6 +13446,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -13991,6 +14117,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -14645,6 +14777,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -15309,6 +15447,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -15944,6 +16088,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -16611,6 +16761,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -17675,6 +17831,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -18365,6 +18527,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -19013,6 +19181,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -19682,6 +19856,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -20334,6 +20514,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "tag": "geosite-bungie",
           "type": "local",
         },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
       ],
       "rules": [
         {
@@ -20964,6 +21150,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -21607,6 +21799,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -22234,6 +22432,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
       ],
@@ -22973,6 +23177,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
+          "type": "local",
+        },
+        {
+          "format": "binary",
           "path": "/fake/userData/rules/geosite-category-ru.srs",
           "tag": "geosite-category-ru",
           "type": "local",
@@ -23628,6 +23838,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
@@ -24295,6 +24511,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "format": "binary",
           "path": "/fake/userData/rules/geosite-bungie.srs",
           "tag": "geosite-bungie",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-blitz.srs",
+          "tag": "geosite-blitz",
           "type": "local",
         },
         {
