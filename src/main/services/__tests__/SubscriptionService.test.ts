@@ -436,6 +436,21 @@ describe('M6 日志 url 脱敏', () => {
     expect(joined).toContain('Fetching subscription');
     expect(joined).toContain('<redacted>');
   });
+
+  it('令牌在路径里的面板链接（/sub/<token>、/c/<token>）也不落日志，只留 scheme://host', async () => {
+    for (const url of [
+      'https://panel.example.com/sub/PATHTOKEN123',
+      'https://panel.example.com/c/PATHTOKEN123/clash?x=1',
+    ]) {
+      const log = new FakeLog();
+      const svc = newService(log);
+      mockFetch.mockResolvedValue(makeResponse({ body: 'notaurl://x' }));
+      await expect(svc.fetchSubscription(url, SUB_ID)).rejects.toThrow();
+      const joined = log.entries.map((e) => e.message).join('\n');
+      expect(joined).not.toContain('PATHTOKEN123');
+      expect(joined).toContain('Fetching subscription: https://panel.example.com/<redacted>');
+    }
+  });
 });
 
 describe('vmess 指纹 parity（Clash vs ProtocolParser）', () => {

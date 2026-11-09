@@ -643,11 +643,14 @@ export class SubscriptionService {
     return servers;
   }
 
-  /** URL query 脱敏（去整段 query，常含 ?token=），仅用于日志，防 token 落 app.log。 */
+  /**
+   * URL 脱敏，仅用于日志，防 token 落 app.log 与诊断报告。面板订阅链接（Remnawave/Marzban 的 /sub/<token>、
+   * /c/<token> 等）把令牌放在**路径**里，只去 query 不够——只保留 scheme://host，路径与 query 一律抹掉。
+   */
   private static redactUrl(url: string): string {
     try {
       const u = new URL(url);
-      return u.search ? `${u.origin}${u.pathname}?<redacted>` : `${u.origin}${u.pathname}`;
+      return u.pathname !== '/' || u.search ? `${u.origin}/<redacted>` : u.origin;
     } catch {
       // 非法 URL：截断到 ? 前，兜底去 query
       const q = url.indexOf('?');
