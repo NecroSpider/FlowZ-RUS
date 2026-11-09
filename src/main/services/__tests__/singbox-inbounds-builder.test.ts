@@ -274,6 +274,13 @@ describe('buildInbounds — TUN', () => {
     expect(byTag(ibs, 'tun-in').interface_name).toBe('flowz-tun0');
   });
 
+  it('Windows TUN：起核入口定的轮换名（deps.winTunName）优先于缺省名', () => {
+    const ibs = withPlatform('win32', () =>
+      buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps({ winTunName: 'flowz-tun37' }))
+    );
+    expect(byTag(ibs, 'tun-in').interface_name).toBe('flowz-tun37');
+  });
+
   it('Windows TUN：尊重 tunConfig.interfaceName 覆盖', () => {
     const c = cfg({
       proxyModeType: 'tun',

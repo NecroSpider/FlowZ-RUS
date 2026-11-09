@@ -148,7 +148,7 @@ import {
 } from '../utils/paths';
 import { ruleConditions } from '../../shared/rules';
 import { planCustomRule, buildCustomRuleFiles, condMatcherFields } from './custom-rule-files';
-import { resolveWinTunInterfaceName } from '../../shared/tun-interface';
+import { resolveWinTunInterfaceName, WIN_TUN_ROTATION_SLOTS } from '../../shared/tun-interface';
 import { findMemoryOffenders } from '../../shared/process-metrics';
 import {
   MemoryTimelineRing,
@@ -690,6 +690,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   //   一次性消费：首腿取走并置 null，重试腿一律现场重探（残留是**当下**的事实，不能吃陈旧结论）。
   //   每次 startInternal 入口先清，杜绝上一次失败的 start 遗留的过期 promise 被下一次首腿吃掉。
   private pendingAdapterReleaseGate: Promise<void> | null = null;
+  // Windows TUN 接口名轮换：每次 startInternal 换一个 `flowz-tun<N>`，避开上一次硬杀留下的同名半删除适配器（见
+  // tun-interface.ts）。起点随机，防「应用重启后计数归零、撞上上一会话最后一个名字的残留」。null = 尚未起过核/非 win32。
+  private winTunRotation = Math.floor(Math.random() * WIN_TUN_ROTATION_SLOTS);
+  private winTunName: string | null = null;
 
   // issue #159 纵深网：helper 起核后等核真就绪（管理 API 绑定）的门控。成功路径早退（API 通常 <1s 绑定）不加延迟；
   // 12s 上限仅在「进程活但 API 始终不绑」的卡死态触顶，进程死则即时捕获。
@@ -902,6 +906,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 被拒时不污染世代。updateCore/applyStagedNow 自身的 start 在 installCoreFromDir 返回后调用（coreSwapInProgress
     // 已清），不受此闸影响。
     this.rejectIfCoreSwapInProgress('proxy start');
+    // Windows：本次起核换一个新的 TUN 接口名（须在下方释放门预热与配置生成**之前**定，后续各处都读 winTunNameFor）。
+    this.rotateWinTunName(config);
     // B1：清掉上一次 start 可能遗留的释放门预热（那次 start 若在首腿之前就抛错，promise 会没人消费）。
     //   必须在本方法**入口**清、且在下方重新 arm 之前——否则首腿会吃到一个早于本次 stop/killOrphans 的陈旧结论。
     this.pendingAdapterReleaseGate = null;
@@ -1816,13 +1822,26 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     }
   }
 
+  /** 起核入口调用：Windows 上换下一个轮换名并记下（非 win32 无操作）。自定义接口名不轮换。返回本次使用的名字。 */
+  private rotateWinTunName(config: UserConfig): string | null {
+    if (process.platform !== 'win32') return null;
+    this.winTunRotation = (this.winTunRotation + 1) % WIN_TUN_ROTATION_SLOTS;
+    this.winTunName = resolveWinTunInterfaceName(config, this.winTunRotation);
+    return this.winTunName;
+  }
+
+  /** 本次起核实际使用的 Windows TUN 接口名：起核入口已定则用之，否则（未起核/单测）回落 resolveWinTunInterfaceName。 */
+  private winTunNameFor(config: UserConfig): string {
+    return this.winTunName ?? resolveWinTunInterfaceName(config);
+  }
+
   /**
    * issue #159：Windows TUN 起核前，等上一轮自家 wintun 适配器（按 resolveWinTunInterfaceName 取名）真正释放。
    * 只认本名网卡 → 不误等外部 sing-box / 用户手动核 / 自家孤儿核的同址 tun0。已释放或超时(fail-open)均放行，
    * 绝不卡死代理（残留由 runStartWithRetry 兜底）。仅由 startInternal 在 win32 && TUN 时调用。
    */
   private async waitForOwnTunAdapterReleased(config: UserConfig): Promise<void> {
-    const name = resolveWinTunInterfaceName(config);
+    const name = this.winTunNameFor(config);
     const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
     const { released, polls } = await waitForAdapterReleased(
       name,
@@ -3931,7 +3950,7 @@ done
       ownTunAddrs: [...this.workVpnOwnTunAddrs],
       ownMeshCidrs: this.workVpnOwnMeshCidrs(config),
       ownTunExcludes: this.workVpnTunExcludes,
-      ownTunName: process.platform === 'win32' ? resolveWinTunInterfaceName(config) : undefined,
+      ownTunName: process.platform === 'win32' ? this.winTunNameFor(config) : undefined,
     });
     if (!snap) return null;
     const merged = mergeStickyWorkVpnDns(snap, this.workVpnLastSeen);
@@ -4213,6 +4232,7 @@ done
         probeProxyPort: this.probeProxyPort,
         updateInPort: this.updateInPort,
         effectiveResolvers: this.effectiveResolversForTun,
+        winTunName: this.winTunName ?? undefined,
         // §15 主核测速探测池：注入 K 个 probe-in-k http 入站。空=不注入。
         probePoolPorts: this.probePoolPorts,
         log: (level, message) => this.logToManager(level, message),
@@ -5148,7 +5168,7 @@ rm -f "$STOPFLAG"
     const obs = this.tunReadyObservation;
     // B6：首次就绪探测只打一次点（见下方 isReady 包装）。
     let firstReadyProbeMarked = false;
-    const adapterName = obs ? resolveWinTunInterfaceName(this.currentConfig as UserConfig) : '';
+    const adapterName = obs ? this.winTunNameFor(this.currentConfig as UserConfig) : '';
     let observing = obs !== null;
     const recordPresence = (p: AdapterPresence): void => {
       if (obs) recordAdapterPresence(obs, p); // sticky monotonic 累计（纯函数，单测覆盖）
@@ -5480,8 +5500,7 @@ rm -f "$STOPFLAG"
     if (this.activeCorePid()) {
       return prevAddress ? { address: prevAddress, reason: 'default', skipped: [] } : null;
     }
-    const ownTunAlias =
-      process.platform === 'win32' ? resolveWinTunInterfaceName(config) : undefined;
+    const ownTunAlias = process.platform === 'win32' ? this.winTunNameFor(config) : undefined;
     return pickTunInet4Address(TUN_INET4_CANDIDATES, {
       probe: (ip) => this.probeIpv4AddressUsage(ip, ownTunAlias),
       ownLanCidrs: () => excludeOwnTunCidrs(getOwnLanCidrs(), TUN_INET4_CANDIDATES),
@@ -5625,7 +5644,7 @@ rm -f "$STOPFLAG"
     const terminal = new CoreStartTunPersistentError();
     this.logToManager(
       'error',
-      `Windows TUN adapter (${resolveWinTunInterfaceName(this.currentConfig as UserConfig)}) was never created and the core start retry budget is exhausted -> terminal diagnosis, stopping pointless retries (commonly wintun blocked / driver failure / a conflicting VPN; config, port, or core issues are also possible - enable Diagnostic Capture and check the logs to confirm)`
+      `Windows TUN adapter (${this.winTunNameFor(this.currentConfig as UserConfig)}) was never created and the core start retry budget is exhausted -> terminal diagnosis, stopping pointless retries (commonly wintun blocked / driver failure / a conflicting VPN; config, port, or core issues are also possible - enable Diagnostic Capture and check the logs to confirm)`
     );
     // 经既有 EVENT_PROXY_ERROR 通道上渲染端（携结构化 code 驱动诊断卡）；start() 收口的 invoke rejection 另设 proxyError。
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {

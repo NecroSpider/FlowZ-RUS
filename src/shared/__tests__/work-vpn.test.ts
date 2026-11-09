@@ -489,6 +489,18 @@ function detectWin(snapshot: unknown = WIN_SNAPSHOT) {
 }
 
 describe('Windows：parseWinNetSnapshot + detectWorkVpn', () => {
+  it('上一次起核（轮换名 flowz-tun37）残留的 FlowZ 适配器不会被当成工作 VPN，即使当前名是 flowz-tun38', () => {
+    const withGhost = {
+      ...WIN_SNAPSHOT,
+      adapters: [...WIN_SNAPSHOT.adapters, { n: 'flowz-tun37', d: 'Wintun Userspace Tunnel' }],
+      addrs: [...WIN_SNAPSHOT.addrs, { n: 'flowz-tun37', a: '172.19.0.1' }],
+    };
+    const parsed = parseWinNetSnapshot(JSON.stringify(withGhost), 'flowz-tun38');
+    expect(parsed?.tunnelIfaces).not.toContain('flowz-tun37');
+    expect(parsed?.tunnelIfaces).not.toContain('flowz-tun0');
+    expect(parsed?.tunnelIfaces).toContain('OpenVPN Data Channel Offload');
+  });
+
   it('按驱动描述认 VPN 网卡，RAS 连接按「不在网卡列表」认；物理网卡 / WSL / 自家 TUN 不算', () => {
     const parsed = parseWinNetSnapshot(JSON.stringify(WIN_SNAPSHOT), 'flowz-tun0');
     expect(parsed?.tunnelIfaces.sort()).toEqual([

@@ -43,6 +43,8 @@ export interface InboundsDeps {
   updateInPort: number | null;
   /** 动态探测到的系统/活动网卡实际分配的生效 DNS 解析器列表（由 SystemDnsManager.getEffectiveResolvers 提供）。 */
   effectiveResolvers?: string[];
+  /** 本次起核实际使用的 Windows TUN 接口名（含轮换后缀，由 ProxyManager 起核入口定）。缺省 = resolveWinTunInterfaceName(config)。 */
+  winTunName?: string;
   /** §15 主核测速探测池：K 个 probe-in-k http 入站的端口（allocateProbePorts 3+K 产出）。空/缺省=不注入池。 */
   probePoolPorts?: number[];
   /** 可选日志回调（记「连入来源排除」的 mesh/fakeip/物理 LAN 剔除告警）。缺省（单测）不记。 */
@@ -435,7 +437,7 @@ export function buildInbounds(
     // Windows：下发固定可辨的接口名（wintun 适配器名），使 issue #159 的「起核前等本名网卡释放」门控能按名锚定，
     // 杜绝与外部 sing-box 默认 tun0 / 其它 VPN 网卡混淆。mac(utun 名内核分配)/Linux(无释放竞态) 不设、保持现状。
     if (process.platform === 'win32') {
-      tunInbound.interface_name = resolveWinTunInterfaceName(config);
+      tunInbound.interface_name = deps.winTunName ?? resolveWinTunInterfaceName(config);
     }
 
     // P6 局域网网关：按 MAC 限/排设备进 TUN（sing-box 1.14 include/exclude_mac_address）。

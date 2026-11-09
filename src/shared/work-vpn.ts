@@ -17,6 +17,7 @@
 
 import { isIpv4, cidrContains, cidrOverlapsAny } from './ip';
 import { dedupe } from './collections';
+import { isFlowzWinTunName } from './tun-interface';
 
 // ── 路由表（netstat -rn -f inet）────────────────────────────────────────────────────────────
 
@@ -423,8 +424,9 @@ export function parseWinNetSnapshot(json: string, ownTunName: string): WinWorkVp
       if (!adapterNames.has(name)) tunnelIfaces.add(name);
     }
   }
+  // 自家 TUN：当前名，以及历史轮换名（flowz-tun<N>）——上一次硬杀后残留的旧适配器不能被当成工作 VPN。
   for (const name of [...tunnelIfaces]) {
-    if (name.toLowerCase() === own) tunnelIfaces.delete(name);
+    if (name.toLowerCase() === own || isFlowzWinTunName(name)) tunnelIfaces.delete(name);
   }
 
   const routes: RouteEntry[] = [];
