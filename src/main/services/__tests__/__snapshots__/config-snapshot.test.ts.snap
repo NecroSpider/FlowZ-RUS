@@ -465,6 +465,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -1145,6 +1155,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -1802,6 +1822,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -2497,6 +2527,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -3141,6 +3181,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -3779,6 +3829,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -4353,6 +4413,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -4948,6 +5018,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -5534,6 +5614,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -6211,6 +6301,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -6873,6 +6973,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -7574,6 +7684,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -8235,6 +8355,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -8888,6 +9018,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -9585,6 +9725,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -10204,6 +10354,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -10843,6 +11003,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -11469,6 +11639,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -12122,6 +12302,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -12817,6 +13007,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "outbound": "proxy-selector",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -13470,6 +13670,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -14139,6 +14349,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -14801,6 +15021,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -15469,6 +15699,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -16112,6 +16352,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -16787,6 +17037,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -17227,6 +17487,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "update-in",
           ],
           "outbound": "direct",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -17858,6 +18128,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "update-in",
           ],
           "outbound": "proxy-selector",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -18549,6 +18829,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -19215,6 +19505,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "stun",
           ],
           "timeout": "300ms",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -19888,6 +20188,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "timeout": "300ms",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -20524,6 +20834,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -21176,6 +21496,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -21821,6 +22151,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -22444,6 +22784,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -23199,6 +23549,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -23862,6 +24222,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
@@ -24535,6 +24905,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "rules": [
         {
           "action": "sniff",
+        },
+        {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
         },
         {
           "action": "route",
