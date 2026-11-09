@@ -4615,9 +4615,15 @@ done
       // 决策①：选中节点被标中 → 报错让用户换，不自动回退到其它节点。
       if (serverId === config.selectedServerId) {
         throw new Error(
-          `Selected node "${flagged.tag}" is misconfigured and cannot start; switch to another node and retry`
+          `Selected node "${flagged.tag}" is misconfigured and cannot start (${firstLine.slice(0, 300)}); switch to another node and retry`
         );
       }
+
+      // 把内核给的原因写进日志：否则剔除只留 tag、用户贴的日志里看不出「为什么」（曾因此要靠诊断包反推）。
+      this.logToManager(
+        'warn',
+        `Pre-start config check: sing-box rejected outbound "${flagged.tag}" (${firstLine.slice(0, 300)})`
+      );
 
       // 级联剔除该节点（含 detour 引用方、shadow-tls 配对）+ 重写盘后进入下一轮 check。
       this.pruneTagsClosure(singboxConfig, config, new Set([flagged.tag]), 'check');

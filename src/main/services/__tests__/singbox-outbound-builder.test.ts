@@ -1201,3 +1201,52 @@ describe('shouldEmitTlsEngine — TLS 引擎平台门控（跨平台导入降级
     expect(shouldEmitTlsEngine('windows', 'linux')).toBe(false);
   });
 });
+
+describe('uTLS fingerprint normalization (subscription says hellofirefox_120)', () => {
+  const tags = new Map<string, string>();
+  const realityNode = (fp: string | undefined): ServerConfig =>
+    ({
+      id: 'r1',
+      name: 'Reality',
+      protocol: 'vless',
+      address: 'node.example.com',
+      port: 443,
+      uuid: '11111111-1111-1111-1111-111111111111',
+      flow: 'xtls-rprx-vision',
+      network: 'tcp',
+      security: 'reality',
+      tlsSettings: { serverName: 'example.com', fingerprint: fp },
+      realitySettings: { publicKey: 'm6US_Wo7oYwRvmXWu2_bMRST1FB_rVcPpW3TqZX5_xY' },
+    }) as unknown as ServerConfig;
+  const build = (s: ServerConfig) => buildProxyOutbound(s, tags, DR_V6_OFF) as any;
+
+  it('VLESS Reality: Xray preset name becomes a value sing-box accepts', () => {
+    expect(build(realityNode('hellofirefox_120')).tls.utls.fingerprint).toBe('firefox');
+    expect(build(realityNode('HelloChrome_131')).tls.utls.fingerprint).toBe('chrome');
+  });
+
+  it('VLESS Reality: missing or none fingerprint falls back to chrome (Reality requires uTLS)', () => {
+    expect(build(realityNode(undefined)).tls.utls.fingerprint).toBe('chrome');
+    expect(build(realityNode('none')).tls.utls.fingerprint).toBe('chrome');
+  });
+
+  it('plain TLS node: preset name is normalized, none still means no uTLS', () => {
+    const tls = (fp: string | undefined) =>
+      ({
+        id: 't1',
+        name: 'T',
+        protocol: 'vless',
+        address: 'node.example.com',
+        port: 443,
+        uuid: '11111111-1111-1111-1111-111111111111',
+        network: 'tcp',
+        security: 'tls',
+        tlsSettings: { serverName: 'example.com', fingerprint: fp },
+      }) as unknown as ServerConfig;
+    expect(build(tls('hellofirefox_120')).tls.utls).toEqual({
+      enabled: true,
+      fingerprint: 'firefox',
+    });
+    expect(build(tls('none')).tls.utls).toBeUndefined();
+  });
+});

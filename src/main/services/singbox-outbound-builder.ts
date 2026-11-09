@@ -24,6 +24,7 @@ import { parseWsEarlyData } from '../../shared/ws-early-data';
 import { normalizeDuration } from '../../shared/duration';
 import { validateTlsSpoof } from '../../shared/tls-spoof';
 import { isIpLiteral } from '../../shared/dns';
+import { normalizeUtlsFingerprint } from '../../shared/utls-fingerprint';
 import { tailscaleStateDir } from './tailscale-state';
 import {
   effectiveCustomRules,
@@ -32,6 +33,12 @@ import {
   getDomesticResolverTag,
 } from './singbox-config-helpers';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
+
+/** Reality 与 ShadowTLS 内层必须带 uTLS：空值/none 退回 chrome，其余走 normalizeUtlsFingerprint。 */
+function utlsFingerprintOrChrome(raw: string | undefined): string {
+  const fp = normalizeUtlsFingerprint(raw);
+  return fp && fp !== 'none' ? fp : 'chrome';
+}
 
 /**
  * 协议的 TLS 是否「在 QUIC 内自管」（hy2/tuic）：无 TCP ClientHello → 不挂 uTLS / tls.engine / fragment / spoof。
@@ -457,7 +464,8 @@ export function buildProxyOutbound(
     }
 
     // uTLS 仅适用于基于 TCP 的协议，Hysteria2 和 TUIC 使用 QUIC (UDP) 不支持 uTLS
-    const fingerprint = server.tlsSettings?.fingerprint;
+    // 订阅里的 Xray 式指纹名（hellofirefox_120 等）sing-box 不认，会让整个节点（乃至整批节点）起不来 → 归一。
+    const fingerprint = normalizeUtlsFingerprint(server.tlsSettings?.fingerprint);
 
     // 默认行为：VLESS 等协议默认开启 chrome 指纹，Trojan 默认不开启（none）以通过标准 TLS 握手
     let finalFingerprint = fingerprint;
@@ -489,7 +497,7 @@ export function buildProxyOutbound(
       insecure: server.tlsSettings?.allowInsecure || false,
       utls: {
         enabled: true,
-        fingerprint: server.tlsSettings?.fingerprint || 'chrome',
+        fingerprint: utlsFingerprintOrChrome(server.tlsSettings?.fingerprint),
       },
       reality: {
         enabled: true,
@@ -1095,7 +1103,7 @@ export function buildOutbounds(
           server_name: srv.shadowTlsSettings.sni || undefined,
           utls: {
             enabled: true,
-            fingerprint: srv.shadowTlsSettings.fingerprint || 'chrome',
+            fingerprint: utlsFingerprintOrChrome(srv.shadowTlsSettings.fingerprint),
           },
         },
       };
