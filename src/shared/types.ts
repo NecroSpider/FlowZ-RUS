@@ -220,6 +220,8 @@ export interface ServerConfig {
 
   // 自定义协议（raw-JSON 透传，第三方内核用）
   customSettings?: CustomSettings;
+  // Imported Xray balancers reference ordinary nodes in the same subscription.
+  urltestMemberIds?: string[];
 
   anyTlsSettings?: AnyTlsSettings;
 

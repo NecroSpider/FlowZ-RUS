@@ -152,6 +152,8 @@ export interface SingBoxOutbound {
   server?: string;
   server_port?: number;
   override_address?: string;
+  url?: string;
+  interval?: string;
   // Shadowsocks
   method?: string;
   password?: string;

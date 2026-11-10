@@ -35,6 +35,7 @@ import {
 } from './singbox-config-helpers';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
 import { requiresXray } from '../../shared/xray-node';
+import { buildImportedGroup, importedGroupMembers, isImportedGroupMember } from './singbox-urltest';
 
 /** Reality 与 ShadowTLS 内层必须带 uTLS：空值/none 退回 chrome，其余走 normalizeUtlsFingerprint。 */
 function utlsFingerprintOrChrome(raw: string | undefined): string {
@@ -179,6 +180,7 @@ export function buildProxyOutbound(
   nodeResolverTag: SingBoxDomainResolver
 ): SingBoxOutbound {
   if (requiresXray(server)) throw new Error('This VLESS node requires Xray');
+  if (importedGroupMembers(server)) throw new Error('Imported group needs its member outbounds');
   // sing-box 要求协议类型必须是小写
   const protocol = server.protocol.toLowerCase();
   const tlsProtocols = ['trojan', 'anytls', 'hysteria2', 'tuic'];
@@ -832,6 +834,7 @@ export function buildOutbounds(
   // 进入 nodeTags → proxy-selector / rule-sel / route，与普通节点一视同仁（clash_api 热切换已实测兼容）。
   pendingEndpoints.length = 0;
   const nodeTags: string[] = [];
+  const managedGroupTags = new Set<string>();
   let systemWgCount = 0; // 多 System WG 唯一内核接口名计数（防多个 system:true WG 都叫 flowz-wg 撞名致核 FATAL）。
 
   if (config) {
@@ -839,6 +842,7 @@ export function buildOutbounds(
     // 中，一并生成、通过 detour 字段链接。单个节点配置异常不应拖垮整体配置，逐节点 try/catch 跳过。
     // （app/custom 分流规则指向的固定节点 tag 不变，仍直接命中其节点出站，不经 selector。）
     for (const server of config.servers) {
+      if (importedGroupMembers(server)) continue;
       const tag = idToTagMap.get(server.id) || `proxy-${server.id}`;
       if (nodeTags.includes(tag)) continue; // 去重（含 endpoint）
       // 不可用节点跳过：naive 缺 libcronet 时，sing-box 启动会预初始化全部出站、缺库的 naive 会让
@@ -1005,6 +1009,30 @@ export function buildOutbounds(
       }
     }
 
+    const builtTags = new Set(outbounds.map((outbound) => outbound.tag));
+    const availableMembers = new Map(
+      config.servers.flatMap((server) => {
+        const tag = idToTagMap.get(server.id);
+        return tag && builtTags.has(tag) && isImportedGroupMember(server)
+          ? [[server.id, tag] as const]
+          : [];
+      })
+    );
+    for (const server of config.servers) {
+      const ids = importedGroupMembers(server);
+      const tag = idToTagMap.get(server.id);
+      if (!ids || !tag || deps.gateInvalidNodes.has(server.id)) continue;
+      const group = buildImportedGroup(ids, tag, availableMembers);
+      if (!group) {
+        if (selectedServer?.id === server.id)
+          throw new Error('Selected group has no usable members');
+        continue;
+      }
+      outbounds.push(group);
+      managedGroupTags.add(tag);
+      nodeTags.push(tag);
+    }
+
     // 全局 TLS 分片（PR-6）：开启后对所有已生成的 TCP-TLS 节点出站切分 ClientHello，抗 SNI-DPI。
     // 跳过 hy2/tuic（QUIC 内 TLS、无 TCP ClientHello，死配置）与 naive（Cronet 自管 TLS，拒绝
     // fragment 字段 → 启动 FATAL）。
@@ -1156,10 +1184,13 @@ export function buildOutbounds(
     while (true) {
       const validTags = new Set(outbounds.map((o) => o.tag).filter((t): t is string => !!t));
       const dead = outbounds.find(
-        (ob) => ob.detour !== undefined && !validTags.has(ob.detour) && ob.tag !== 'proxy-selector'
+        (ob) =>
+          (ob.detour !== undefined && !validTags.has(ob.detour) && ob.tag !== 'proxy-selector') ||
+          (managedGroupTags.has(ob.tag) && !ob.outbounds?.some((tag) => validTags.has(tag)))
       );
       if (!dead) break;
       if (dead.tag === selectedTag) {
+        if (managedGroupTags.has(dead.tag)) throw new Error('Selected group has no usable members');
         throw new Error(
           `Selected node "${dead.tag}" chains through a detour node that does not exist; cannot start. Pick another node and try again`
         );
@@ -1173,7 +1204,7 @@ export function buildOutbounds(
       // rule-sel 引用幽灵 tag → sing-box 启动 FATAL。default 命中被剔 → rule-sel 回 proxy-selector、
       // proxy-selector 落剩余首节点（MED-1，见 prunedSelectorDefault；不 FATAL）。
       const allSelectors = outbounds.filter(
-        (o) => o.type === 'selector' && Array.isArray(o.outbounds)
+        (o) => (o.type === 'selector' || managedGroupTags.has(o.tag)) && Array.isArray(o.outbounds)
       );
       for (const sel of allSelectors) {
         sel.outbounds = (sel.outbounds as string[]).filter((t) => t !== removedTag);

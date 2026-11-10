@@ -214,6 +214,37 @@ describe('parseXrayConfigArray / isXrayConfigArray', () => {
     streamSettings: { network },
   });
 
+  it('imports the default balancer with supported members and its fallback first', () => {
+    const result = parseXrayConfigArray(
+      [
+        { remarks: 'Existing node', outbounds: [vless('proxy', '1.1.1.1')] },
+        {
+          remarks: 'Automatic',
+          outbounds: [
+            vless('pool-primary', '1.1.1.1'),
+            vless('fallback', '2.2.2.2'),
+            vless('other-pool', '3.3.3.3'),
+            { protocol: 'freedom', tag: 'pool-direct' },
+          ],
+          routing: {
+            balancers: [{ tag: 'auto', selector: ['pool-'], fallbackTag: 'fallback' }],
+            rules: [
+              { type: 'field', domain: ['example.com'], balancerTag: 'special' },
+              { type: 'field', network: 'tcp,udp', balancerTag: 'auto' },
+            ],
+          },
+        },
+      ],
+      NOW
+    );
+    const group = result.servers.find((server) => server.name === 'Automatic');
+    expect(group?.customSettings?.outbound.type).toBe('urltest');
+    expect(group?.urltestMemberIds).toEqual(
+      ['2.2.2.2', '1.1.1.1'].map((address) => result.servers.find((server) => server.address === address)?.id)
+    );
+    expect(result.servers.filter((server) => server.address === '1.1.1.1')).toHaveLength(1);
+  });
+
   it('单出口配置 → 名为 remarks', () => {
     const r = parseXrayConfigArray(
       [{ remarks: 'NL', outbounds: [vless('proxy', '1.1.1.1')] }],

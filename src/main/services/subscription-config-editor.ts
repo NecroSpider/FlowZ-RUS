@@ -1,7 +1,7 @@
 import type { UserConfig, SubscriptionConfig } from '../../shared/types';
 
 // A previous parser may have skipped nodes even if the HTTP body is unchanged.
-export const SUBSCRIPTION_PARSER_REVISION = 2;
+export const SUBSCRIPTION_PARSER_REVISION = 3;
 
 export function subscriptionValidators(subscription: SubscriptionConfig) {
   if (subscription.hasProviders) return undefined;

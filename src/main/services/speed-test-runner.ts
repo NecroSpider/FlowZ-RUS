@@ -64,7 +64,8 @@ export async function runSpeedTest(
         }),
       (tested, ok, total) => send(IPC_CHANNELS.EVENT_SPEED_TEST_PROGRESS, { tested, ok, total }),
       config.speedTestUrl,
-      config.xrayForVlessReality
+      config.xrayForVlessReality,
+      config.servers
     );
     // 唯一回写托盘点：合并入托盘延迟显示（不替换 → 子集/单节点测速不塌缩）+ isSpeedTesting=false + 菜单重建。
     // toast 仅托盘入口（notifyTrayToast=true）触发——渲染入口（服务器页/首页）测速由 use-speed-test 自弹，避免双 toast。

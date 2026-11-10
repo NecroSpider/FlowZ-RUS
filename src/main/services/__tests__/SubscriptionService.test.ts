@@ -976,6 +976,28 @@ describe('§16.3.4 reconcileServers contentChanged（手动 force-restart / 渲�
   const node = (uuid: string, addr: string, name = uuid, id = `id-${uuid}`): ServerConfig =>
     ({ id, name, protocol: 'vless', address: addr, port: 443, uuid }) as ServerConfig;
 
+  it('keeps imported group references valid after refreshing matching nodes', () => {
+    const group = (id: string, memberId: string): ServerConfig => ({
+      id,
+      name: 'Automatic',
+      protocol: 'custom',
+      address: '',
+      port: 0,
+      customSettings: { outbound: { type: 'urltest' } },
+      urltestMemberIds: [memberId],
+    });
+    const result = SubscriptionService.reconcileServers(
+      [group('old-group', 'old-member'), node('u1', '1.1.1.1', 'Node', 'old-member')],
+      [group('new-group', 'new-member'), node('u1', '1.1.1.1', 'Node', 'new-member')],
+      'NOW'
+    );
+    expect(result.contentChanged).toBe(false);
+    expect(result.servers[0]).toMatchObject({
+      id: 'old-group',
+      urltestMemberIds: ['old-member'],
+    });
+  });
+
   it('新增节点 → contentChanged=true', () => {
     const r = SubscriptionService.reconcileServers(
       [node('u1', '1.1.1.1')],

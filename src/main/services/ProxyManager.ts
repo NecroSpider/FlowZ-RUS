@@ -4899,6 +4899,14 @@ done
         if (ob.detour && toRemove.has(ob.detour) && !toRemove.has(ob.tag)) {
           queue.push(ob.tag);
         }
+        if (
+          ob.type === 'urltest' &&
+          ob.outbounds?.length &&
+          ob.outbounds.every((member) => toRemove.has(member)) &&
+          !toRemove.has(ob.tag)
+        ) {
+          queue.push(ob.tag);
+        }
       }
     }
 

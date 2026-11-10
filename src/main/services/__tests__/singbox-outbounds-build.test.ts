@@ -52,6 +52,25 @@ afterEach(() =>
 );
 
 describe('buildOutbounds — 基础装配 + 载体', () => {
+  it('uses an imported group as an exit and omits unavailable members', () => {
+    const a = vless('a', 'A');
+    const group: ServerConfig = {
+      id: 'group',
+      name: 'Group',
+      address: '',
+      port: 0,
+      protocol: 'custom',
+      customSettings: { outbound: { type: 'urltest' } },
+      urltestMemberIds: ['missing', a.id, 'group'],
+    };
+    const servers = [group, a];
+    const result = buildOutbounds(group, cfg(servers), idMap(servers), deps());
+    expect(result.outbounds.find((outbound) => outbound.tag === group.name)).toMatchObject({
+      type: 'urltest',
+      outbounds: [a.name],
+    });
+    expect(result.outbounds.find((outbound) => outbound.tag === 'proxy-selector')?.default).toBe(group.name);
+  });
   it('routes an Xray-only node through its bridge and never emits it as plain VLESS', () => {
     const native = vless('native', 'Native');
     const xray = { ...vless('xray', 'Xray'), network: 'xhttp' } as const;

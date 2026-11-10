@@ -215,6 +215,9 @@ export class SubscriptionService {
    * 凭据可区分同 host:port 的并列节点，几乎不随更新变化。
    */
   static serverFingerprint(s: ServerConfig): string {
+    if (s.customSettings?.outbound?.type === 'urltest' && Array.isArray(s.urltestMemberIds)) {
+      return JSON.stringify(['urltest', s.name]);
+    }
     // 凭据按协议落点取：vless/vmess/tuic→uuid；trojan/hy2/anytls→password；ss→shadowsocksSettings.password；
     // naive/socks/http→username；ssh→sshSettings.password。覆盖嵌套落点，避免 SS 等凭据落空致同 host:port 误并。
     const cred =
@@ -280,10 +283,20 @@ export class SubscriptionService {
     let added = 0;
     let updated = 0;
     let anyContentChanged = false;
-    for (const ns of fetchedServers) {
-      const key = SubscriptionService.serverFingerprint(ns);
-      const bucket = oldBuckets.get(key);
-      const old = bucket && bucket.length > 0 ? bucket.shift() : undefined;
+    const matches = fetchedServers.map((server) => {
+      const bucket = oldBuckets.get(SubscriptionService.serverFingerprint(server));
+      return { server, old: bucket?.shift() };
+    });
+    const resolvedIds = new Map(
+      matches.map(({ server, old }) => [server.id, old?.id ?? server.id])
+    );
+    for (const { server, old } of matches) {
+      const ns = Array.isArray(server.urltestMemberIds)
+        ? {
+            ...server,
+            urltestMemberIds: server.urltestMemberIds.map((id) => resolvedIds.get(id) ?? id),
+          }
+        : server;
       if (old) {
         // 内容相同（忽略 id/时间戳）则保留 old.updatedAt，避免无变化也刷新 updatedAt「投毒」纯切节点热切换
         const same = contentKey(ns) === contentKey(old);

@@ -81,7 +81,7 @@ export function registerSubscriptionHandlers(
           sendHwid: incoming.sendHwid,
           // 用户在对话框里保存 = 亲手确认该 URL → 撤销「导入来源」标记，首跳恢复信任。
           imported: undefined,
-          ...(previous.url !== incoming.url
+          ...(previous.url !== incoming.url || previous.userAgent !== incoming.userAgent
             ? { etag: undefined, lastModified: undefined, hasProviders: undefined }
             : {}),
         };

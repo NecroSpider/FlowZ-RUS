@@ -10,7 +10,12 @@
 import { randomUUID } from 'crypto';
 import type { ServerConfig, Network, Security } from '../../shared/types';
 import { unsupportedVlessEncryption } from './ProtocolParser';
-import { canUseXray, isXhttpNetwork, readXrayTcpFragment, requiresXray } from '../../shared/xray-node';
+import {
+  canUseXray,
+  isXhttpNetwork,
+  readXrayTcpFragment,
+  requiresXray,
+} from '../../shared/xray-node';
 
 /** 本模块可映射的 xray outbound.protocol。 */
 const XRAY_SUPPORTED = new Set(['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria']);
@@ -146,7 +151,8 @@ function mapXrayOutbound(
   });
 
   if (proto === 'vmess' || proto === 'vless') {
-    const vnext = (settings.vnext as Array<Record<string, unknown>>)?.[0] ??
+    const vnext =
+      (settings.vnext as Array<Record<string, unknown>>)?.[0] ??
       (proto === 'vless' ? settings : undefined);
     if (!vnext) return null;
     const address = str(vnext.address);
@@ -264,10 +270,9 @@ function collectXrayOutbounds(
     }
     if (proto === 'vless') {
       const settings = o.settings as Record<string, unknown> | undefined;
-      const users = (settings?.vnext as
-          | Array<Record<string, unknown>>
-          | undefined
-      )?.[0]?.users as Array<Record<string, unknown>> | undefined;
+      const users = (settings?.vnext as Array<Record<string, unknown>> | undefined)?.[0]?.users as
+        | Array<Record<string, unknown>>
+        | undefined;
       const encMethod = unsupportedVlessEncryption(users?.[0]?.encryption ?? settings?.encryption);
       if (encMethod) {
         skip(`vless+encryption:${encMethod}`);
@@ -276,15 +281,19 @@ function collectXrayOutbounds(
     }
     const ss = o.streamSettings as Record<string, unknown> | undefined;
     const network = xrayNetwork(ss);
-    const supported = proto === 'hysteria'
-      ? network === 'hysteria'
-      : XRAY_SUPPORTED_NETWORKS.has(network) || (proto === 'vless' && isXhttpNetwork(network));
+    const supported =
+      proto === 'hysteria'
+        ? network === 'hysteria'
+        : XRAY_SUPPORTED_NETWORKS.has(network) || (proto === 'vless' && isXhttpNetwork(network));
     if (!supported) {
       skip(`${proto}+${network}`);
       continue;
     }
     if (isXhttpNetwork(network)) {
-      const settings = (ss?.xhttpSettings ?? ss?.splithttpSettings ?? {}) as Record<string, unknown>;
+      const settings = (ss?.xhttpSettings ?? ss?.splithttpSettings ?? {}) as Record<
+        string,
+        unknown
+      >;
       if (settings.downloadSettings || settings.extra) {
         skip('vless+XHTTP extra settings');
         continue;
@@ -340,23 +349,77 @@ export function parseXrayConfigArray(configs: unknown, now: string): XrayParseRe
   const skipBy = new Map<string, number>();
   if (!isXrayConfigArray(configs)) return { servers, skipped, failed, warnings: [] };
 
-  const seen = new Set<string>();
+  const seen = new Map<string, ServerConfig>();
   for (const config of configs) {
     const r = collectXrayOutbounds(config.outbounds, now, skipBy);
     skipped += r.skipped;
     failed += r.failed;
     const remarks = str(config.remarks)?.trim();
+    const memberIds = new Map<string, string>();
     r.servers.forEach((server, i) => {
+      const outboundTag = server.name;
       if (remarks) {
         server.name =
           r.servers.length === 1 ? remarks : `${remarks} · ${str(server.name) || i + 1}`;
       }
       const { id: _id, name: _name, createdAt: _c, updatedAt: _u, ...params } = server;
       const key = JSON.stringify(params);
-      if (seen.has(key)) return;
-      seen.add(key);
-      servers.push(server);
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, server);
+        servers.push(server);
+      }
+      memberIds.set(outboundTag, existing?.id ?? server.id);
     });
+    const group = remarks
+      ? importDefaultBalancer(config.routing, remarks, memberIds, now)
+      : undefined;
+    if (group) servers.push(group);
   }
   return { servers, skipped, failed, warnings: skipWarnings(skipped, skipBy) };
+}
+
+function importDefaultBalancer(
+  routing: unknown,
+  name: string,
+  ids: Map<string, string>,
+  now: string
+): ServerConfig | undefined {
+  const value = routing as { rules?: unknown; balancers?: unknown } | undefined;
+  if (!Array.isArray(value?.rules) || !Array.isArray(value.balancers)) return undefined;
+  const rule = value.rules[value.rules.length - 1] as Record<string, unknown> | undefined;
+  if (
+    !rule ||
+    typeof rule.balancerTag !== 'string' ||
+    Object.keys(rule).some((key) => !['type', 'network', 'balancerTag'].includes(key))
+  )
+    return undefined;
+  if (rule.network !== undefined) {
+    const networks =
+      typeof rule.network === 'string' ? rule.network.split(',').map((n) => n.trim()) : [];
+    if (!networks.includes('tcp') || !networks.includes('udp')) return undefined;
+  }
+  const balancer = value.balancers.find((candidate) => candidate?.tag === rule.balancerTag);
+  if (!Array.isArray(balancer?.selector)) return undefined;
+  const selectors: string[] = balancer.selector.filter(
+    (tag: unknown) => typeof tag === 'string' && tag.length > 0
+  );
+  const members = new Set<string>();
+  const fallback = ids.get(balancer.fallbackTag);
+  if (fallback) members.add(fallback);
+  for (const [tag, id] of ids) {
+    if (selectors.some((prefix) => tag.startsWith(prefix))) members.add(id);
+  }
+  if (!members.size) return undefined;
+  return {
+    id: randomUUID(),
+    name,
+    protocol: 'custom',
+    address: '',
+    port: 0,
+    customSettings: { outbound: { type: 'urltest' } },
+    urltestMemberIds: [...members],
+    createdAt: now,
+    updatedAt: now,
+  };
 }
