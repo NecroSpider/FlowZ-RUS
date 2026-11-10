@@ -17,12 +17,38 @@ if ! command -v go >/dev/null 2>&1; then
   exit 0
 fi
 
+# Core trust (helper proto mac v10 / win v6 / linux v2): the SHA-256 of the bundled core (and libcronet where it is a
+# separate file) is compiled into each helper. The privileged helper then accepts over its socket/pipe only that
+# binary or ones an admin approved (trusted-hashes). Source of truth: src/shared/core-manifest.json — the same pins
+# fetch-core / fetch-cronet verify. A helper without the pin would not enforce trust, so a missing pin is fatal.
+MANIFEST="$ROOT/src/shared/core-manifest.json"
+manifest_get() { # $1 = manifest field, $2 = platform key → lowercase hex on stdout, non-zero exit if absent/invalid
+  node -e 'const m=require(process.argv[1]);const v=String(((m[process.argv[2]]||{})[process.argv[3]])||"").replace(/^sha256:/,"");if(!/^[0-9a-fA-F]{64}$/.test(v))process.exit(3);process.stdout.write(v.toLowerCase())' "$MANIFEST" "$1" "$2"
+}
+trust_ldflags() { # $1 = coreBinarySha256 key, $2 = cronetLibSha256 key ("" when cronet is linked into the core)
+  local core cronet flags
+  core="$(manifest_get coreBinarySha256 "$1")" || {
+    echo "[build-helper] core-manifest.json has no valid coreBinarySha256[$1]; refusing to build a helper that cannot verify the core" >&2
+    exit 1
+  }
+  flags="-X main.bundledCoreSHA256=$core"
+  if [ -n "${2:-}" ]; then
+    cronet="$(manifest_get cronetLibSha256 "$2")" || {
+      echo "[build-helper] core-manifest.json has no valid cronetLibSha256[$2]; refusing to build" >&2
+      exit 1
+    }
+    flags="$flags -X main.bundledCronetSHA256=$cronet"
+  fi
+  printf '%s' "$flags"
+}
+
 build() {
-  local arch="$1" goarch="$2"
+  local arch="$1" goarch="$2" trust
   local out="$ROOT/resources/mac-$arch/$OUT_NAME"
+  trust="$(trust_ldflags "mac-$arch" "")"
   echo "[build-helper] mac-$arch ($goarch) → $out"
   ( cd "$SRC" && GOOS=darwin GOARCH="$goarch" CGO_ENABLED=0 \
-      go build -trimpath -ldflags="-s -w" -o "$out" . )
+      go build -trimpath -ldflags="-s -w $trust" -o "$out" . )
   chmod 755 "$out"
 }
 
@@ -35,10 +61,11 @@ build x64 amd64
 WIN_SRC="$ROOT/helper-win"
 if [ -d "$WIN_SRC" ]; then
   WIN_OUT="$ROOT/resources/win/com.flowz.helper.exe"
+  WIN_TRUST="$(trust_ldflags win win)"
   echo "[build-helper] win-x64 (amd64) → $WIN_OUT"
   mkdir -p "$ROOT/resources/win"
   ( cd "$WIN_SRC" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
-      go build -mod=vendor -trimpath -ldflags="-s -w" -o "$WIN_OUT" . )
+      go build -mod=vendor -trimpath -ldflags="-s -w $WIN_TRUST" -o "$WIN_OUT" . )
 fi
 
 # Linux 提权 helper（独立 module helper-linux/，纯 stdlib，需 linux-only syscall → 只在 GOOS=linux 编译）。输出到
@@ -51,10 +78,17 @@ if [ -d "$LINUX_SRC" ]; then
   # 钉 amd64 匹配 package:linux/dist:linux 的 electron-builder --x64（否则 arm64 主机构建会打进不可执行的二进制）。
   # 纯 Go + linux-only syscall、无 CGO → 交叉编译零依赖；将来出 arm64 发布另加 GOARCH=arm64 腿即可。
   LINUX_GOARCH="${LINUX_GOARCH:-amd64}"
+  # core-manifest pins only the amd64 Linux core ("linux"); other arches get no compiled pin (trust not enforced).
+  LINUX_TRUST=""
+  if [ "$LINUX_GOARCH" = "amd64" ]; then
+    LINUX_TRUST="$(trust_ldflags linux linux)"
+  else
+    echo "[build-helper] WARNING: no core-manifest pin for linux/$LINUX_GOARCH; this helper will not enforce core trust" >&2
+  fi
   echo "[build-helper] linux ($LINUX_GOARCH) → $LINUX_OUT"
   mkdir -p "$ROOT/resources/linux"
   ( cd "$LINUX_SRC" && GOOS=linux GOARCH="$LINUX_GOARCH" CGO_ENABLED=0 \
-      go build -trimpath -ldflags="-s -w" -o "$LINUX_OUT" . )
+      go build -trimpath -ldflags="-s -w $LINUX_TRUST" -o "$LINUX_OUT" . )
   chmod 755 "$LINUX_OUT"
 fi
 echo "[build-helper] done"

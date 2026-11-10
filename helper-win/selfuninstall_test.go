@@ -74,7 +74,7 @@ func TestIsSafeSupportDir(t *testing.T) {
 		{`C:\x"y`, false},         // 引号
 		{`C:\a|b`, false},         // 管道
 		{`D:/path`, true},         // 正斜杠允许
-		{`C:\应用\FlowZ`, true},   // 中文 Unicode 允许
+		{`C:\应用\FlowZ`, true},     // 中文 Unicode 允许
 	}
 	for _, c := range cases {
 		if got := isSafeSupportDir(c.in); got != c.want {

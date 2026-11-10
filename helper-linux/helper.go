@@ -18,6 +18,7 @@
 //   - AmbientCaps 授 CAP_NET_ADMIN/NET_RAW/NET_BIND_SERVICE（与现役 setcap 授权一致，PlatformPrivilegeService.ts:191）。
 //
 // 协议（每行 \n 结尾，路径整行传递）：
+//
 //	行1: <command>   ping | version | status | start | stop | cleanup | freeport | install-core
 //	start 追加: 行2=<singbox 路径，须==coreDir/sing-box> 行3=<cfg> 行4=<log，可空> 行5=<fwd:0|1> 行6=<父 app PID，可选>
 //	freeport 追加: 行2=<port>
@@ -28,8 +29,7 @@ package main
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -45,7 +45,13 @@ import (
 )
 
 // 协议版本。v1：root 受管核 + install-core + 路径锁 + SO_PEERCRED + 授权列表 + 父死看护 + freeport。
-const protoVersion = "1"
+// v2: install-core accepts only trusted binaries (hash compiled in at build time or listed in
+// <coredir>/trusted-hashes, which only the pkexec elevated path writes; the client hash line is ignored);
+// expected names only (sing-box, libcronet.*), regular files, never symlinks. core-info → "OK bundled=<h> core=<h>".
+// The start log is opened next to the config, relative to that dir's fd, never chowning an existing file.
+// IP forwarding is only touched when requested and restored on every child-exit path; watchParent also
+// compares the parent's start time (PID reuse). Line layout unchanged → v1 clients keep working.
+const protoVersion = "2"
 
 // Linux capability 数值（<linux/capability.h>；纯标准库不引 x/sys/unix）。授权集与现役 setcap 一致（不推测削减）。
 const (
@@ -167,80 +173,101 @@ func procUID(pid string) (uint32, error) {
 	return st.Uid, nil
 }
 
-// setForward：allowLan 时开/关 IPv4+IPv6 转发（直写 /proc/sys）。每次 start 按 fwd 显式设置、stop 复位为 0，
-// 使转发态严格跟随运行中的核 —— 杜绝「开过 LAN 共享后停核/退出，主机仍全局转发到重启」的状态泄漏。best-effort。
-func setForward(on bool) {
-	v := []byte("0")
-	if on {
-		v = []byte("1")
+// IP forwarding: enabled only for an allowLan session; the previous values are saved first and restored when that
+// session's child exits on any path (stop, crash, parent-death reap, helper shutdown). fwd=0 never touches it, so a
+// host that already forwards (Docker, libvirt) is left alone. Guarded by mu.
+var (
+	fwdFiles = []string{"/proc/sys/net/ipv4/ip_forward", "/proc/sys/net/ipv6/conf/all/forwarding"}
+	fwdSaved map[string]string
+	fwdOwner *exec.Cmd
+)
+
+func enableForwarding() {
+	if fwdSaved == nil {
+		fwdSaved = map[string]string{}
+		for _, f := range fwdFiles {
+			if b, err := os.ReadFile(f); err == nil {
+				if v := strings.TrimSpace(string(b)); v != "" {
+					fwdSaved[f] = v
+				}
+			}
+		}
 	}
-	_ = os.WriteFile("/proc/sys/net/ipv4/ip_forward", v, 0o644)
-	_ = os.WriteFile("/proc/sys/net/ipv6/conf/all/forwarding", v, 0o644)
+	for _, f := range fwdFiles {
+		_ = os.WriteFile(f, []byte("1"), 0o644)
+	}
 }
 
-// installCore：把 app 下载+预检的临时核 srcDir，校验 sha256(srcDir/sing-box)==wantHash 后，root 写入锁定的 coreDir
-// （整目录 sing-box + libcronet.so 等配套，逐文件 .new+rename 原子就位 + 清陈旧残留）。只写 coreDir、不接受任意路径。
-func installCore(srcDir, wantHash string) string {
-	if coreDir == "" {
-		return "ERR coredir-unset"
+func restoreForwarding() {
+	for f, v := range fwdSaved {
+		_ = os.WriteFile(f, []byte(v), 0o644)
 	}
-	if srcDir == "" || len(wantHash) != 64 {
-		return "ERR bad-args"
-	}
-	sbData, err := os.ReadFile(filepath.Join(srcDir, "sing-box"))
+	fwdSaved, fwdOwner = nil, nil
+}
+
+// procStartTime: /proc/<pid>/stat starttime (clock ticks since boot) — a PID's identity across reuse. "" on failure.
+func procStartTime(pid int) string {
+	b, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
 	if err != nil {
-		return "ERR read-singbox " + err.Error()
+		return ""
 	}
-	sum := sha256.Sum256(sbData)
-	if !strings.EqualFold(hex.EncodeToString(sum[:]), wantHash) {
-		return "ERR hash-mismatch"
+	return parseProcStatStartTime(string(b))
+}
+
+// openLogForCaller opens the early stdout/stderr log for the core. It must sit directly in the config file's
+// directory, which must be owned by the caller and not world-writable; the file is opened relative to that
+// directory's fd with O_NOFOLLOW (no path re-resolution), must be a regular single-link file owned by the caller,
+// and a missing file is created O_EXCL and handed to the caller by fd. An existing file is never chowned.
+func openLogForCaller(cfg, logPath string, uid, gid uint32) (*os.File, error) {
+	if logPath == "" || !filepath.IsAbs(logPath) || !filepath.IsAbs(cfg) {
+		return nil, errors.New("bad log path")
 	}
-	entries, err := os.ReadDir(srcDir)
+	dir := filepath.Dir(filepath.Clean(cfg))
+	if filepath.Dir(filepath.Clean(logPath)) != dir {
+		return nil, errors.New("log must be in the config directory")
+	}
+	name := filepath.Base(filepath.Clean(logPath))
+	dfd, err := syscall.Open(dir, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC, 0)
 	if err != nil {
-		return "ERR readdir " + err.Error()
+		return nil, err
 	}
-	if err := os.MkdirAll(coreDir, 0o755); err != nil {
-		return "ERR mkdir " + err.Error()
+	defer syscall.Close(dfd)
+	var dst syscall.Stat_t
+	if err := syscall.Fstat(dfd, &dst); err != nil {
+		return nil, err
 	}
-	srcNames := map[string]bool{}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		srcNames[name] = true
-		data := sbData
-		if name != "sing-box" {
-			if data, err = os.ReadFile(filepath.Join(srcDir, name)); err != nil {
-				return "ERR read " + name + " " + err.Error()
-			}
-		}
-		dst := filepath.Join(coreDir, name)
-		tmp := dst + ".new"
-		if err := os.WriteFile(tmp, data, 0o755); err != nil {
-			return "ERR write " + name + " " + err.Error()
-		}
-		if err := os.Rename(tmp, dst); err != nil {
-			_ = os.Remove(tmp)
-			return "ERR rename " + name + " " + err.Error()
-		}
-		_ = os.Chmod(dst, 0o755)
+	if dst.Uid != uid || dst.Mode&0o002 != 0 {
+		return nil, errors.New("config directory not owned by the caller")
 	}
-	// 清 coreDir 里非本次 srcDir 的旧残留（rollback 后陈旧配套），但保留 helper 自身二进制与非核文件不误删——
-	// 仅删曾由 install-core 放入的核配套：保守起见只清 .new 临时件 + 与 sing-box 同类的库残留由 srcNames 判定。
-	if old, err := os.ReadDir(coreDir); err == nil {
-		for _, e := range old {
-			n := e.Name()
-			if e.IsDir() || srcNames[n] || strings.HasSuffix(n, ".new") {
-				continue
-			}
-			// 只清核配套（sing-box / lib*.so*），不碰其它（防误删同目录 helper 二进制等）。
-			if n == "sing-box" || strings.HasPrefix(n, "lib") {
-				_ = os.Remove(filepath.Join(coreDir, n))
-			}
-		}
+	flags := syscall.O_WRONLY | syscall.O_APPEND | syscall.O_NOFOLLOW | syscall.O_NONBLOCK | syscall.O_CLOEXEC
+	fd, err := syscall.Openat(dfd, name, flags, 0)
+	created := false
+	if err == syscall.ENOENT {
+		fd, err = syscall.Openat(dfd, name, flags|syscall.O_CREAT|syscall.O_EXCL, 0o644)
+		created = err == nil
 	}
-	return "OK installed"
+	if err != nil {
+		return nil, err
+	}
+	var st syscall.Stat_t
+	if err := syscall.Fstat(fd, &st); err != nil {
+		syscall.Close(fd)
+		return nil, err
+	}
+	if st.Mode&syscall.S_IFMT != syscall.S_IFREG || st.Nlink != 1 {
+		syscall.Close(fd)
+		return nil, errors.New("log is not a regular single-link file")
+	}
+	if created {
+		if err := syscall.Fchown(fd, int(uid), int(gid)); err != nil {
+			syscall.Close(fd)
+			return nil, err
+		}
+	} else if st.Uid != uid {
+		syscall.Close(fd)
+		return nil, errors.New("log not owned by the caller")
+	}
+	return os.NewFile(uintptr(fd), logPath), nil
 }
 
 func terminateChild(c *exec.Cmd, done <-chan struct{}) {
@@ -255,7 +282,7 @@ func terminateChild(c *exec.Cmd, done <-chan struct{}) {
 	}
 }
 
-func watchParent(ppid int, c *exec.Cmd, done <-chan struct{}) {
+func watchParent(ppid int, ppidStart string, c *exec.Cmd, done <-chan struct{}) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for {
@@ -270,7 +297,17 @@ func watchParent(ppid int, c *exec.Cmd, done <-chan struct{}) {
 		if !current {
 			return
 		}
+		// Dead parent: ESRCH, or the PID now belongs to a different process (start time changed → PID reuse).
+		// An unreadable start time never counts as dead (no false kills).
+		dead := false
 		if err := syscall.Kill(ppid, 0); err == syscall.ESRCH {
+			dead = true
+		} else if err == nil && ppidStart != "" {
+			if cur := procStartTime(ppid); cur != "" && cur != ppidStart {
+				dead = true
+			}
+		}
+		if dead {
 			mu.Lock()
 			if child != c {
 				mu.Unlock()
@@ -371,7 +408,7 @@ func handle(conn net.Conn) {
 			pid := child.Process.Pid
 			c, done := child, childDone
 			child, childDone = nil, nil
-			setForward(false) // 停核复位转发态（跟随运行中的核）
+			// forwarding is restored by the child's Wait goroutine once it has really exited
 			reapWG.Add(1)
 			go func() { defer reapWG.Done(); terminateChild(c, done) }()
 			fmt.Fprintf(conn, "OK stopped %d\n", pid)
@@ -383,7 +420,9 @@ func handle(conn net.Conn) {
 			_ = child.Process.Kill()
 		}
 		child, childDone = nil, nil
-		setForward(false)
+		if fwdSaved != nil {
+			restoreForwarding()
+		}
 		_ = exec.Command("pkill", "-9", "-U", strconv.Itoa(int(cred.Uid)), "-f", "sing-box run").Run()
 		fmt.Fprintln(conn, "OK cleaned")
 	case "freeport":
@@ -394,9 +433,21 @@ func handle(conn net.Conn) {
 		}
 		fmt.Fprintln(conn, freePort(port, cred.Uid))
 	case "install-core":
+		// line2=srcDir, line3=client hash (ignored since v2: a client-supplied hash proves nothing).
 		src := readLine(r)
-		wantHash := strings.TrimSpace(readLine(r))
-		fmt.Fprintln(conn, installCore(src, wantHash))
+		_ = readLine(r)
+		fmt.Fprintln(conn, installCoreFiles(src, coreDir))
+	case "core-info":
+		h, _ := fileHashCached(coreBin())
+		b := normHash(bundledCoreSHA256)
+		if b == "" {
+			b = "-"
+		}
+		if h == "" {
+			h = "-"
+		}
+		// optional line2 = the app's bundled-core pin → trusted=1|0|- (0 ⇒ client treats this helper as outdated)
+		fmt.Fprintf(conn, "OK bundled=%s core=%s trusted=%s\n", b, h, bundledTrustFlag(coreDir, readLine(r)))
 	case "start":
 		singbox := strings.TrimSpace(readLine(r))
 		cfg := readLine(r)
@@ -426,7 +477,15 @@ func handle(conn net.Conn) {
 			fmt.Fprintf(conn, "ERR config-not-owned %v\n", e)
 			return
 		}
-		setForward(fwd == "1") // 显式跟随本次会话（fwd=0 亦复位）
+		var ppidStart string
+		if ppid > 0 {
+			ppidStart = procStartTime(ppid)
+		}
+		if fwd == "1" {
+			enableForwarding()
+		} else if fwdSaved != nil {
+			restoreForwarding() // a previous allowLan session's saved state (its child is gone)
+		}
 
 		c := exec.Command(coreBin(), "run", "-c", cfg)
 		// 降权拉核：setuid/setgid 回对端登录用户 + AmbientCaps 保留 CAP_NET_ADMIN/RAW/BIND_SERVICE 建 TUN/改路由。
@@ -442,18 +501,23 @@ func handle(conn net.Conn) {
 		}
 		var logFile *os.File
 		if logPath != "" {
-			if lf, e := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); e == nil {
-				_ = lf.Chown(int(cred.Uid), int(cred.Gid))
+			// v2: never open an arbitrary path as root or chown an existing file (log=/etc/passwd used to hand
+			// /etc/passwd to the caller). A refused path only disables the early log.
+			if lf, e := openLogForCaller(cfg, logPath, cred.Uid, cred.Gid); e == nil {
 				logFile = lf
 				c.Stdout = lf
 				c.Stderr = lf
+			} else {
+				fmt.Fprintln(os.Stderr, "start log disabled:", e)
 			}
 		}
 		if err := c.Start(); err != nil {
 			if logFile != nil {
 				logFile.Close()
 			}
-			setForward(false)
+			if fwdSaved != nil && fwdOwner == nil {
+				restoreForwarding()
+			}
 			fmt.Fprintf(conn, "ERR start %v\n", err)
 			return
 		}
@@ -461,6 +525,9 @@ func handle(conn net.Conn) {
 			logFile.Close()
 		}
 		child = c
+		if fwd == "1" {
+			fwdOwner = c
+		}
 		done := make(chan struct{})
 		childDone = done
 		go func() {
@@ -470,10 +537,14 @@ func handle(conn net.Conn) {
 			if child == c {
 				child, childDone = nil, nil
 			}
+			// v2: restore forwarding on every exit path (stop, crash, watchParent reap).
+			if fwdOwner == c {
+				restoreForwarding()
+			}
 			mu.Unlock()
 		}()
 		if ppid > 0 {
-			go watchParent(ppid, c, done)
+			go watchParent(ppid, ppidStart, c, done)
 		}
 		fmt.Fprintf(conn, "OK started %d\n", c.Process.Pid)
 	default:

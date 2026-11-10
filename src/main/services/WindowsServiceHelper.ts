@@ -23,12 +23,14 @@ import * as net from 'net';
 import { system32, powershellPath } from '../utils/win-system32';
 import * as os from 'os';
 import * as path from 'path';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash, createHmac, timingSafeEqual } from 'crypto';
 import type { HelperStatus } from '../../shared/types';
 import type { ILogManager } from './LogManager';
 import type { IPrivilegedHelper, HelperStartResult } from './IPrivilegedHelper';
 import { resourceManager } from './ResourceManager';
 import { getUserDataPath } from '../utils/paths';
+import { sha256File } from '../../shared/file-hash';
+import coreManifest from '../../shared/core-manifest.json';
 
 /** SCM 服务名。 */
 const SERVICE_NAME = 'FlowZHelper';
@@ -50,14 +52,71 @@ const MIN_USABLE_PROTO = 1;
 // Windows 禁 System（强制 gVisor）后，客户端只用 v1 命令：iface-metric（v3–v5）已删；route-add/del（v2）仅
 // MeshExitRouteManager 调用，而其 win32 路径已 no-op 不可达。故期望 proto 降回 MIN_USABLE_PROTO → 不再对 v1–v4
 // 旧 helper 弹「可升级」提示（那些高 proto 能力 Windows 已不调用）。将来若 Windows 重新启用 route 命令再上调。
-const EXPECTED_PROTO = MIN_USABLE_PROTO;
+// v6 (security): AUTH2 HMAC pipe auth, SYSTEM core only from the protected <SUPPORT_DIR>\core with core trust,
+// config policy, safe log, IPEnableRouter restore. Older services keep working (TUN unaffected) but the user-writable
+// core they run as SYSTEM is the reason v6 exists → EXPECTED raised so v1–v5 show the mild "upgrade" prompt.
+const EXPECTED_PROTO = 6;
+/** First proto with AUTH2, install-core / core-info and the protected core. */
+const TRUST_PROTO = 6;
+/** Protected core dir the v6 service runs the core from (inherits SUPPORT_DIR's SYSTEM/Administrators-only ACL). */
+const CORE_DIR = path.join(SUPPORT_DIR, 'core');
+/** Client-side marker: the installed service speaks AUTH2 → never send the token in clear again. */
+const AUTH_MARKER = 'hmac1';
+
+// ── AUTH2 (must match helper-win/auth.go; cross-checked by shared test vectors) ──────────────────────────
+export function authServerProof(token: string, nc: string, ns: string): string {
+  return createHmac('sha256', token).update(`flowz-helper-server\n${nc}\n${ns}`).digest('hex');
+}
+export function authClientProof(token: string, nc: string, ns: string, lines: string[]): string {
+  return createHmac('sha256', token)
+    .update(`flowz-helper-client\n${nc}\n${ns}\n${lines.join('\n')}`)
+    .digest('hex');
+}
+/** Verify the server's "CHAL <ns> <proof>" line; returns ns when the server proved it knows the token. */
+export function parseAuthChallenge(token: string, nc: string, line: string): string | null {
+  const m = line.trim().match(/^CHAL ([0-9a-f]{32}) ([0-9a-f]{64})$/);
+  if (!m) return null;
+  const want = Buffer.from(authServerProof(token, nc, m[1]), 'hex');
+  const got = Buffer.from(m[2], 'hex');
+  return got.length === want.length && timingSafeEqual(got, want) ? m[1] : null;
+}
+/** The authenticated request: "<clientProof> <n>\n" + the n request lines. */
+export function buildAuthRequest(token: string, nc: string, ns: string, lines: string[]): string {
+  if (lines.some((l) => l.includes('\n'))) throw new Error('request line contains a newline');
+  return `${authClientProof(token, nc, ns, lines)} ${lines.length}\n${lines.join('\n')}\n`;
+}
+
+/** Bundled-core hash this app version expects the service to carry (core-manifest pin). */
+function expectedBundledCoreHash(): string {
+  return String((coreManifest.coreBinarySha256 as Record<string, string>).win || '')
+    .replace(/^sha256:/, '')
+    .toLowerCase();
+}
+
+let activeInstance: WindowsServiceHelper | null = null;
+/** The Windows helper the app constructed (CoreUpdateService uses it to sync the protected core after an update). */
+export function getActiveWindowsServiceHelper(): WindowsServiceHelper | null {
+  return activeInstance;
+}
 
 export class WindowsServiceHelper implements IPrivilegedHelper {
   /** 装/卸互斥期返回最近稳定快照，避免 TOCTOU 半态（对齐 HelperManager.lastStableStatus）。 */
   private lastStableStatus: HelperStatus | null = null;
   private mutationInFlight = false;
+  /** Pipe path (overridable in tests only). */
+  protected pipePath = PIPE_PATH;
+  /** sha256 cache of the app's active core (path → size/mtime/hash) for the per-start protected-core sync. */
+  private activeHashCache: { path: string; size: number; mtimeMs: number; hash: string } | null =
+    null;
+  /** Active-core hash the service already refused as untrusted (no point re-sending it on every start). */
+  private refusedCoreHash: string | null = null;
+  /** "service does not trust the bundled core" warning logged once per process. */
+  private staleLogged = false;
 
-  constructor(private logManager?: ILogManager | null) {}
+  constructor(private logManager?: ILogManager | null) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- module-level handle for CoreUpdateService (see getActiveWindowsServiceHelper)
+    activeInstance = this;
+  }
 
   private log(level: 'info' | 'warn' | 'error', message: string): void {
     this.logManager?.addLog(level, message, 'Helper');
@@ -88,7 +147,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     return path.join(getUserDataPath(), 'helper-client.token');
   }
 
-  private token(): string {
+  protected token(): string {
     try {
       return fs.readFileSync(this.tokenFilePath(), 'utf8').trim();
     } catch {
@@ -96,11 +155,119 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     }
   }
 
+  private authMarkerPath(): string {
+    return path.join(getUserDataPath(), 'helper-client.auth');
+  }
+
+  /** True once the installed service is known to speak AUTH2: the token is then never sent in clear. */
+  private authMode(): boolean {
+    try {
+      return fs.readFileSync(this.authMarkerPath(), 'utf8').trim() === AUTH_MARKER;
+    } catch {
+      return false;
+    }
+  }
+
+  private setAuthMode(on: boolean): void {
+    try {
+      if (on) fs.writeFileSync(this.authMarkerPath(), AUTH_MARKER);
+      else fs.unlinkSync(this.authMarkerPath());
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  /** v6 service: switch this client to AUTH2 for good once an AUTH2 ping succeeds (no downgrade afterwards). */
+  private async upgradeAuthMode(): Promise<boolean> {
+    if (this.authMode()) return true;
+    try {
+      const resp = await this.sendCommandAuth2(['ping'], 1500);
+      if (/^OK pong /.test(resp)) {
+        this.setAuthMode(true);
+        return true;
+      }
+    } catch {
+      /* not an AUTH2 service (yet) */
+    }
+    return false;
+  }
+
   // ── 命名管道客户端（行协议：token\n cmd\n [args...]，与 helper.go/HelperManager 同款）────────
   // protected 而非 private：便于单测注入脚本化应答覆盖 startCore 的重试/旧核残留守卫（真管道不可单测）。
+  // v6: AUTH2 once the marker says the service supports it (the token never crosses the pipe, see helper-win/auth.go);
+  // legacy token line only for services installed by older app versions.
   protected sendCommand(rest: string[], timeoutMs: number): Promise<string> {
+    return this.authMode()
+      ? this.sendCommandAuth2(rest, timeoutMs)
+      : this.sendCommandLegacy(rest, timeoutMs);
+  }
+
+  /** AUTH2: the server must prove knowledge of the token before the request (MAC-bound to both nonces) is sent. */
+  protected sendCommandAuth2(rest: string[], timeoutMs: number): Promise<string> {
     return new Promise((resolve, reject) => {
-      const sock = net.connect(PIPE_PATH);
+      const token = this.token();
+      if (!token) {
+        reject(new Error('no helper token'));
+        return;
+      }
+      const nc = randomBytes(16).toString('hex');
+      const sock = net.connect(this.pipePath);
+      let buf = '';
+      let authed = false;
+      let settled = false;
+      const finish = (err: Error | null, value?: string): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (err) reject(err);
+        else resolve(value ?? '');
+      };
+      const timer = setTimeout(() => {
+        sock.destroy();
+        finish(new Error('helper pipe timed out'));
+      }, timeoutMs);
+      sock.on('connect', () => {
+        sock.write(`AUTH2 ${nc}\n`);
+      });
+      sock.on('data', (d) => {
+        buf += d.toString();
+        if (authed) return;
+        const nl = buf.indexOf('\n');
+        if (nl < 0) return;
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        const ns = parseAuthChallenge(token, nc, line);
+        if (!ns) {
+          sock.destroy();
+          finish(
+            new Error(
+              line.startsWith('ERR')
+                ? `helper rejected authentication: ${line.trim()}`
+                : 'helper pipe server failed authentication'
+            )
+          );
+          return;
+        }
+        authed = true;
+        try {
+          sock.write(buildAuthRequest(token, nc, ns, rest));
+        } catch (e) {
+          sock.destroy();
+          finish(e instanceof Error ? e : new Error(String(e)));
+        }
+      });
+      sock.on('end', () => {
+        if (!authed)
+          finish(new Error(buf.trim() || 'helper closed the pipe during authentication'));
+        else finish(null, buf.trim());
+      });
+      sock.on('error', (err) => finish(err));
+    });
+  }
+
+  protected sendCommandLegacy(rest: string[], timeoutMs: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const sock = net.connect(this.pipePath);
       let buf = '';
       const timer = setTimeout(() => {
         sock.destroy();
@@ -152,7 +319,11 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     try {
       const resp = await this.sendCommand(['ping'], 1500);
       const m = resp.match(/^OK pong uid=-?\d+ v(\d+)/);
-      return !!m && parseInt(m[1], 10) >= MIN_USABLE_PROTO;
+      if (!m) return false;
+      const pv = parseInt(m[1], 10);
+      if (pv < MIN_USABLE_PROTO) return false;
+      // outdated v6+ service (does not trust this app's bundled core) → not ready: never run an older core silently
+      return !(pv >= TRUST_PROTO && (await this.bundledCoreUntrusted()));
     } catch {
       return false;
     }
@@ -182,6 +353,16 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
           const pv = parseInt(version, 10);
           ready = !isNaN(pv) && pv >= MIN_USABLE_PROTO;
           upgradeable = ready && pv < EXPECTED_PROTO;
+          if (ready && pv >= TRUST_PROTO) {
+            await this.upgradeAuthMode();
+            // The service does not trust THIS app's bundled core (built for an older one, hash not admin-approved):
+            // it would keep running an older core than the config is generated for → treat as outdated
+            // (not ready + needsRepair → the existing repair gate, one UAC; "Use UAC" falls back as today).
+            if (await this.bundledCoreUntrusted()) {
+              ready = false;
+              upgradeable = false;
+            }
+          }
         }
       } catch {
         /* 未就绪 */
@@ -224,6 +405,10 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       }
       // 管道实例生命周期抖动缓冲：给服务侧断开并重新排队 ConnectNamedPipe 留出短延时
       await new Promise((r) => setTimeout(r, 60));
+      // v6: the service runs only its protected copy. Bring it in line with the app's active core when that core is
+      // trusted (bundled / admin-approved) — silent, never prompts; an unapproved core just keeps the protected one.
+      await this.syncProtectedCore().catch(() => undefined);
+      let reseeded = false;
       for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 100));
         try {
@@ -231,6 +416,19 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
             ['start', configPath, logPath || '', forward ? '1' : '0', String(process.pid)],
             8000
           );
+          // v6: protected core missing/untrusted and the install-time bundle path is gone (portable / moved):
+          // re-seed it from the current bundle (accepted only if it hashes to the service's pin), then retry.
+          if (!reseeded && /^ERR core-(missing|untrusted)/.test(resp)) {
+            reseeded = true;
+            this.log(
+              'warn',
+              `Helper refused the protected core (${resp}); re-seeding the bundled core`
+            );
+            const r = await this.reseedBundledCore();
+            if (!r.ok) return { ok: false, error: `${resp} (re-seed: ${r.error ?? 'failed'})` };
+            attempt--;
+            continue;
+          }
           const m = resp.match(/^OK (?:started|already) (\d+)/);
           if (m) {
             // stop 未确认 + helper 报 already ⇒ 这个 pid 极可能是没被杀掉的旧核（非本次新配置）→ 如实报失败，
@@ -265,6 +463,160 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     } catch {
       return false;
     }
+  }
+
+  /** v6 core-info: compiled-in bundled hash + protected core hash (null on older services / errors). */
+  private async coreInfo(): Promise<{
+    bundled: string;
+    core: string;
+    trusted: boolean | null;
+  } | null> {
+    try {
+      // line3 = this app's bundled-core pin (always sent: a legacy-mode request must not leave the server waiting)
+      const resp = await this.sendCommand(['core-info', expectedBundledCoreHash()], 5000);
+      const m = resp.match(/^OK bundled=(\S+) core=(\S+)(?: trusted=([01-]))?/);
+      if (!m) return null;
+      const norm = (v: string): string => (v === '-' ? '' : v.toLowerCase());
+      const trusted = m[3] === '1' ? true : m[3] === '0' ? false : null;
+      return { bundled: norm(m[1]), core: norm(m[2]), trusted };
+    } catch {
+      return null;
+    }
+  }
+
+  /** True only when a v6+ service explicitly reports it would refuse this app's bundled core (service outdated).
+   *  Unknown/unreachable → false (a transient error never becomes a prompt). */
+  private async bundledCoreUntrusted(): Promise<boolean> {
+    const info = await this.coreInfo();
+    if (info?.trusted !== false) return false;
+    if (!this.staleLogged) {
+      this.staleLogged = true;
+      this.log(
+        'warn',
+        `Installed helper service does not trust this app's bundled core (service pin ${info.bundled || '-'}); treating it as outdated → repair needed (one UAC prompt)`
+      );
+    }
+    return true;
+  }
+
+  private activeCoreHash(p: string): string {
+    const st = fs.statSync(p);
+    const c = this.activeHashCache;
+    if (c && c.path === p && c.size === st.size && c.mtimeMs === st.mtimeMs) return c.hash;
+    const hash = sha256File(p);
+    this.activeHashCache = { path: p, size: st.size, mtimeMs: st.mtimeMs, hash };
+    return hash;
+  }
+
+  /**
+   * v6: copy the app's active core (userData core_update or bundled) into the service's protected dir when it
+   * differs. The service accepts it over the pipe only if trusted; otherwise, only for a user-initiated core change
+   * (allowElevation), one UAC prompt installs it and records its hash. Never prompts from connect/start.
+   */
+  async syncProtectedCore(opts?: {
+    allowElevation?: boolean;
+  }): Promise<{ ok: boolean; error?: string }> {
+    if (!this.supported) return { ok: false, error: 'unsupported' };
+    const info = await this.coreInfo();
+    if (!info) return { ok: false, error: 'helper does not support core sync (proto < 6)' };
+    const active = resourceManager.getSingBoxPath();
+    const want = this.activeCoreHash(active);
+    if (info.core === want) return { ok: true };
+    if (!opts?.allowElevation && this.refusedCoreHash === want) {
+      return { ok: false, error: 'active core is not approved for the helper' };
+    }
+    const r = await this.installCore(path.dirname(active), opts);
+    if (!r.ok && /untrusted-hash/.test(r.error ?? '')) {
+      this.refusedCoreHash = want;
+      this.log(
+        'warn',
+        'The active core is not approved for the privileged service; TUN keeps using the previously installed core (re-apply the core update to approve it)'
+      );
+    } else if (r.ok) {
+      this.refusedCoreHash = null;
+    }
+    return r;
+  }
+
+  /** Re-seed the protected core from the app's bundled core dir (accepted only if it matches the service's pin). */
+  private async reseedBundledCore(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      return await this.installCore(path.dirname(resourceManager.getBundledSingBoxPath()));
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** v6 install-core over the pipe (trusted binaries only); allowElevation → UAC fallback for an untrusted core. */
+  async installCore(
+    srcDir: string,
+    opts?: { allowElevation?: boolean }
+  ): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const resp = await this.sendCommand(['install-core', srcDir, ''], 30_000);
+      if (resp.startsWith('OK')) return { ok: true };
+      if (/^ERR untrusted-hash/.test(resp) && opts?.allowElevation) {
+        this.log(
+          'info',
+          `Core is not trusted by the service yet (${resp}); asking for UAC approval`
+        );
+        return await this.installCoreElevated(srcDir);
+      }
+      return { ok: false, error: resp || 'no response from helper' };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** One UAC prompt: the elevated script reads each file once, refuses it unless it still has the hash the app
+   *  computed, writes it into the protected core dir and appends the hash to trusted-hashes. */
+  async installCoreElevated(srcDir: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const items: { name: string; src: string; sha256: string }[] = [];
+      for (const name of ['sing-box.exe', 'libcronet.dll']) {
+        const src = path.join(srcDir, name);
+        if (name === 'sing-box.exe' || fs.existsSync(src))
+          items.push({ name, src, sha256: sha256File(src) });
+      }
+      const r = await this.runElevatedPowerShell(this.buildElevatedCoreInstallScript(items));
+      if (r.success) this.refusedCoreHash = null;
+      return r.success ? { ok: true } : { ok: false, error: r.error };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  private buildElevatedCoreInstallScript(
+    items: { name: string; src: string; sha256: string }[]
+  ): string {
+    const lines = [
+      `$core = '${this.psq(CORE_DIR)}'`,
+      'New-Item -ItemType Directory -Force -Path $core | Out-Null',
+      "$al = Join-Path $core 'trusted-hashes'",
+      'function Install-One([string]$name, [string]$src, [string]$want) {',
+      '  $bytes = [System.IO.File]::ReadAllBytes($src)',
+      '  $sha = [System.Security.Cryptography.SHA256]::Create()',
+      "  $got = ([System.BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()",
+      '  if ($got -ne $want) { throw "$name changed after it was checked; aborted" }',
+      "  $tmp = Join-Path $core ('.' + $name + '.elevated.new')",
+      '  [System.IO.File]::WriteAllBytes($tmp, $bytes)',
+      '  $dst = Join-Path $core $name',
+      '  if (Test-Path -LiteralPath $dst) {',
+      "    try { [System.IO.File]::Delete($dst) } catch { [System.IO.File]::Move($dst, $dst + '.old-' + [guid]::NewGuid().ToString('N')) }",
+      '  }',
+      '  [System.IO.File]::Move($tmp, $dst)',
+      '  $have = @()',
+      '  if (Test-Path -LiteralPath $al) { $have = @(Get-Content -LiteralPath $al) }',
+      '  if ($have -notcontains $got) { Add-Content -LiteralPath $al -Value $got -Encoding ascii }',
+      '}',
+    ];
+    for (const it of items) {
+      if (!/^(sing-box\.exe|libcronet\.dll)$/.test(it.name) || !/^[0-9a-f]{64}$/.test(it.sha256)) {
+        throw new Error(`refusing to build an elevated install for ${it.name}`);
+      }
+      lines.push(`Install-One '${it.name}' '${this.psq(it.src)}' '${it.sha256}'`);
+    }
+    return lines.join('\n');
   }
 
   /** 经服务(SYSTEM)在内核接口装/删路由（出口托管）。proto<2 旧服务回 ERR unknown → {ok:false}。 */
@@ -351,7 +703,8 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
           status: await this.computeStatus(),
         };
       }
-      const singboxPath = resourceManager.getSingBoxPath();
+      // v6: the service runs its protected copy; the bundled core is only the (hash-verified) seed source.
+      const bundledCore = resourceManager.getBundledSingBoxPath();
       const confDir = getUserDataPath();
 
       // token：复用已有，否则生成并写入客户端副本；UAC 脚本把同值写 SYSTEM 侧 helper.token。
@@ -369,10 +722,14 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
         }
       }
 
-      const script = this.buildInstallScript(exe, singboxPath, confDir, token);
+      const script = this.buildInstallScript(exe, bundledCore, confDir, token);
       const result = await this.runElevatedPowerShell(script);
       if (!result.success) {
         return { success: false, error: result.error, status: await this.computeStatus() };
+      }
+      // v6: switch to AUTH2 as soon as the new service answers, before any plaintext probe.
+      for (let i = 0; i < 10 && !(await this.upgradeAuthMode()); i++) {
+        await new Promise((r) => setTimeout(r, 300));
       }
 
       // 等服务起来绑定管道，再确认就绪（对齐 macOS install 的 10×300ms 就绪等待）。
@@ -438,6 +795,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       } catch {
         /* 不存在则忽略 */
       }
+      this.setAuthMode(false);
       this.log(
         'info',
         done
@@ -468,7 +826,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
    */
   private buildInstallScript(
     exe: string,
-    singboxPath: string,
+    bundledCore: string,
     confDir: string,
     token: string
   ): string {
@@ -486,7 +844,12 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     // 退化为字面引号 → 含空格安装路径（默认 C:\Program Files\FlowZ）下 argv 碎裂、flag 值带字面引号 → 服务侧
     // singboxBin/confDir/supportDir 全污染（isLockedSingbox/cfgAllowed/tokenValue 全失效）。
     // 注：binPath 指向 ProgramData 外置副本（$helperDst，无空格）；--singbox 仍可能含空格（app 安装目录）→ 仍需真双引号。
-    const binPath = `"${helperDst}" --singbox "${singboxPath}" --confdir "${confDir}" --support "${SUPPORT_DIR}"`;
+    // v6: --singbox/--coredir name the protected copy (SYSTEM/Administrators-only); the user-writable bundled /
+    // userData core is never executed by the service — --bundledcore is only the seed, accepted by hash.
+    const protectedCore = path.join(CORE_DIR, 'sing-box.exe');
+    const binPath =
+      `"${helperDst}" --singbox "${protectedCore}" --coredir "${CORE_DIR}" ` +
+      `--bundledcore "${bundledCore}" --confdir "${confDir}" --support "${SUPPORT_DIR}"`;
     const tokenFile = path.join(SUPPORT_DIR, 'helper.token');
     const icacls = system32('icacls.exe');
     const takeown = system32('takeown.exe');
@@ -626,27 +989,36 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
    */
   private runElevatedPowerShell(inner: string): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
-      const stamp = randomBytes(6).toString('hex');
-      const scriptPath = path.join(os.tmpdir(), `flowz-helper-${stamp}.ps1`);
-      const flagPath = path.join(os.tmpdir(), `flowz-helper-${stamp}.done`);
-      const errPath = path.join(os.tmpdir(), `flowz-helper-${stamp}.err`);
+      // Item-8 hardening: fresh private dir (mkdtemp) + exclusive create; the elevated side reads the script bytes
+      // once, checks their SHA-256 against the hash computed here and runs exactly those bytes (no -File re-read),
+      // so rewriting the file while the UAC prompt is open changes nothing.
+      let dir: string;
+      let scriptPath: string;
+      let flagPath: string;
+      let errPath: string;
+      let content: string;
       try {
-        fs.writeFileSync(
-          scriptPath,
-          this.buildElevatedScriptFile(inner, flagPath, errPath),
-          'utf8'
-        );
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowz-helper-'));
+        scriptPath = path.join(dir, 'flowz-helper.ps1');
+        flagPath = path.join(dir, 'flowz-helper.done');
+        errPath = path.join(dir, 'flowz-helper.err');
+        content = this.buildElevatedScriptFile(inner, flagPath, errPath);
+        fs.writeFileSync(scriptPath, content, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
       } catch (e) {
         return resolve({
           success: false,
           error: `Failed to write the elevation script: ${String(e)}`,
         });
       }
-      // -File 路径加真双引号：PS5.1 Start-Process 把 ArgumentList 按空格拼接、不自动加引号 → 用户名含空格时
-      // %TEMP% 路径被拆成多个参数，内层 PS 找不到脚本。
+      const sha = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+      const encoded = Buffer.from(
+        this.buildVerifiedLoader(scriptPath, sha, flagPath, errPath),
+        'utf16le'
+      ).toString('base64');
+      // -EncodedCommand（base64 仅 [A-Za-z0-9+/=]）：无引号/空格/非 ASCII 路径拼接问题。
       const outer =
         `try { Start-Process '${powershellPath()}' -Verb RunAs -WindowStyle Hidden -Wait ` +
-        `-ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','"${this.psq(scriptPath)}"'; exit 0 } ` +
+        `-ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','${encoded}'; exit 0 } ` +
         `catch { exit 1 }`;
       execFile(
         powershellPath(),
@@ -680,16 +1052,35 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
                   : `The elevation script failed (code ${code})`);
             }
           }
-          for (const p of [scriptPath, flagPath, errPath]) {
-            try {
-              fs.unlinkSync(p);
-            } catch {
-              /* ignore */
-            }
+          try {
+            fs.rmSync(dir, { recursive: true, force: true });
+          } catch {
+            /* ignore */
           }
           resolve({ success, error });
         }
       );
     });
+  }
+
+  /** Elevated loader (passed via -EncodedCommand): read the script once, verify its SHA-256, run those bytes. */
+  private buildVerifiedLoader(
+    scriptPath: string,
+    sha256: string,
+    flagPath: string,
+    errPath: string
+  ): string {
+    return [
+      "$ErrorActionPreference = 'Stop'",
+      `$b = [System.IO.File]::ReadAllBytes('${this.psq(scriptPath)}')`,
+      "$h = ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($b))).Replace('-', '').ToLowerInvariant()",
+      `if ($h -ne '${sha256}') {`,
+      `  [System.IO.File]::WriteAllText('${this.psq(errPath)}', 'The elevation script was modified before it ran; aborted')`,
+      `  "1" | Out-File -FilePath '${this.psq(flagPath)}' -Encoding ascii`,
+      '  exit 90',
+      '}',
+      '$t = [System.Text.Encoding]::UTF8.GetString($b).TrimStart([char]0xFEFF)',
+      '& ([ScriptBlock]::Create($t))',
+    ].join('\n');
   }
 }

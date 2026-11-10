@@ -13,8 +13,9 @@ import { app } from 'electron';
 import { spawn, execFile } from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
+import * as os from 'os';
 import * as path from 'path';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import type { HelperStatus } from '../../shared/types';
 import type { IPrivilegedHelper, HelperStartResult } from './IPrivilegedHelper';
 import type { ILogManager } from './LogManager';
@@ -22,6 +23,7 @@ import { resourceManager } from './ResourceManager';
 import { getUserDataPath } from '../utils/paths';
 import { shq } from '../utils/shell-quote';
 import { sha256File } from '../../shared/file-hash';
+import coreManifest from '../../shared/core-manifest.json';
 
 // .btm(NSKeyedArchiver) 结构化解析：plist 原为 electron-builder 间接依赖，已提升为直接 dependency 确保打包入 asar。
 // 解析输入是本机 root 写的 plutil xml1（可信源），无类型定义故 require + 最小类型注解（与本类内既有 require 风格一致）。
@@ -38,9 +40,145 @@ const SOCKET_PATH = `${SYSTEM_SUPPORT}/helper.sock`;
  *  v3=SIGTERM 收割 child；v4=freeport；v5=install-core（root 写受保护目录持久化内核 + 哈希校验防 TOCTOU）；
  *  v6=chownRuntimeDirs（root 跑的 sing-box 退出后归还 tailscale/dashboard/ui 属主给登录用户，根治跨提权态属主冲突）；
  *  v7=route-add/route-del（出口托管 ifscope 拆半默认路由）；v8=default-restore（停核补回被 EEXIST 善后误删的全局 default）；
- *  v9=flush-dns（root 刷系统 DNS 缓存：dscacheutil + HUP mDNSResponder 两层全清）。 */
-const EXPECTED_PROTO = '9';
+ *  v9=flush-dns（root 刷系统 DNS 缓存：dscacheutil + HUP mDNSResponder 两层全清）。
+ *  v10=core trust (install-core accepts only the compiled-in bundled core hash or admin-approved trusted-hashes;
+ *  the helper verifies/re-seeds the protected core before every start), config policy + root-only config copy,
+ *  safe log open, forwarding restore, fd-based runtime-dir hand-back, core-info. v4–v9 keep working for TUN
+ *  (upgradeable toast only, no prompt). */
+const EXPECTED_PROTO = '10';
 const MIN_USABLE_PROTO = 4;
+/** First proto whose install-core enforces core trust (and that answers core-info). */
+const TRUST_PROTO = 10;
+
+/** Compiled-in bundled-core hash this app version expects the helper to carry (core-manifest pin). */
+function expectedBundledCoreHash(): string {
+  const key = process.arch === 'arm64' ? 'mac-arm64' : 'mac-x64';
+  return String((coreManifest.coreBinarySha256 as Record<string, string>)[key] || '')
+    .replace(/^sha256:/, '')
+    .toLowerCase();
+}
+
+/** One file an elevated core install copies into the protected core dir. */
+export interface ElevatedCoreItem {
+  /** Source file (user-writable location). */
+  src: string;
+  /** Destination file name inside the core dir (sing-box / libcronet.*). */
+  name: string;
+  /** SHA-256 the app computed from the file it validated; the root script refuses any other content. */
+  sha256: string;
+  /** Ad-hoc re-sign after copying (arm64 needs a valid signature; the allowlisted hash is the post-sign one). */
+  codesign?: boolean;
+}
+
+/**
+ * Root script (macOS) that installs core files into the protected core dir and records each final hash in
+ * <coreDir>/trusted-hashes — the allowlist the helper (proto ≥10) trusts besides its compiled-in hash. Only this
+ * admin-password path writes the allowlist, so a token holder cannot make root run an arbitrary binary.
+ * Each source is copied once, the copy is hashed and must equal the app-computed hash before it is used.
+ */
+export function buildMacElevatedCoreInstallScript(
+  coreDir: string,
+  items: ElevatedCoreItem[],
+  opts?: { pkillCore?: boolean }
+): string {
+  const lines = [
+    '#!/bin/bash',
+    'set -e',
+    'umask 022',
+    `COREDIR=${shq(coreDir)}`,
+    'AL="$COREDIR/trusted-hashes"',
+    'mkdir -p "$COREDIR"',
+    'chown root:wheel "$COREDIR"; chmod 755 "$COREDIR"',
+    '[ -L "$AL" ] && rm -f "$AL"',
+    'touch "$AL"; chown root:wheel "$AL"; chmod 644 "$AL"',
+    'install_one() {',
+    '  TMP="$COREDIR/.$1.elevated.new"',
+    '  rm -f "$TMP"',
+    '  /bin/cp -X "$2" "$TMP"',
+    '  GOT=$(/usr/bin/shasum -a 256 "$TMP" | /usr/bin/awk \'{print $1}\')',
+    '  if [ "$GOT" != "$3" ]; then rm -f "$TMP"; echo "FlowZ: $1 changed after it was checked; aborted" >&2; exit 4; fi',
+    '  chown root:wheel "$TMP"; chmod 755 "$TMP"',
+    '  if [ "$4" = 1 ]; then /usr/bin/codesign --force --sign - "$TMP" >/dev/null 2>&1 || true; fi',
+    '  FINAL=$(/usr/bin/shasum -a 256 "$TMP" | /usr/bin/awk \'{print $1}\')',
+    '  grep -qx "$FINAL" "$AL" || printf \'%s\\n\' "$FINAL" >> "$AL"',
+    '  mv -f "$TMP" "$COREDIR/$1"',
+    '}',
+  ];
+  if (opts?.pkillCore) lines.push('pkill -x sing-box 2>/dev/null || true');
+  for (const it of items) {
+    if (!/^(sing-box|libcronet\.dylib)$/.test(it.name) || !/^[0-9a-f]{64}$/.test(it.sha256)) {
+      throw new Error(`refusing to build an elevated install for ${it.name}`);
+    }
+    lines.push(`install_one ${it.name} ${shq(it.src)} ${it.sha256} ${it.codesign ? 1 : 0}`);
+  }
+  lines.push('echo flowz-core-install-ok', '');
+  return lines.join('\n');
+}
+
+/**
+ * Shell command (run as root by osascript) that executes a user-written script without a TOCTOU window: root copies
+ * the script into a root-only mktemp file, checks the copy's SHA-256 against the hash computed when it was written,
+ * and only then runs the copy. Rewriting the original while the password dialog is open no longer helps.
+ */
+export function macVerifiedRunCommand(scriptPath: string, sha256: string): string {
+  return (
+    'T=$(/usr/bin/mktemp /tmp/flowz-root.XXXXXX) || exit 1; ' +
+    `/bin/cat ${shq(scriptPath)} > "$T"; ` +
+    `if echo "${sha256}  $T" | /usr/bin/shasum -a 256 -c - >/dev/null 2>&1; then /bin/bash "$T"; R=$?; ` +
+    'else echo "FlowZ: the elevation script was modified before it ran; aborted" >&2; R=90; fi; ' +
+    '/bin/rm -f "$T"; exit $R'
+  );
+}
+
+/**
+ * Write `script` to a fresh private dir (mkdtemp 0700, exclusive create 0600) and run it as root through one
+ * osascript admin prompt, via macVerifiedRunCommand. Cancel (-128) and failures are reported separately.
+ */
+export function runMacRootScript(
+  name: string,
+  script: string
+): Promise<{ success: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    let dir: string;
+    let scriptPath: string;
+    try {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowz-elev-'));
+      scriptPath = path.join(dir, name);
+      fs.writeFileSync(scriptPath, script, { mode: 0o600, flag: 'wx' });
+    } catch (e) {
+      resolve({ success: false, error: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    const sha = createHash('sha256').update(script).digest('hex');
+    const cmd = macVerifiedRunCommand(scriptPath, sha).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const proc = spawn('/usr/bin/osascript', [
+      '-e',
+      `do shell script "${cmd}" with administrator privileges`,
+    ]);
+    let stderr = '';
+    proc.stderr?.on('data', (d) => {
+      stderr += d.toString();
+    });
+    const cleanup = (): void => {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+    };
+    proc.on('exit', (code) => {
+      cleanup();
+      if (code === 0) resolve({ success: true });
+      else if (/-128|User canceled/i.test(stderr))
+        resolve({ success: false, error: 'Administrator authorization cancelled' });
+      else resolve({ success: false, error: stderr.trim() || `osascript exit code ${code}` });
+    });
+    proc.on('error', (err) => {
+      cleanup();
+      resolve({ success: false, error: err.message });
+    });
+  });
+}
 /** launchctl 加载态探测缓存 TTL：getStatus 被首页/设置页高频轮询，避免每次都 spawn launchctl。 */
 const LOADED_PROBE_TTL_MS = 10_000;
 /** SMAppService 上次权威读数(1/2)的保持窗口：sm 偶发返回 0(NotRegistered，多在装卸过渡期)/3/null 时，30s 内仍用上次
@@ -52,6 +190,8 @@ const SM_CACHE_TTL_MS = 3_000;
 export class HelperManager implements IPrivilegedHelper {
   /** 路径不符 warn 仅首次记（getStatus 被设置页/首页高频调用，避免刷屏）。 */
   private pathMismatchWarned = false;
+  /** "helper does not trust the bundled core" warning logged once per process. */
+  private staleLogged = false;
 
   // ── 「允许在后台」检测状态（仅 macOS）──────────────────────────────────
   /** launchctl 探测结果缓存（TTL 见 LOADED_PROBE_TTL_MS；null=探测不可用）。 */
@@ -189,6 +329,14 @@ export class HelperManager implements IPrivilegedHelper {
           const pv = parseInt(version, 10);
           ready = !isNaN(pv) && pv >= MIN_USABLE_PROTO; // proto ≥ 最低可用即 TUN 齐全，不再要求精确 EXPECTED
           upgradeable = ready && pv < parseInt(EXPECTED_PROTO, 10); // 可用但有新版 → 温和提示可升级
+          // v10+: if this helper does not trust THIS app's bundled core (helper built for an older bundled core
+          // and the hash is not admin-approved), it would keep running an older core than the one the config is
+          // generated for → treat it as outdated: not ready + needsRepair → the existing repair/reinstall gate
+          // (one admin prompt) on the next TUN start; declining falls back to the osascript path as today.
+          if (ready && pv >= TRUST_PROTO && (await this.bundledCoreUntrusted())) {
+            ready = false;
+            upgradeable = false;
+          }
         }
       } catch {
         /* 未就绪 */
@@ -291,13 +439,53 @@ export class HelperManager implements IPrivilegedHelper {
     };
   }
 
+  /** v10 core-info: compiled-in bundled hash + protected core hash (null on older helpers / errors). */
+  private async coreInfo(): Promise<{
+    bundled: string;
+    core: string;
+    trusted: boolean | null;
+  } | null> {
+    try {
+      // line3 = this app's bundled-core pin; the helper answers whether it would accept that core
+      const resp = await this.sendCommand(['core-info', expectedBundledCoreHash()], 3000);
+      const m = resp.match(/^OK bundled=(\S+) core=(\S+)(?: trusted=([01-]))?/);
+      if (!m) return null;
+      const norm = (v: string): string => (v === '-' ? '' : v.toLowerCase());
+      const trusted = m[3] === '1' ? true : m[3] === '0' ? false : null;
+      return { bundled: norm(m[1]), core: norm(m[2]), trusted };
+    } catch {
+      return null;
+    }
+  }
+
+  /** True only when a v10+ helper explicitly reports it would refuse this app's bundled core (helper outdated).
+   *  Unknown/unreachable → false (never turn a transient error into a prompt). */
+  private async bundledCoreUntrusted(): Promise<boolean> {
+    const info = await this.coreInfo();
+    if (info?.trusted === false) {
+      if (!this.staleLogged) {
+        this.staleLogged = true;
+        this.log(
+          'warn',
+          `Installed helper does not trust this app's bundled core (helper pin ${info.bundled || '-'}); treating the helper as outdated → reinstall needed (one administrator prompt)`
+        );
+      }
+      return true;
+    }
+    return false;
+  }
+
   /** 快速判定能否零提权驱动（ProxyManager 启动路由用）。 */
   async isReady(): Promise<boolean> {
     if (!this.supported || !this.filesPresent() || !this.token()) return false;
     try {
       const resp = await this.sendCommand(['ping'], 1500);
       const m = resp.match(/^OK pong uid=\d+ v(\d+)/);
-      return !!m && parseInt(m[1], 10) >= MIN_USABLE_PROTO; // proto ≥ 最低可用即可零提权驱动 TUN
+      if (!m) return false;
+      const pv = parseInt(m[1], 10);
+      if (pv < MIN_USABLE_PROTO) return false; // proto ≥ 最低可用即可零提权驱动 TUN
+      // outdated v10+ helper (does not trust this app's bundled core) → not ready: never run an older core silently
+      return !(pv >= TRUST_PROTO && (await this.bundledCoreUntrusted()));
     } catch {
       return false;
     }
@@ -313,12 +501,28 @@ export class HelperManager implements IPrivilegedHelper {
     try {
       // 起前先停掉可能残留的旧 child（app 上次崩溃 → daemon 仍托管着旧 sing-box），幂等。
       await this.sendCommand(['stop'], 3000).catch(() => '');
-      const resp = await this.sendCommand(
-        // 行6=父 app PID（helper v2 父死看护：本进程消失 → helper 自行 TERM→KILL 收割 sing-box）。
-        // HelperManager 跑在 Electron 主进程内，process.pid 即 GUI 父 PID → ProxyManager 零改动。
-        ['start', configPath, logPath || '', forward ? '1' : '0', String(process.pid)],
-        8000
-      );
+      // 行6=父 app PID（helper v2 父死看护：本进程消失 → helper 自行 TERM→KILL 收割 sing-box）。
+      // HelperManager 跑在 Electron 主进程内，process.pid 即 GUI 父 PID → ProxyManager 零改动。
+      const startArgs = [
+        'start',
+        configPath,
+        logPath || '',
+        forward ? '1' : '0',
+        String(process.pid),
+      ];
+      let resp = await this.sendCommand(startArgs, 8000);
+      // v10: the helper refused the protected core (missing, or untrusted e.g. left by an older helper) and could
+      // not re-seed it from the bundle path recorded at install time (app moved). Re-seed from the current bundle
+      // over the socket — the helper accepts it only if it hashes to its compiled-in pin; no prompt — then retry.
+      if (/^ERR core-(missing|untrusted)/.test(resp)) {
+        this.log(
+          'warn',
+          `Helper refused the protected core (${resp}); re-seeding the bundled core`
+        );
+        const r = await this.installCore(path.dirname(resourceManager.getBundledSingBoxPath()));
+        if (r.ok) resp = await this.sendCommand(startArgs, 8000);
+        else this.log('warn', `Bundled core re-seed failed: ${r.error ?? ''}`);
+      }
       const m = resp.match(/^OK (?:started|already) (\d+)/);
       if (m) return { ok: true, pid: parseInt(m[1], 10) };
       return { ok: false, error: resp || 'no response from helper' };
@@ -418,16 +622,49 @@ export class HelperManager implements IPrivilegedHelper {
     }
   }
 
-  /** 经 helper（root, v5）把源目录 srcDir（含 sing-box + libcronet 等配套）整体写入锁定的受保护目录（install-core，
-   *  B 块持久化更新）：校验主二进制 sing-box 的 sha256，配套随目录复制。proto<5 的 helper 不认（返回 ERR unknown）
-   *  → 调用方据 status.upgradeable/ready 走 fallback。 */
-  async installCore(srcDir: string): Promise<{ ok: boolean; error?: string }> {
+  /** 经 helper（root, v5）把源目录 srcDir（含 sing-box + libcronet 等配套）写入锁定的受保护目录（install-core，
+   *  B 块持久化更新）。proto<5 的 helper 不认（返回 ERR unknown）→ 调用方据 status.upgradeable/ready 走 fallback。
+   *  v10: the helper accepts only the bundled core (compiled-in hash) or admin-approved hashes and ignores the hash
+   *  line (still sent for v5–v9 helpers). Any other core answers "ERR untrusted-hash …"; then, only when the caller
+   *  says this is a user-initiated core change (allowElevation), one admin-password prompt installs it and records
+   *  its hash. Startup/automatic paths never pass allowElevation → never prompt. */
+  async installCore(
+    srcDir: string,
+    opts?: { allowElevation?: boolean }
+  ): Promise<{ ok: boolean; error?: string }> {
     try {
-      const path = require('path') as typeof import('path');
       const hash = sha256File(path.join(srcDir, 'sing-box'));
       const resp = await this.sendCommand(['install-core', srcDir, hash], 30_000);
       if (resp.startsWith('OK')) return { ok: true };
+      if (/^ERR untrusted-hash/.test(resp) && opts?.allowElevation) {
+        this.log(
+          'info',
+          `Core is not trusted by the helper yet (${resp}); asking for administrator approval`
+        );
+        return await this.installCoreElevated(srcDir);
+      }
       return { ok: false, error: resp };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** One admin prompt: copy the core (and libcronet.dylib if present) into the protected dir, ad-hoc sign it and
+   *  add its final hash to trusted-hashes (buildMacElevatedCoreInstallScript). */
+  async installCoreElevated(srcDir: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const items: ElevatedCoreItem[] = [];
+      const sb = path.join(srcDir, 'sing-box');
+      items.push({ src: sb, name: 'sing-box', sha256: sha256File(sb), codesign: true });
+      const lib = path.join(srcDir, 'libcronet.dylib');
+      if (fs.existsSync(lib))
+        items.push({ src: lib, name: 'libcronet.dylib', sha256: sha256File(lib) });
+      const script = buildMacElevatedCoreInstallScript(
+        resourceManager.getProtectedCoreDir(),
+        items
+      );
+      const r = await runMacRootScript('flowz-core-install.sh', script);
+      return r.success ? { ok: true } : { ok: false, error: r.error };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
@@ -792,6 +1029,7 @@ export class HelperManager implements IPrivilegedHelper {
     <string>--confdir</string><string>${this.xmlEscape(confDir)}</string>
     <string>--support</string><string>${this.xmlEscape(SYSTEM_SUPPORT)}</string>
     <string>--coredir</string><string>${this.xmlEscape(coreDir)}</string>
+    <string>--bundledcore</string><string>${this.xmlEscape(bundledSingbox)}</string>
   </array>
   <key>KeepAlive</key><true/>
   <key>RunAtLoad</key><true/>
@@ -813,21 +1051,19 @@ cp "$SRC" "$DEST"
 chown root:wheel "$DEST"; chmod 755 "$DEST"
 printf '%s' ${shq(token)} > "$SUPPORT/helper.token"
 chown root:wheel "$SUPPORT/helper.token"; chmod 600 "$SUPPORT/helper.token"
-# Block B seed: seed the bundled core into the protected dir as the single stable source of truth for the active macOS core
-# (root owner, 755 -> everyone can read/exec, only root can write). The plist's --singbox is pinned to $COREDIR/sing-box,
-# so after seeding the write/read/exec paths always match. Guard "only if the protected dir has no executable sing-box yet"
-# -> reinstalling/repairing the helper never overwrites a core the user updated; on a v4->v5 upgrade the dir is empty and the
-# current core is seeded from the bundle. macOS cronet is statically linked into sing-box, so no extra libcronet file is needed.
+# Protected core dir (root:wheel 755). The helper (proto >=10) seeds it itself from --bundledcore and only if the
+# bundle bytes hash to the core pin compiled into the helper; a core the user installed earlier stays if it is
+# still trusted (compiled pin or trusted-hashes). No unverified cp / re-sign here any more.
 COREDIR=${shq(coreDir)}
 BUNDLED_SB=${shq(bundledSingbox)}
 mkdir -p "$COREDIR"
 chown root:wheel "$COREDIR"; chmod 755 "$COREDIR"
-if [ ! -x "$COREDIR/sing-box" ]; then
-  cp "$BUNDLED_SB" "$COREDIR/sing-box.seed.new"
-  mv -f "$COREDIR/sing-box.seed.new" "$COREDIR/sing-box"
-  chown root:wheel "$COREDIR/sing-box"; chmod 755 "$COREDIR/sing-box"
-  xattr -cr "$COREDIR" 2>/dev/null || true
-  codesign --force --sign - "$COREDIR/sing-box" 2>/dev/null || true
+# Only if nothing is there yet, so the protected path exists right after install (the app's path checks expect
+# it); the helper re-verifies this copy against its compiled pin before every start and replaces it if needed.
+if [ ! -e "$COREDIR/sing-box" ]; then
+  cp -X "$BUNDLED_SB" "$COREDIR/.sing-box.seed.new"
+  chown root:wheel "$COREDIR/.sing-box.seed.new"; chmod 755 "$COREDIR/.sing-box.seed.new"
+  mv -f "$COREDIR/.sing-box.seed.new" "$COREDIR/sing-box"
 fi
 cat > "$PLIST" <<'FLOWZ_PLIST_EOF'
 ${plist}
@@ -856,63 +1092,12 @@ echo uninstalled-ok
 `;
   }
 
-  /** 把路径安全嵌入 osascript `do shell script "..."`：先 shq 做 shell 单引号(防 shell 注入)，再对结果做
-   *  AppleScript 字符串转义(反斜杠翻倍、双引号转义)。两层引号缺一层，含撇号/引号的家目录路径即击穿引号 →
-   *  静默失败或以 root 注入命令。 */
-  private osaShellArg(p: string): string {
-    return shq(p).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  }
-
-  /** 写脚本到 userData 私有子目录后用 osascript 以 root 执行（弹一次密码框）。用户取消(-128)与脚本失败分开判定。
-   *  TOCTOU 加固：脚本落到 0700 私有子目录 + 随机不可预测文件名 + O_EXCL 独占创建(flag 'wx' 拒绝已存在文件防抢占) +
-   *  权限 0700 —— 收窄「fs 写入 → osascript root 执行」之间同用户进程改写脚本内容致任意代码以 root 运行的窗口
-   *  （原落用户可写、名字可预测的 getUserDataPath()/<name>，任意本地进程可预置/改写）。 */
+  /** Run a root script with one admin prompt (runMacRootScript: private mkdtemp + exclusive create + root-side
+   *  hash check of a root-only copy, so rewriting the script while the password dialog is open does not help). */
   private runRootScript(
     name: string,
     script: string
   ): Promise<{ success: boolean; error?: string }> {
-    return new Promise((resolve) => {
-      let scriptPath: string;
-      try {
-        // 仅当前用户可访问的私有子目录（0700）；父目录若已存在则强制收紧权限。
-        const privDir = path.join(getUserDataPath(), 'priv');
-        fs.mkdirSync(privDir, { recursive: true, mode: 0o700 });
-        try {
-          fs.chmodSync(privDir, 0o700);
-        } catch {
-          /* 已 0700 或无权改 → 忽略 */
-        }
-        // 随机文件名(不可预测) + O_EXCL 独占创建 + 0700：防攻击者预置同名文件/符号链接抢占落点。
-        scriptPath = path.join(privDir, `${randomBytes(12).toString('hex')}-${name}`);
-        fs.writeFileSync(scriptPath, script, { mode: 0o700, flag: 'wx' });
-      } catch (e) {
-        resolve({ success: false, error: e instanceof Error ? e.message : String(e) });
-        return;
-      }
-      // 路径经 shq(shell 单引号) + AppleScript 转义嵌入，容忍空格/撇号/引号（含撇号家目录不再引号破裂）。
-      const proc = spawn('/usr/bin/osascript', [
-        '-e',
-        `do shell script "/bin/bash ${this.osaShellArg(scriptPath)}" with administrator privileges`,
-      ]);
-      let stderr = '';
-      proc.stderr?.on('data', (d) => {
-        stderr += d.toString();
-      });
-      proc.on('exit', (code) => {
-        try {
-          fs.unlinkSync(scriptPath);
-        } catch {
-          /* 忽略 */
-        }
-        if (code === 0) resolve({ success: true });
-        // 用户取消授权 → osascript 报 -128 / "User canceled"；其余非零为脚本/安装失败，透传 stderr。
-        else if (/-128|User canceled/i.test(stderr))
-          resolve({ success: false, error: 'Administrator authorization cancelled' });
-        else resolve({ success: false, error: stderr.trim() || `osascript exit code ${code}` });
-      });
-      proc.on('error', (err) => {
-        resolve({ success: false, error: err.message });
-      });
-    });
+    return runMacRootScript(name, script);
   }
 }

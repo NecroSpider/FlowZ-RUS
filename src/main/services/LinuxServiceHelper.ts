@@ -19,17 +19,19 @@
  */
 
 import { spawn } from 'child_process';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as net from 'net';
+import * as os from 'os';
 import * as path from 'path';
 import type { HelperStatus } from '../../shared/types';
 import type { IPrivilegedHelper, HelperStartResult } from './IPrivilegedHelper';
 import type { ILogManager } from './LogManager';
 import { resourceManager } from './ResourceManager';
-import { getUserDataPath } from '../utils/paths';
 import { shq } from '../utils/shell-quote';
 import { REPOSITORY_URL } from '../../shared/repository';
 import { sha256File } from '../../shared/file-hash';
+import coreManifest from '../../shared/core-manifest.json';
 
 const SERVICE_NAME = 'flowz-helper.service';
 // 受管安装根（避开 /opt/FlowZ —— 那是 electron-builder deb 的应用目录，混放会与 dpkg 生命周期冲突）。
@@ -48,11 +50,88 @@ const SOCKET_PATH = `${RUNTIME_DIR}/helper.sock`;
 // 与 helper-linux protoVersion 对应。proto ≥ MIN_USABLE 即 TUN 功能齐全；MIN_USABLE ≤ proto < EXPECTED → upgradeable
 // （温和提示可升级）。v1 起 EXPECTED===MIN，故 upgradeable 恒 false（无历史包袱，尚无更旧可用版本）——**将来 helper 协议
 // 加不兼容能力时，须把 EXPECTED_PROTO 提到新版号**，upgradeable 分支才会点亮「可升级」提示（对齐 Windows 同惯例）。
-const EXPECTED_PROTO = 1;
+// v2: install-core accepts only trusted cores (compiled-in pin or trusted-hashes written by pkexec), safe start log,
+// forwarding restore on every exit, PID-reuse-proof parent watch, core-info. v1 keeps working (upgradeable only).
+const EXPECTED_PROTO = 2;
 const MIN_USABLE_PROTO = 1;
+/** polkit rules installed by the setcap/TUN path (PlatformPrivilegeService.ensureCapabilities); removed on uninstall. */
+export const LINUX_POLKIT_RULE_FILES = [
+  '/etc/polkit-1/rules.d/49-flowz-resolved.rules',
+  '/etc/polkit-1/localauthority/50-local.d/49-flowz-resolved.pkla',
+];
+
+/**
+ * pkexec argv that runs a user-written script without a TOCTOU window: root copies it into a root-only mktemp file,
+ * checks the copy's SHA-256 against the hash computed when it was written, then runs the copy. The script path,
+ * hash and interpreter are passed as positional arguments (never interpolated into the command).
+ */
+export function pkexecVerifiedArgs(
+  scriptPath: string,
+  sha256: string,
+  interpreter: '/bin/sh' | '/bin/bash' = '/bin/sh'
+): string[] {
+  const cmd =
+    'T=$(mktemp /tmp/flowz-root.XXXXXX) || exit 1; cat -- "$1" > "$T"; ' +
+    'if [ "$(sha256sum "$T" | cut -d" " -f1)" = "$2" ]; then "$3" "$T"; R=$?; ' +
+    'else echo "FlowZ: the elevation script was modified before it ran; aborted" >&2; R=90; fi; ' +
+    'rm -f "$T"; exit $R';
+  return ['/bin/sh', '-c', cmd, 'flowz-elevated', scriptPath, sha256, interpreter];
+}
+
+/** Write a script to a fresh private dir (mkdtemp 0700, exclusive create 0600). Caller removes `dir`. */
+export function writePrivateScript(
+  name: string,
+  script: string
+): { dir: string; scriptPath: string; sha256: string } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowz-elev-'));
+  const scriptPath = path.join(dir, name);
+  fs.writeFileSync(scriptPath, script, { mode: 0o600, flag: 'wx' });
+  return { dir, scriptPath, sha256: createHash('sha256').update(script).digest('hex') };
+}
+
+/** Bundled-core pin of this app version (core-manifest; the Linux release is amd64 only). */
+function expectedBundledCoreHash(): string {
+  return String((coreManifest.coreBinarySha256 as Record<string, string>).linux || '')
+    .replace(/^sha256:/, '')
+    .toLowerCase();
+}
 
 export class LinuxServiceHelper implements IPrivilegedHelper {
+  /** The user declined (or the reinstall failed) the "helper outdated for the bundled core" reinstall this session:
+   *  do not prompt again on every (re)start; fall back to the non-helper path instead. */
+  private staleReinstallDeclined = false;
+
   constructor(private logManager?: ILogManager | null) {}
+
+  /** True only when a v2+ helper explicitly reports it would refuse this app's bundled core (helper outdated).
+   *  v1 helpers / errors → false. */
+  private async bundledCoreUntrusted(): Promise<boolean> {
+    try {
+      const resp = await this.sendCommand(['core-info', expectedBundledCoreHash()], 3000);
+      return /^OK bundled=\S+ core=\S+ trusted=0/.test(resp);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Copy the bundled core (+ libcronet.so) to a private temp dir (AppImage mounts are not readable by root) and
+   *  install it into the managed core dir over the socket — accepted only if it matches the helper's pin. */
+  private async refreshManagedCoreFromBundle(): Promise<{ ok: boolean; error?: string }> {
+    let dir: string | null = null;
+    try {
+      const bundled = resourceManager.getBundledSingBoxPath();
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowz-core-seed-'));
+      fs.copyFileSync(bundled, path.join(dir, 'sing-box'));
+      fs.chmodSync(path.join(dir, 'sing-box'), 0o755);
+      const lib = path.join(path.dirname(bundled), 'libcronet.so');
+      if (fs.existsSync(lib)) fs.copyFileSync(lib, path.join(dir, 'libcronet.so'));
+      return await this.installCore(dir);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    } finally {
+      if (dir) fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
 
   private log(level: 'info' | 'warn' | 'error', message: string): void {
     this.logManager?.addLog(level, message, 'Helper');
@@ -129,6 +208,7 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
     let version: string | null = null;
     let ready = false;
     let upgradeable = false;
+    let stale = false;
     if (installed) {
       try {
         const resp = await this.sendCommand(['ping'], 1500);
@@ -138,6 +218,12 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
           const pv = parseInt(version, 10);
           ready = !isNaN(pv) && pv >= MIN_USABLE_PROTO;
           upgradeable = ready && pv < EXPECTED_PROTO;
+          // v2+: helper does not trust this app's bundled core → outdated. ready stays true so the next TUN start
+          // reaches startCore, which runs the existing reinstall (one pkexec) before starting (see startCore).
+          if (ready && pv >= 2 && (await this.bundledCoreUntrusted())) {
+            stale = true;
+            upgradeable = false;
+          }
         }
       } catch {
         /* 未就绪：装了 unit 但 daemon 没起来（如刚 reboot 未起、被 mask）→ needsRepair 引导重装 */
@@ -150,7 +236,7 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
       upgradeable,
       version,
       loaded: installed ? true : null,
-      needsRepair: installed && !ready,
+      needsRepair: installed && (!ready || stale),
       backgroundDisabled: false,
       pathMismatch: false,
       installedSingboxPath: null,
@@ -166,6 +252,42 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
     forward: boolean
   ): Promise<HelperStartResult> {
     try {
+      // The helper does not trust this app's bundled core (app updated with a new core, helper still the old
+      // build): starting now would run an older core than the config is generated for. Go through the existing
+      // reinstall (one pkexec prompt), then refresh the managed core from the bundle. Declined/failed → report an
+      // error so ProxyManager falls back to the non-helper (setcap) path, and do not ask again this session.
+      if (await this.bundledCoreUntrusted()) {
+        if (this.staleReinstallDeclined) {
+          return {
+            ok: false,
+            error:
+              "privileged helper is outdated for this app's bundled core (reinstall declined this session)",
+          };
+        }
+        this.log(
+          'warn',
+          "Privileged helper is outdated for this app's bundled core: reinstalling it (one administrator prompt)"
+        );
+        const r = await this.install();
+        if (!r.success) {
+          this.staleReinstallDeclined = true;
+          this.log(
+            'warn',
+            `Helper reinstall declined or failed (${r.error ?? 'unknown'}); using the non-helper TUN path this session`
+          );
+          return {
+            ok: false,
+            error: `helper reinstall declined or failed: ${r.error ?? 'unknown'}`,
+          };
+        }
+        const seeded = await this.refreshManagedCoreFromBundle();
+        if (!seeded.ok) {
+          return {
+            ok: false,
+            error: `bundled core refresh after helper reinstall failed: ${seeded.error}`,
+          };
+        }
+      }
       await this.sendCommand(['stop'], 3000).catch(() => ''); // 幂等清残留旧 child
       const singbox = resourceManager.getSingBoxPath();
       const resp = await this.sendCommand(
@@ -231,17 +353,84 @@ export class LinuxServiceHelper implements IPrivilegedHelper {
     return { ok: false, error: 'unsupported' };
   }
 
-  // ── 换核（install-core，socket 零提权）────────────────────────────────────
-  /** 经 helper（root）把 srcDir（含 sing-box + libcronet）hash 校验后原子写入锁定的 root 受管核目录。换核/更新免密
-   *  （socket 调用，无 pkexec）；helper 侧只写锁定 coreDir、sha256 校验主二进制防 TOCTOU。CoreUpdateService 落位时调。 */
-  async installCore(srcDir: string): Promise<{ ok: boolean; error?: string }> {
+  // ── 换核（install-core）──────────────────────────────────────────────────
+  /** 经 helper（root）把 srcDir（含 sing-box + libcronet）原子写入锁定的 root 受管核目录。CoreUpdateService 落位时调。
+   *  v2 helper: only the bundled core (compiled-in pin) or admin-approved hashes are accepted over the socket (the hash
+   *  line is ignored; still sent for v1). An untrusted core → "ERR untrusted-hash …"; only a user-initiated change
+   *  (allowElevation) then asks once via pkexec, which installs it and records its hash. Automatic paths never prompt. */
+  async installCore(
+    srcDir: string,
+    opts?: { allowElevation?: boolean }
+  ): Promise<{ ok: boolean; error?: string }> {
     try {
       const hash = sha256File(path.join(srcDir, 'sing-box'));
       const resp = await this.sendCommand(['install-core', srcDir, hash], 30_000);
-      return resp.startsWith('OK') ? { ok: true } : { ok: false, error: resp };
+      if (resp.startsWith('OK')) return { ok: true };
+      if (/^ERR untrusted-hash/.test(resp) && opts?.allowElevation) {
+        this.log(
+          'info',
+          `Core is not trusted by the helper yet (${resp}); asking for administrator approval`
+        );
+        return await this.installCoreElevated(srcDir);
+      }
+      return { ok: false, error: resp };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
+  }
+
+  /** One pkexec prompt: copy sing-box (+ libcronet.so) into the managed core dir, verify each copy against the
+   *  app-computed hash and add it to trusted-hashes. */
+  async installCoreElevated(srcDir: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const items: { name: string; src: string; sha256: string }[] = [];
+      for (const name of ['sing-box', 'libcronet.so']) {
+        const src = path.join(srcDir, name);
+        if (name === 'sing-box' || fs.existsSync(src))
+          items.push({ name, src, sha256: sha256File(src) });
+      }
+      const r = await this.runPkexecScript(
+        'flowz-linux-core-install.sh',
+        this.buildElevatedCoreInstallScript(items)
+      );
+      return r.success ? { ok: true } : { ok: false, error: r.error };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  private buildElevatedCoreInstallScript(
+    items: { name: string; src: string; sha256: string }[]
+  ): string {
+    const lines = [
+      '#!/bin/sh',
+      'set -e',
+      'umask 022',
+      `COREDIR=${shq(CORE_DIR)}`,
+      'AL="$COREDIR/trusted-hashes"',
+      'mkdir -p "$COREDIR"',
+      'chown root:root "$COREDIR"; chmod 0755 "$COREDIR"',
+      '[ -L "$AL" ] && rm -f "$AL"',
+      'touch "$AL"; chown root:root "$AL"; chmod 0644 "$AL"',
+      'install_one() {',
+      '  TMP="$COREDIR/.$1.elevated.new"',
+      '  rm -f "$TMP"',
+      '  cat -- "$2" > "$TMP"',
+      '  GOT=$(sha256sum "$TMP" | cut -d" " -f1)',
+      '  if [ "$GOT" != "$3" ]; then rm -f "$TMP"; echo "FlowZ: $1 changed after it was checked; aborted" >&2; exit 4; fi',
+      '  chmod 0755 "$TMP"',
+      `  grep -qx "$GOT" "$AL" || printf '%s\\n' "$GOT" >> "$AL"`,
+      '  mv -f "$TMP" "$COREDIR/$1"',
+      '}',
+    ];
+    for (const it of items) {
+      if (!/^(sing-box|libcronet\.so)$/.test(it.name) || !/^[0-9a-f]{64}$/.test(it.sha256)) {
+        throw new Error(`refusing to build an elevated install for ${it.name}`);
+      }
+      lines.push(`install_one ${it.name} ${shq(it.src)} ${it.sha256}`);
+    }
+    lines.push('echo flowz-core-install-ok', '');
+    return lines.join('\n');
   }
 
   // ── 安装 / 卸载（pkexec 一次授权）─────────────────────────────────────────
@@ -353,7 +542,10 @@ cat > ${shq(UNIT_PATH)} <<'FLOWZ_UNIT_EOF'
 ${this.buildUnit()}FLOWZ_UNIT_EOF
 chmod 0644 ${shq(UNIT_PATH)}
 systemctl daemon-reload
-systemctl enable --now ${SERVICE_NAME}
+systemctl enable ${SERVICE_NAME}
+# restart (not just enable --now): an already-running older helper must be replaced by the new binary now,
+# otherwise a helper upgrade only takes effect after reboot.
+systemctl restart ${SERVICE_NAME}
 echo flowz-helper-install-ok
 `;
   }
@@ -365,33 +557,36 @@ echo flowz-helper-install-ok
 systemctl disable --now ${SERVICE_NAME} 2>/dev/null || true
 rm -f ${shq(UNIT_PATH)}
 rm -rf ${shq(INSTALL_DIR)} ${shq(STATE_DIR)} ${shq(RUNTIME_DIR)}
+# resolve1 DNS polkit rule from the TUN setup (reinstalled on demand by ensureCapabilities if still needed)
+rm -f ${LINUX_POLKIT_RULE_FILES.map(shq).join(' ')}
 systemctl daemon-reload 2>/dev/null || true
 echo flowz-helper-uninstall-ok
 `;
   }
 
-  /** 写脚本到 userData 后用 pkexec 以 root 执行（弹一次密码框）。区分取消/无认证代理(126)与命令缺失(127)。 */
+  /** pkexec 以 root 执行（弹一次密码框）。区分取消/无认证代理(126)与命令缺失(127)。
+   *  Item-8 hardening: fresh mkdtemp dir + exclusive create (no fixed name in userData), and root runs a verified
+   *  root-only copy (pkexecVerifiedArgs), so rewriting the file during the prompt does not change what runs. */
   private runPkexecScript(
     name: string,
     script: string
   ): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
-      let scriptPath: string;
+      let w: { dir: string; scriptPath: string; sha256: string };
       try {
-        scriptPath = path.join(getUserDataPath(), name);
-        fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+        w = writePrivateScript(name, script);
       } catch (e) {
         resolve({ success: false, error: e instanceof Error ? e.message : String(e) });
         return;
       }
-      const proc = spawn('/usr/bin/pkexec', ['/bin/sh', scriptPath]);
+      const proc = spawn('/usr/bin/pkexec', pkexecVerifiedArgs(w.scriptPath, w.sha256));
       let stderr = '';
       proc.stderr?.on('data', (d) => {
         stderr += d.toString();
       });
       proc.on('exit', (code) => {
         try {
-          fs.unlinkSync(scriptPath);
+          fs.rmSync(w.dir, { recursive: true, force: true });
         } catch {
           /* 忽略 */
         }

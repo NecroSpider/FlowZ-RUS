@@ -90,7 +90,7 @@ export class CoreUpdateService {
   private proxyManager: ProxyManager | null = null;
   // helper 的 install-core 能力窄视图（mac HelperManager / linux LinuxServiceHelper 均满足 getStatus+installCore；
   // Windows 无 install-core）。B 块：经 helper install-core 写 root 受保护/受管核目录。
-  private helperManager: Pick<HelperManager, 'getStatus' | 'installCore'> | null = null;
+  private helperManager: Pick<HelperManager, 'getStatus' | 'installCore' | 'install'> | null = null;
   private privilegeService: PlatformPrivilegeService | null = null; // T16：copyFileElevatedWindows delegate
   private isUpdating: boolean = false;
   /**
@@ -136,7 +136,9 @@ export class CoreUpdateService {
   }
 
   /** B 块：注入 helper（macOS/Linux 持久化内核更新经 helper install-core 写 root 受保护/受管核目录）。 */
-  setHelperManager(helperManager: Pick<HelperManager, 'getStatus' | 'installCore'>): void {
+  setHelperManager(
+    helperManager: Pick<HelperManager, 'getStatus' | 'installCore' | 'install'>
+  ): void {
     this.helperManager = helperManager;
   }
 
@@ -375,9 +377,15 @@ export class CoreUpdateService {
       // （防撞半替换核 FATAL）。try/finally 精确覆盖 installCoreFromDir；清位后下方 proxyManager.start 放行。
       this.proxyManager?.setCoreSwapInProgress(true);
       try {
-        await this.installCoreFromDir(path.dirname(corePath), preflight.version, () => {
-          backupMade = true;
-        });
+        // user-initiated update: a non-bundled core may need one admin/UAC approval (helper core trust).
+        await this.installCoreFromDir(
+          path.dirname(corePath),
+          preflight.version,
+          () => {
+            backupMade = true;
+          },
+          { allowElevation: true }
+        );
       } finally {
         this.proxyManager?.setCoreSwapInProgress(false);
       }
@@ -462,7 +470,8 @@ export class CoreUpdateService {
   private async installCoreFromDir(
     sourceDir: string,
     version: string | null,
-    onBackupDone?: () => void
+    onBackupDone?: () => void,
+    opts?: { allowElevation?: boolean }
   ): Promise<void> {
     // B 块：macOS + helper v5 → 整个核心目录经 install-core 由 root 写入受保护目录（含 libcronet：先 ensureCronetBeside
     // 把配套放进 sourceDir，再整目录交 helper）。不经普通用户 fs.copy（受保护目录 root-only）。受保护目录回滚靠 B5。
@@ -472,7 +481,9 @@ export class CoreUpdateService {
         await this.backupCurrentCore(); // 备份现役(受保护/受管核可读)→userData，供首启失败回滚
         onBackupDone?.();
         await resourceManager.ensureCronetBeside(sourceDir);
-        const res = await this.helperManager.installCore(sourceDir);
+        // helper core trust (mac v10 / linux v2): bundled or admin-approved cores go through silently; any other
+        // core asks for one admin approval only when opts.allowElevation (user-initiated), else fails here.
+        const res = await this.helperManager.installCore(sourceDir, opts);
         if (!res.ok)
           throw new Error(`Failed to write the core to the protected directory: ${res.error}`);
         this.armPendingValidation(version); // 待首启验证闩：首启 crash → autoRollback（经 helper，见 rollbackCore）
@@ -563,6 +574,11 @@ export class CoreUpdateService {
 
     this.logManager.addLog('info', 'Core files replaced successfully', 'CoreUpdateService');
 
+    // Windows helper v6 runs only its protected copy of the core: hand it the new core now (one UAC approval for a
+    // non-bundled core when user-initiated). Failure is non-fatal — TUN keeps the previous trusted core.
+    if (process.platform === 'win32')
+      await this.syncWindowsProtectedCore(opts?.allowElevation === true);
+
     // naive 依赖随 app 打包的 libcronet（匹配出厂核心的 cronet-go 版本）。单独更新核心——尤其跨版本——
     // 可能与打包库 ABI 漂移；该漂移在 dlopen 前不可见，sing-box check 预检无法发现。有 naive 节点则提示。
     if (this.proxyManager?.hasNaiveNodes()) {
@@ -575,6 +591,30 @@ export class CoreUpdateService {
 
     // 标记"待首启验证"：稳定运行→删备份（稳定即弃）；首启失败→自动回滚（见 index 'error' 钩子）。
     this.armPendingValidation(version);
+  }
+
+  /** Windows helper v6: copy the app's active core into the service's protected dir (see WindowsServiceHelper). */
+  private async syncWindowsProtectedCore(allowElevation: boolean): Promise<void> {
+    try {
+      const { getActiveWindowsServiceHelper } =
+        require('./WindowsServiceHelper') as typeof import('./WindowsServiceHelper');
+      const helper = getActiveWindowsServiceHelper();
+      if (!helper || !(await helper.getStatus()).ready) return;
+      const r = await helper.syncProtectedCore({ allowElevation });
+      if (!r.ok) {
+        this.logManager.addLog(
+          'warn',
+          `Privileged service still runs the previous core (TUN mode): ${r.error ?? 'not approved'}`,
+          'CoreUpdateService'
+        );
+      }
+    } catch (e) {
+      this.logManager.addLog(
+        'warn',
+        `Could not hand the new core to the privileged service: ${(e as Error)?.message ?? e}`,
+        'CoreUpdateService'
+      );
+    }
   }
 
   /** 置「待首启验证」闩 + 抑制自动重启 + 超时兜底。bundle 落位与 macOS install-core 落位共用，保证两条路径都有
@@ -612,14 +652,17 @@ export class CoreUpdateService {
 
   /** B 块 macOS：把单个 sing-box 二进制 src 经 helper install-core 持久化写入受保护目录（连带打包的 libcronet）。
    *  调用方须先经 helperSupportsInstallCore(st) 确认 helper 支持 install-core。replaceManualCore / rollbackCore / restoreBackup 共用。 */
-  private async installSingleCoreViaHelper(src: string): Promise<void> {
+  private async installSingleCoreViaHelper(
+    src: string,
+    opts?: { allowElevation?: boolean }
+  ): Promise<void> {
     if (!this.helperManager) throw new Error('helper unavailable');
     const tmpDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'flowz-core-'));
     try {
       fs.copyFileSync(src, path.join(tmpDir, 'sing-box'));
       fs.chmodSync(path.join(tmpDir, 'sing-box'), 0o755);
       await resourceManager.ensureCronetBeside(tmpDir);
-      const res = await this.helperManager.installCore(tmpDir);
+      const res = await this.helperManager.installCore(tmpDir, opts);
       if (!res.ok)
         throw new Error(`Failed to write the core to the protected directory: ${res.error}`);
     } finally {
@@ -666,13 +709,38 @@ export class CoreUpdateService {
     const src = resourceManager.getBundledSingBoxPath();
     const dest = path.join(resourceManager.getProtectedCoreDir(), 'sing-box');
     const before = await pm.getCoreVersion(false).catch(() => 'unknown');
-    this.logManager.addLog(
-      'info',
-      `macOS without helper: one-time authorization to install the bundled core ${bundledVersion} into the protected directory...`,
-      'CoreUpdateService'
-    );
+    // Single prompt per app update: if the installed helper is outdated (e.g. a v10+ helper that does not trust this
+    // app's bundled core), reinstall the helper instead of only installing the core — the new helper carries the new
+    // pin and seeds the bundled core itself, so the connect-time repair gate has nothing left to ask.
+    const hs = await this.helperManager?.getStatus().catch(() => null);
+    const reinstallHelper = !!(hs?.installed && hs.needsRepair && !hs.backgroundDisabled);
+    if (this.helperManager && reinstallHelper) {
+      this.logManager.addLog(
+        'info',
+        `Installed privileged helper is outdated for the bundled core ${bundledVersion}: reinstalling it (one administrator prompt; it also installs the bundled core)...`,
+        'CoreUpdateService'
+      );
+      const r = await this.helperManager.install().catch((e: unknown) => ({
+        success: false,
+        error: (e as Error)?.message ?? String(e),
+      }));
+      if (!r.success) {
+        this.logManager.addLog(
+          'warn',
+          `Helper reinstall was declined or failed (${r.error ?? 'unknown'}); TUN will offer the repair again on connect, or use the administrator-prompt fallback`,
+          'CoreUpdateService'
+        );
+        return;
+      }
+    } else {
+      this.logManager.addLog(
+        'info',
+        `macOS without helper: one-time authorization to install the bundled core ${bundledVersion} into the protected directory...`,
+        'CoreUpdateService'
+      );
+    }
     try {
-      await this.privilegeService.installCoreElevatedMac(src, dest);
+      if (!reinstallHelper) await this.privilegeService.installCoreElevatedMac(src, dest);
     } catch (e) {
       // 用户取消授权 / 写失败 = 正常路径（非错误）：info 记录、延后（已记 declinedVersion 本版本不再自动弹）。
       this.logManager.addLog(
@@ -1019,9 +1087,16 @@ export class CoreUpdateService {
       // （防撞半替换核 FATAL）。finally 清位；applyStagedNow 在 tryApplyStaged 返回后的 start（coreSwapInProgress 已清）放行。
       this.proxyManager?.setCoreSwapInProgress(true);
       try {
-        await this.installCoreFromDir(staged.dir, preflight.version ?? staged.version, () => {
-          backupMade = true;
-        });
+        // Only the user's "apply now" may ask for admin/UAC approval; startup/automatic triggers never prompt
+        // (an unapproved core then fails here and stays staged).
+        await this.installCoreFromDir(
+          staged.dir,
+          preflight.version ?? staged.version,
+          () => {
+            backupMade = true;
+          },
+          { allowElevation: trigger === 'manual-apply' }
+        );
       } catch (installErr) {
         // N-1：restoreBackup 在 finally 清位前执行（此刻 coreSwapInProgress 仍 true）——但 restoreBackup 仅写核文件、
         // 不调 start/switchMode（不触门控），故无害。与 updateCore/replaceManualCore（restoreBackup 在清位后）略不一致，
@@ -1528,7 +1603,8 @@ export class CoreUpdateService {
         if ((process.platform === 'darwin' || process.platform === 'linux') && this.helperManager) {
           const st = await this.helperManager.getStatus();
           if (this.helperSupportsInstallCore(st)) {
-            await this.installSingleCoreViaHelper(sourcePath);
+            // user picked this core: one admin approval if the helper does not trust it yet
+            await this.installSingleCoreViaHelper(sourcePath, { allowElevation: true });
             this.logManager.addLog(
               'info',
               'Manual core replacement written to the protected/managed core directory',

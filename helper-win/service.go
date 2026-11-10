@@ -25,12 +25,20 @@ const pipeName = `\\.\pipe\flowz-helper`
 //
 // 选 IU（交互登录用户）而非 BU/AU：FlowZ GUI 由当前桌面登录用户运行，IU 精确覆盖「本机交互会话」，
 // 不授予服务账户/远程会话/网络登录，最小化攻击面。GENERIC_READ|GENERIC_WRITE 足以连接管道并读写消息
-//（命名管道客户端连接 + ReadFile/WriteFile 即需此二者），不授予 FILE_ALL_ACCESS（无需改 ACL/删管道权能）。
+// （命名管道客户端连接 + ReadFile/WriteFile 即需此二者），不授予 FILE_ALL_ACCESS（无需改 ACL/删管道权能）。
 // 无显式 owner/group/SACL（前缀仅 D:）→ owner 默认 SYSTEM（创建者），无审计，符合纵深防御定位。
 //
 // 注意：DACL 一旦显式给出即「拒绝未列明者」（无隐式 Everyone）。故非交互/非 SYSTEM 进程（如远程、服务账户、
 // 非交互令牌）连不上管道 —— 真机必验项：确认 FlowZ app 进程令牌带 Interactive SID（标准桌面 GUI 启动满足；
 // 若 app 以计划任务/服务等非交互方式启动，需放宽到 AU/BU 或改授权 SID）。
+//
+// v6 note (pipe squatting): GENERIC_WRITE includes FILE_APPEND_DATA = FILE_CREATE_PIPE_INSTANCE, so another
+// interactive user can create extra server instances of this pipe. The mask is deliberately NOT narrowed to
+// 0x12019b here: Node/libuv opens the client end with GENERIC_READ|GENERIC_WRITE and, on ACCESS_DENIED, silently
+// falls back to a read-only handle — that would break every pipe command and cannot be verified without a live
+// Windows test. Instead the token no longer crosses the pipe (AUTH2 in auth.go: the server proves it knows the
+// token before the client sends anything, and the client MACs its request), so a squatting instance learns
+// nothing and can at most make a command fail. Revisit the mask after testing 0x12019b with the real client.
 const pipeSDDL = "D:(A;;FA;;;SY)(A;;GRGW;;;IU)"
 
 // listen：创建 token+SDDL 双重防护的命名管道监听器。

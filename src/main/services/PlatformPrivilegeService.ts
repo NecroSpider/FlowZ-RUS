@@ -28,9 +28,11 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
-import { app } from 'electron';
 
 import type { HelperManager } from './HelperManager';
+import { buildMacElevatedCoreInstallScript, runMacRootScript } from './HelperManager';
+import { pkexecVerifiedArgs, writePrivateScript } from './LinuxServiceHelper';
+import { sha256File } from '../../shared/file-hash';
 import type { LogLevel } from '../../shared/types';
 import {
   getUserDataPath,
@@ -256,14 +258,36 @@ export class PlatformPrivilegeService {
    * 以 pkexec(root) 跑 bash 脚本（弹一次密码框）。区分取消(126)/无认证代理(127)。
    * 迁自 ProxyManager.runPkexecScript。
    */
-  private runPkexecScript(scriptPath: string): Promise<{ success: boolean; error?: string }> {
+  private runPkexecScript(
+    name: string,
+    script: string
+  ): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
-      const proc = spawn('/usr/bin/pkexec', ['/bin/bash', scriptPath]);
+      // Fresh private dir + exclusive create; root runs a verified root-only copy (no rewrite-during-prompt window).
+      let w: { dir: string; scriptPath: string; sha256: string };
+      try {
+        w = writePrivateScript(name, script);
+      } catch (e) {
+        resolve({ success: false, error: e instanceof Error ? e.message : String(e) });
+        return;
+      }
+      const cleanup = (): void => {
+        try {
+          fs.rmSync(w.dir, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+      };
+      const proc = spawn(
+        '/usr/bin/pkexec',
+        pkexecVerifiedArgs(w.scriptPath, w.sha256, '/bin/bash')
+      );
       let stderr = '';
       proc.stderr?.on('data', (d) => {
         stderr += d.toString();
       });
       proc.on('exit', (code) => {
+        cleanup();
         if (code === 0) resolve({ success: true });
         else if (code === 126) resolve({ success: false, error: 'Authorization cancelled' });
         else if (code === 127)
@@ -275,7 +299,10 @@ export class PlatformPrivilegeService {
           resolve({ success: false, error: 'setcap is not installed (libcap2-bin)' });
         else resolve({ success: false, error: stderr.trim() || `pkexec exit code ${code}` });
       });
-      proc.on('error', (err) => resolve({ success: false, error: err.message }));
+      proc.on('error', (err) => {
+        cleanup();
+        resolve({ success: false, error: err.message });
+      });
     });
   }
 
@@ -339,7 +366,11 @@ echo flowz-linux-tun-setup-ok
     const script = `#!/bin/bash
 # FlowZ watchdog script (run as root via osascript); do not edit by hand.
 SB="$1"; CFG="$2"; LOG="$3"; PIDFILE="$4"; STOPFLAG="$5"; PARENT="$6"; FWD="$7"
-if [ "$FWD" = "1" ]; then sysctl -w net.inet.ip.forwarding=1 >/dev/null 2>&1; sysctl -w net.inet6.ip6.forwarding=1 >/dev/null 2>&1; fi
+PREV4=""; PREV6=""
+if [ "$FWD" = "1" ]; then
+  PREV4=$(sysctl -n net.inet.ip.forwarding 2>/dev/null); PREV6=$(sysctl -n net.inet6.ip6.forwarding 2>/dev/null)
+  sysctl -w net.inet.ip.forwarding=1 >/dev/null 2>&1; sysctl -w net.inet6.ip6.forwarding=1 >/dev/null 2>&1
+fi
 "$SB" run -c "$CFG" > "$LOG" 2>&1 &
 SBPID=$!
 echo "$SBPID" > "$PIDFILE"
@@ -351,14 +382,23 @@ done
 kill -TERM "$SBPID" 2>/dev/null
 for i in $(seq 1 10); do kill -0 "$SBPID" 2>/dev/null || break; sleep 0.5; done
 kill -9 "$SBPID" 2>/dev/null
+# Restore IP forwarding to what it was before this allowLan session.
+case "$PREV4" in 0|1) sysctl -w net.inet.ip.forwarding="$PREV4" >/dev/null 2>&1;; esac
+case "$PREV6" in 0|1) sysctl -w net.inet6.ip6.forwarding="$PREV6" >/dev/null 2>&1;; esac
 # Give runtime dirs back to the login user (fixes ownership conflicts across privilege modes): sing-box running as
 # root writes tailscale state / dashboard / ui as root -> the next run as the login user cannot read them and the
 # endpoint hits a post-start FATAL. CONFDIR (= config parent dir) is owned by the login user; this watchdog runs as
 # root and may chown. Same approach as the helper daemon path (helper.go chownRuntimeDirs).
+# Hardened (no recursive chown): never follow symlinks (find -P, -xdev), only root-owned dirs and single-link regular
+# files (a hard link to a system file has >1 link), and chown from inside the containing dir via -execdir so no path
+# is re-resolved through directories the user could swap.
 CONFDIR=$(dirname "$CFG")
 OWNER=$(stat -f %u "$CONFDIR" 2>/dev/null)
-if [ -n "$OWNER" ] && [ "$OWNER" != "0" ]; then
-  for d in tailscale singbox-dashboard ui; do chown -R "$OWNER" "$CONFDIR/$d" 2>/dev/null; done
+if [ -n "$OWNER" ] && [ "$OWNER" != "0" ] && [ ! -L "$CONFDIR" ]; then
+  for d in tailscale singbox-dashboard ui; do
+    [ -d "$CONFDIR/$d" ] && [ ! -L "$CONFDIR/$d" ] || continue
+    find -P "$CONFDIR/$d" -xdev -user 0 \\( -type d -o \\( -type f -links 1 \\) \\) -execdir chown -h "$OWNER" {} \\; 2>/dev/null
+  done
 fi
 rm -f "$STOPFLAG"
 `;
@@ -531,45 +571,18 @@ rm -f "$STOPFLAG"
    */
   async installCoreElevatedMac(src: string, dest: string): Promise<void> {
     if (process.platform !== 'darwin') throw new Error('installCoreElevatedMac is macOS-only');
-    const destDir = path.dirname(dest);
-    // 受保护核目录恒 root:wheel、普通用户写不动 → 不试免提权 direct copy：①避免非 EPERM 错（ENOSPC/ENOENT）在弹窗前抛、
-    // 致调用方 declinedVersion 已记却从未弹；②杜绝「万一目录松权时植入用户属主二进制」的 TOCTOU。mkdir 由
-    // 下方 root 脚本做。落盘 root 脚本（shq 转义路径），osascript 一次性 admin 跑（mirror runRootScript）。启动期代理未连，pkill 防御性。
-    const script = [
-      '#!/bin/bash',
-      'set -e',
-      `mkdir -p ${shq(destDir)}`,
-      'pkill -x sing-box 2>/dev/null || true',
-      `cp -f ${shq(src)} ${shq(dest)}`,
-      `chmod 755 ${shq(dest)}`,
-      '',
-    ].join('\n');
-    const scriptPath = path.join(app.getPath('temp'), `flowz-core-install-${process.pid}.sh`);
-    fs.writeFileSync(scriptPath, script, { mode: 0o755 });
-    try {
-      await new Promise<void>((resolve, reject) => {
-        // 路径单引号包裹容忍空格；FlowZ 路径不含单/双引号（同 runRootScript 约束）。
-        const proc = spawn('/usr/bin/osascript', [
-          '-e',
-          `do shell script "/bin/bash '${scriptPath}'" with administrator privileges`,
-        ]);
-        let stderr = '';
-        proc.stderr?.on('data', (d) => (stderr += d.toString()));
-        proc.on('exit', (code) => {
-          if (code === 0) resolve();
-          else if (/-128|User canceled/i.test(stderr))
-            reject(new Error('Administrator authorization cancelled'));
-          else reject(new Error(stderr.trim() || `osascript exit code ${code}`));
-        });
-        proc.on('error', (err) => reject(err));
-      });
-    } finally {
-      try {
-        fs.unlinkSync(scriptPath);
-      } catch {
-        /* ignore */
-      }
-    }
+    // 受保护核目录恒 root:wheel、普通用户写不动 → 不试免提权 direct copy（理由同前）。One admin prompt
+    // (buildMacElevatedCoreInstallScript): root copies src once, refuses it unless it still hashes to what the app
+    // computed here, installs it as root:wheel and records its hash in <coreDir>/trusted-hashes so a proto ≥10
+    // helper — even one built for an older bundled core — trusts it. The script runs from a private mkdtemp file and
+    // root verifies a root-only copy (runMacRootScript). 启动期代理未连，pkill 防御性。
+    const script = buildMacElevatedCoreInstallScript(
+      path.dirname(dest),
+      [{ src, name: path.basename(dest), sha256: sha256File(src) }],
+      { pkillCore: true }
+    );
+    const r = await runMacRootScript('flowz-core-install.sh', script);
+    if (!r.success) throw new Error(r.error || 'osascript failed');
   }
 
   // ─── 提权停止（迁自 ProxyManager.stopSingBoxWithSudo / stopSingBoxOnWindows，子 commit 3）──────
@@ -971,23 +984,10 @@ rm -f "$STOPFLAG"
       'Linux TUN first-time setup: requesting administrator authorization once (grant core network capabilities + install the DNS polkit rule)...'
     );
 
-    const scriptPath = path.join(getUserDataPath(), 'flowz-linux-tun-setup.sh');
-    try {
-      fs.writeFileSync(scriptPath, this.buildLinuxTunSetupScript(corePath, user, rulesFile), {
-        mode: 0o755,
-      });
-    } catch (e) {
-      throw new Error(
-        `TUN mode requires administrator permission: cannot write the elevation script (${e instanceof Error ? e.message : String(e)})`
-      );
-    }
-
-    const result = await this.runPkexecScript(scriptPath);
-    try {
-      fs.unlinkSync(scriptPath);
-    } catch {
-      /* 忽略 */
-    }
+    const result = await this.runPkexecScript(
+      'flowz-linux-tun-setup.sh',
+      this.buildLinuxTunSetupScript(corePath, user, rulesFile)
+    );
 
     // 复检 caps。getcap 不可用（null）时无法验证 → 信任脚本退出码（set -e + 末行 echo 保证 setcap
     // 成功才退 0）。仅当「getcap 明确说无 caps」或「getcap 不可用且脚本失败」才判失败（P2-1）。

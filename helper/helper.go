@@ -21,8 +21,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"net"
@@ -71,18 +69,79 @@ import (
 //	缓存全清（用户级 dscacheutil 无权 HUP mDNSResponder，清不到其 unicast cache）。核 start/stop 后由 app 侧
 //	best-effort 调用；dscacheutil 成功而 HUP 失败回 OK flushed-partial（app 不降级，用户级重复无益）；
 //	proto<9 无此命令 → 回 ERR unknown，app 降级用户级 dscacheutil。
-const protoVersion = "9"
+//
+// v10: core trust + config policy (see trust.go / cfgcheck.go / runprep.go).
+//   - The core only runs from the protected --coredir, and only if its SHA-256 is compiled in
+//     (bundled core) or listed in <coredir>/trusted-hashes (written only by an admin-password step).
+//     A missing/untrusted core is re-seeded from --bundledcore (bytes hashed once, written only if trusted).
+//   - install-core (line3=srcDir, line4=hash now ignored) accepts only trusted binaries with expected names
+//     (sing-box, libcronet.*), regular files only; anything else → "ERR untrusted-hash <name> <hash>".
+//   - core-info → "OK bundled=<compiled hash|-> core=<protected core hash|->".
+//   - start: config is validated (no tor / executable_path / extra_args / torrc / data_directory; log, cache,
+//     external_ui, state_directory inside --confdir) and the core runs on a root-only copy of those bytes;
+//     the log path must be inside --confdir (O_NOFOLLOW, regular, single link); IP forwarding is restored
+//     on every child exit; runtime-dir ownership hand-back walks by fd and skips hard links.
+//     Old clients keep working (same line layout); v4-v9 helpers keep working for TUN (MIN_USABLE stays 4).
+const protoVersion = "10"
 
 var (
-	singboxBin string // 安装时锁定的 sing-box 路径
-	confDir    string // 允许的配置文件目录
-	supportDir string // socket + token 所在目录
-	coreDir    string // 安装时锁定的受保护内核目录（install-core 只写此目录，防写任意路径）
+	singboxBin      string // the core that runs: always <coreDir>/sing-box when --coredir is set
+	confDir         string // 允许的配置文件目录
+	supportDir      string // socket + token 所在目录
+	coreDir         string // 安装时锁定的受保护内核目录（install-core 只写此目录，防写任意路径）
+	bundledCorePath string // app bundle core recorded at install time: seed source only (bytes must hash-match)
 
 	mu        sync.Mutex
 	child     *exec.Cmd
 	childDone chan struct{} // 与 child 同生命周期：start 时创建，c.Wait() 收割后 close；摘除 child 时同步置 nil
+
+	// IP forwarding state saved before the first allowLan session turned it on; restored when that session's
+	// child exits (any path) or a later start does not want forwarding. Guarded by mu.
+	fwdSaved map[string]string
+	fwdOwner *exec.Cmd
 )
+
+var fwdSysctls = []string{"net.inet.ip.forwarding", "net.inet6.ip6.forwarding"}
+
+// enableForwarding saves the current values once, then turns forwarding on. Caller holds mu.
+func enableForwarding() {
+	if fwdSaved == nil {
+		fwdSaved = map[string]string{}
+		for _, k := range fwdSysctls {
+			out, err := execOutput(execTimeout, "/usr/sbin/sysctl", "-n", k)
+			v := strings.TrimSpace(string(out))
+			if err == nil && (v == "0" || v == "1") {
+				fwdSaved[k] = v
+			}
+		}
+	}
+	for _, k := range fwdSysctls {
+		_ = execRun(execTimeout, "/usr/sbin/sysctl", "-w", k+"=1")
+	}
+}
+
+// restoreForwarding puts back the values saved by enableForwarding. Caller holds mu.
+func restoreForwarding() {
+	for k, v := range fwdSaved {
+		_ = execRun(execTimeout, "/usr/sbin/sysctl", "-w", k+"="+v)
+	}
+	fwdSaved, fwdOwner = nil, nil
+}
+
+// bundledSeedDir: directory of the bundled core (seed source), "" if unknown.
+func bundledSeedDir() string {
+	if bundledCorePath == "" {
+		return ""
+	}
+	return filepath.Dir(bundledCorePath)
+}
+
+func hashOrDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
 
 func tokenValue() string {
 	b, _ := os.ReadFile(filepath.Join(supportDir, "helper.token"))
@@ -122,123 +181,6 @@ func execCombined(d time.Duration, name string, args ...string) ([]byte, error) 
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
-}
-
-// installCore（proto v5）：把 app 下载+预检的临时内核 src，校验 sha256(实际读到的字节)==wantHash 后，root 写入
-// 锁定的受保护目录 coreDir（整个源目录复制 + 主二进制签名 + 清 quarantine）。
-//   - 只写锁定的 coreDir（filepath.Join，不接受任意路径）→ 防「持 token 写任意 root 路径」。
-//   - 哈希校验主二进制 sing-box（堵 TOCTOU：读全字节进内存，校验+写同一份；攻击者读后替换无效，读前替换则 hash
-//     不符被拒）。与 token（通道鉴权）互补两层。libcronet 等配套随目录复制（同一可信源 + token 保护，未逐文件 hash，
-//     残余 LOW，可后续补）。
-func installCore(srcDir, wantHash string) string {
-	if coreDir == "" {
-		return "ERR coredir-unset"
-	}
-	if srcDir == "" || len(wantHash) != 64 {
-		return "ERR bad-args"
-	}
-	sbData, err := os.ReadFile(filepath.Join(srcDir, "sing-box"))
-	if err != nil {
-		return "ERR read-singbox " + err.Error()
-	}
-	sum := sha256.Sum256(sbData)
-	if !strings.EqualFold(hex.EncodeToString(sum[:]), wantHash) {
-		return "ERR hash-mismatch"
-	}
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		return "ERR readdir " + err.Error()
-	}
-	if err := os.MkdirAll(coreDir, 0o755); err != nil {
-		return "ERR mkdir " + err.Error()
-	}
-	// 整个源目录（sing-box + libcronet 等配套）逐文件 .new + rename 原子就位到受保护目录。
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		data := sbData
-		if name != "sing-box" {
-			data, err = os.ReadFile(filepath.Join(srcDir, name))
-			if err != nil {
-				return "ERR read " + name + " " + err.Error()
-			}
-		}
-		dst := filepath.Join(coreDir, name)
-		tmp := dst + ".new"
-		if err := os.WriteFile(tmp, data, 0o755); err != nil {
-			return "ERR write " + name + " " + err.Error()
-		}
-		if err := os.Rename(tmp, dst); err != nil {
-			_ = os.Remove(tmp)
-			return "ERR rename " + name + " " + err.Error()
-		}
-		_ = os.Chmod(dst, 0o755)
-	}
-	// A-m2：清理受保护目录多余文件（非本次 srcDir entries 的旧核残留），防 rollback 后残留陈旧配套。
-	srcNames := make(map[string]bool)
-	for _, e := range entries {
-		if !e.IsDir() {
-			srcNames[e.Name()] = true
-		}
-	}
-	if oldEntries, err := os.ReadDir(coreDir); err == nil {
-		for _, e := range oldEntries {
-			if !e.IsDir() && !srcNames[e.Name()] {
-				_ = os.Remove(filepath.Join(coreDir, e.Name()))
-			}
-		}
-	}
-	// macOS：清整个受保护目录 quarantine + 对主二进制 adhoc 签名（否则 Gatekeeper 对新放入未签名二进制 SIGKILL）
-	sb := filepath.Join(coreDir, "sing-box")
-	_ = execRun(execTimeout, "/usr/bin/xattr", "-cr", coreDir)
-	_ = execRun(codesignTimeout, "/usr/bin/codesign", "--force", "--deep", "-s", "-", sb)
-	return "OK installed"
-}
-
-// chownRuntimeDirs（proto v6 行为）：把 sing-box 运行时写入的 userData 子目录（tailscale state /
-// singbox-dashboard / external_ui）属主**归还登录用户**。helper 以 root 跑 sing-box，tsnet 等会把这些文件
-// 创建成 root 600 → 之后以登录用户（系统代理模式）跑 sing-box 时 open 不了 → endpoint post-start
-// `permission denied` 拖垮整个启动（即便没选 tailscale 节点，它在 endpoints[] 里也会被 post-start）。
-// 每次 child 退出后调用 → 属主恒为登录用户（confDir=app 数据目录、属主即登录用户），根治跨提权态属主冲突，
-// 且**不丢 Tailscale 登录态**（chown 保留 state、非删除）。绝不阻断、单项失败即跳过。
-func chownRuntimeDirs() {
-	if confDir == "" {
-		return
-	}
-	fi, err := os.Stat(confDir)
-	if err != nil {
-		return
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return
-	}
-	uid, gid := int(st.Uid), int(st.Gid)
-	if uid == 0 {
-		return // confDir 本身属 root（异常）→ 不动，避免把运行时目录误归到 root
-	}
-	for _, name := range []string{"tailscale", "singbox-dashboard", "ui"} {
-		chownTree(filepath.Join(confDir, name), uid, gid)
-	}
-}
-
-// chownTree：递归把树里**仍属 root**的条目 Lchown 到 (uid,gid)。尽力而为——目录不存在/读不了即跳过，
-// 绝不返回错误中断遍历。guard：只动 uid==0 的条目（root 跑 sing-box 留下的），已是登录用户属主的不再 Lchown
-// → 避免每次 TUN 起停周期对可能很大的树做无谓全量 Lchown（filepath.Walk 用 Lstat，info 即条目自身属性，不跟随符号链接）。
-func chownTree(root string, uid, gid int) {
-	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
-		if err != nil || info == nil {
-			return nil
-		}
-		// 仅 root 写入的条目才归还属主；非 root（已是登录用户）跳过，省掉无谓 Lchown。
-		// 拿不到底层 Stat_t（理论上不该发生）时保守归还，维持原「确保属主稳定」语义。
-		if st, ok := info.Sys().(*syscall.Stat_t); !ok || st.Uid == 0 {
-			_ = os.Lchown(p, uid, gid)
-		}
-		return nil
-	})
 }
 
 // cfg 必须位于 confDir 内（清洗后前缀匹配），防止越权指定任意路径作 root 配置。
@@ -530,24 +472,45 @@ func handle(conn net.Conn) {
 			fmt.Fprintln(conn, "ERR config-path-denied")
 			return
 		}
-		// allowLan：开启 IP 转发（macOS 键名，与 Linux 不同）
-		if fwd == "1" {
-			_ = execRun(execTimeout, "/usr/sbin/sysctl", "-w", "net.inet.ip.forwarding=1")
-			_ = execRun(execTimeout, "/usr/sbin/sysctl", "-w", "net.inet6.ip6.forwarding=1")
+		// v10: the core must be trusted (compiled-in hash or admin-approved allowlist); re-seed from the bundle if not.
+		if _, err := ensureTrustedCore(coreDir, bundledSeedDir()); err != nil {
+			fmt.Fprintf(conn, "ERR %v\n", err)
+			return
 		}
-		c := exec.Command(singboxBin, "run", "-c", cfg)
+		// v10: validate the config and run the core on a root-only copy of the validated bytes.
+		runCfg, warnings, err := prepareRunConfig(cfg)
+		if err != nil {
+			fmt.Fprintf(conn, "ERR %v\n", err)
+			return
+		}
+		for _, w := range warnings {
+			fmt.Fprintln(os.Stderr, "config:", w)
+		}
+		// allowLan：开启 IP 转发（macOS 键名，与 Linux 不同）。先存原值，child 退出（任何路径）时恢复。
+		if fwd == "1" {
+			enableForwarding()
+		} else if fwdSaved != nil {
+			restoreForwarding()
+		}
+		c := exec.Command(singboxBin, "run", "-c", runCfg)
 		// sing-box 早期 stdout/stderr 重定向到 app 日志文件（与 osascript 看护脚本一致），便于诊断启动问题。
+		// v10: only inside --confdir, O_NOFOLLOW, regular single-link file; a rejected path just disables the log.
 		var logFile *os.File
 		if logPath != "" {
-			if lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+			if lf, err := openLogUnder(logPath); err == nil {
 				logFile = lf
 				c.Stdout = lf
 				c.Stderr = lf
+			} else {
+				fmt.Fprintln(os.Stderr, "start log disabled:", err)
 			}
 		}
 		if err := c.Start(); err != nil {
 			if logFile != nil {
 				logFile.Close()
+			}
+			if fwdSaved != nil && fwdOwner == nil {
+				restoreForwarding()
 			}
 			fmt.Fprintf(conn, "ERR start %v\n", err)
 			return
@@ -557,6 +520,9 @@ func handle(conn net.Conn) {
 			logFile.Close()
 		}
 		child = c
+		if fwd == "1" {
+			fwdOwner = c
+		}
 		done := make(chan struct{})
 		childDone = done
 		go func() {
@@ -564,11 +530,15 @@ func handle(conn net.Conn) {
 			close(done) // 广播子进程已被收割：terminateChild 据此免 KILL、watchParent 据此退出
 			// proto v6：root 跑的 sing-box 退出后，把运行时目录（tailscale state / dashboard / ui）属主归还
 			// 登录用户 → 下次以登录用户（系统代理模式）跑能直接读、不再 FATAL，且不丢 Tailscale 登录态。
-			// 放 Wait() 之后确保文件已不被 sing-box 占用、属主稳定。
+			// 放 Wait() 之后确保文件已不被 sing-box 占用、属主稳定。v10: fd-based walk, skips links (runprep.go).
 			chownRuntimeDirs()
 			mu.Lock()
 			if child == c {
 				child, childDone = nil, nil
+			}
+			// v10: every exit path (stop / crash / parent-death reap) restores forwarding this session enabled.
+			if fwdOwner == c {
+				restoreForwarding()
 			}
 			mu.Unlock()
 		}()
@@ -578,11 +548,19 @@ func handle(conn net.Conn) {
 		}
 		fmt.Fprintf(conn, "OK started %d\n", c.Process.Pid)
 	case "install-core":
-		// 行3=临时内核源路径（app 下载+预检后，用户可写区）；行4=期望 sha256（hex）。helper 校验哈希后 root 写锁定
-		// 的受保护目录。与 child/TUN 进程无关，仅文件写入。
+		// 行3=源目录（用户可写区）；行4=客户端算的 sha256（v10 起忽略——客户端值不可作信任依据）。
+		// v10: only binaries whose hash is compiled in or admin-allowlisted are written (trust.go).
 		src := readLine(r)
-		wantHash := strings.TrimSpace(readLine(r))
-		fmt.Fprintln(conn, installCore(src, wantHash))
+		_ = readLine(r)
+		fmt.Fprintln(conn, installCoreFiles(src, coreDir))
+	case "core-info":
+		h, err := ensureTrustedCore(coreDir, bundledSeedDir())
+		if err != nil {
+			h = ""
+		}
+		// optional line3 = the app's bundled-core pin → trusted=1|0|- (0 ⇒ client treats this helper as outdated)
+		fmt.Fprintf(conn, "OK bundled=%s core=%s trusted=%s\n", hashOrDash(normHash(bundledCoreSHA256)), hashOrDash(h),
+			bundledTrustFlag(coreDir, readLine(r)))
 	default:
 		fmt.Fprintln(conn, "ERR unknown")
 	}
@@ -593,7 +571,15 @@ func main() {
 	flag.StringVar(&confDir, "confdir", "", "allowed config directory")
 	flag.StringVar(&supportDir, "support", "/Library/Application Support/FlowZ", "dir holding helper.sock + helper.token")
 	flag.StringVar(&coreDir, "coredir", "", "locked protected core dir for install-core (proto v5)")
+	flag.StringVar(&bundledCorePath, "bundledcore", "", "bundled core in the app (seed source; trusted only by hash)")
 	flag.Parse()
+	// v10: the privileged core only ever runs from the protected dir.
+	if coreDir != "" {
+		singboxBin = filepath.Join(coreDir, coreFileName)
+	}
+	if !trustEnforced() {
+		fmt.Fprintln(os.Stderr, "WARNING: built without the bundled core hash; core trust is NOT enforced")
+	}
 
 	if err := os.MkdirAll(supportDir, 0o755); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -609,6 +595,17 @@ func main() {
 		os.Exit(1)
 	}
 	_ = os.Chmod(sockPath, 0o666) // token 为安全边界
+
+	// v10: verify / seed the protected core in the background so the first start does not pay for it.
+	if coreDir != "" {
+		go func() {
+			mu.Lock()
+			defer mu.Unlock()
+			if _, err := ensureTrustedCore(coreDir, bundledSeedDir()); err != nil {
+				fmt.Fprintln(os.Stderr, "core check at boot:", err)
+			}
+		}()
+	}
 
 	// SIGTERM/SIGINT 收割器（proto v3）：卸载 / launchctl bootout 时 launchd 先发 SIGTERM（默认 ~20s 后才 SIGKILL），
 	// 此处在退出前先收割 child sing-box（TERM→等≤5s→KILL），杜绝 helper 死后 child 变 root 孤儿继续占 9090/utun
@@ -630,6 +627,11 @@ func main() {
 			// app 直接 spawn 的是用户态 sing-box（同一二进制路径）→ 卸载/重装 helper 时不会误杀活跃用户会话（M-B）。
 			_ = execRun(execTimeout, "/usr/bin/pkill", "-9", "-U", "0", "-f", singboxBin+" run")
 		}
+		mu.Lock()
+		if fwdSaved != nil {
+			restoreForwarding()
+		}
+		mu.Unlock()
 		os.Exit(0)
 	}()
 

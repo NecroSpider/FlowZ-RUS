@@ -239,6 +239,14 @@ describe('PlatformPrivilegeService.generateWatchdogScript', () => {
     expect(script).toContain('sleep 0.5'); // 轮询间隔
     // IP 转发开启分支（fwd=1）
     expect(script).toContain('net.inet.ip.forwarding');
+    // item 7: forwarding restored to its previous value after the session
+    expect(script).toContain('sysctl -w net.inet.ip.forwarding="$PREV4"');
+    // item 5: no recursive chown that follows links; fd-safe find -execdir, single-link files only
+    expect(script).not.toContain('chown -R');
+    expect(script).toContain(
+      'find -P "$CONFDIR/$d" -xdev -user 0 \\( -type d -o \\( -type f -links 1 \\) \\) -execdir chown -h "$OWNER" {} \\;'
+    );
+    expect(require('child_process').spawnSync('/bin/bash', ['-n', result.path]).status).toBe(0);
   });
 
   it('win32 → PowerShell .ps1：isWindows=true + 路径 flowz-win-watchdog.ps1 + 脚本含 param/Start-Process/Stop-Process', () => {

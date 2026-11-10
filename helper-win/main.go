@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"golang.org/x/sys/windows/svc"
@@ -19,9 +20,20 @@ func main() {
 	flag.StringVar(&singboxBin, "singbox", "", "path to sing-box binary (locked at install time)")
 	flag.StringVar(&confDir, "confdir", "", "allowed config directory")
 	flag.StringVar(&supportDir, "support", `C:\ProgramData\FlowZ`, "dir holding helper.token + state (SYSTEM side)")
-	flag.StringVar(&coreDir, "coredir", "", "accepted and ignored on Windows (mirrors macOS flag; no install-core)")
+	flag.StringVar(&coreDir, "coredir", "", `protected core dir (v6; must be inside --support, default <support>\core)`)
+	flag.StringVar(&bundledCorePath, "bundledcore", "", "the app's bundled sing-box.exe (seed source; trusted by hash only)")
 	flag.BoolVar(&console, "console", false, "run as a foreground console process (dev/test without SCM)")
 	flag.Parse()
+
+	// v6: the SYSTEM core only runs from the protected dir under supportDir (locked ACL); --singbox is ignored.
+	defCore := filepath.Join(supportDir, "core")
+	if coreDir == "" || relUnder(supportDir, coreDir) == "" {
+		coreDir = defCore
+	}
+	singboxBin = filepath.Join(coreDir, coreFileName)
+	if !trustEnforced() {
+		fmt.Fprintln(os.Stderr, "WARNING: built without the bundled core hash; core trust is NOT enforced")
+	}
 
 	// 确保 supportDir 存在（helper.token 落此目录）。Windows 上权限由安装期 ACL 设定（SYSTEM 私有），此处仅建目录。
 	if err := os.MkdirAll(supportDir, 0o755); err != nil {

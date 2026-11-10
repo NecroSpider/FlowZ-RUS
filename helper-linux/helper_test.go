@@ -66,3 +66,35 @@ func TestSsPidRe(t *testing.T) {
 		t.Errorf("a line without pid should not match, got %v", got)
 	}
 }
+
+// openLogForCaller: only next to the config, by dir fd, O_NOFOLLOW, regular single-link, never chown an existing file.
+func TestOpenLogForCaller(t *testing.T) {
+	dir := t.TempDir()
+	uid, gid := uint32(os.Getuid()), uint32(os.Getgid())
+	cfg := filepath.Join(dir, "singbox_config.json")
+	if err := os.WriteFile(cfg, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := openLogForCaller(cfg, filepath.Join(dir, "singbox_startup.log"), uid, gid)
+	if err != nil {
+		t.Fatalf("log next to the config must open: %v", err)
+	}
+	f.Close()
+	if _, err := openLogForCaller(cfg, "/etc/passwd", uid, gid); err == nil {
+		t.Error("a log outside the config dir must be refused")
+	}
+	other := filepath.Join(t.TempDir(), "victim")
+	_ = os.WriteFile(other, []byte("v"), 0o644)
+	_ = os.Symlink(other, filepath.Join(dir, "link.log"))
+	if _, err := openLogForCaller(cfg, filepath.Join(dir, "link.log"), uid, gid); err == nil {
+		t.Error("a symlinked log must be refused")
+	}
+	if err := os.Link(other, filepath.Join(dir, "hard.log")); err == nil {
+		if _, err := openLogForCaller(cfg, filepath.Join(dir, "hard.log"), uid, gid); err == nil {
+			t.Error("a hard-linked log must be refused")
+		}
+	}
+	if _, err := openLogForCaller(cfg, filepath.Join(dir, "x.log"), uid+1, gid); err == nil {
+		t.Error("a config dir not owned by the caller must be refused")
+	}
+}

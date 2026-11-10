@@ -5,8 +5,15 @@
  *  - PowerShell 单引号转义。
  * 真机行为（UAC、sc 引号语义、管道连通）属 Windows 真机必验清单，不在单测范围。
  */
-import { WindowsServiceHelper } from '../WindowsServiceHelper';
+import {
+  WindowsServiceHelper,
+  authServerProof,
+  authClientProof,
+  parseAuthChallenge,
+  buildAuthRequest,
+} from '../WindowsServiceHelper';
 import { system32 } from '../../utils/win-system32';
+import { resourceManager } from '../ResourceManager';
 
 // 「非 Windows 安全降级」只在非 Windows 宿主可测：helper 直接读 process.platform（无注入点），
 // 在 Windows CI runner（win32）上该降级路径不可达 → 跳过；其逻辑由 macOS/Linux runner 覆盖。
@@ -70,7 +77,13 @@ describe('WindowsServiceHelper', () => {
       expect(script).toContain('Get-Service');
       expect(script).toContain('1072');
       // 各含空格路径用**真双引号**包裹（非 \"），锁定 exe + 三参
-      expect(script).toContain('--singbox "C:\\Program Files\\FlowZ\\sing-box.exe"');
+      // v6: the service runs only its protected copy under ProgramData\FlowZ\core; the (user-writable) bundled
+      // core is passed only as the hash-verified seed source.
+      expect(script).toMatch(/--singbox "[^"]*ProgramData[^"]*FlowZ[^"]*core[^"]*sing-box\.exe"/);
+      expect(script).toMatch(/--coredir "[^"]*ProgramData[^"]*FlowZ[^"]*core"/);
+      expect(script).toContain('--bundledcore "C:\\Program Files\\FlowZ\\sing-box.exe"');
+      expect(script).not.toContain('--singbox "C:\\Program Files');
+      expect(script).not.toContain('core_update');
       expect(script).toContain('--confdir "C:\\Users\\doveh\\AppData\\Roaming\\FlowZ"');
       expect(script).toContain('--support');
       // U1 外置：binPath 的引导 exe 必须指向 ProgramData 外置副本、而非 app 安装目录内的 helper.exe（根因修复——
@@ -217,6 +230,7 @@ describe('WindowsServiceHelper', () => {
         super();
       }
       protected async sendCommand(rest: string[], _timeoutMs: number): Promise<string> {
+        if (rest[0] === 'core-info') return 'ERR unknown'; // pre-v6 service: no protected-core sync
         return this.handler(rest);
       }
     }
@@ -267,6 +281,183 @@ describe('WindowsServiceHelper', () => {
         error: 'ERR config-path-denied',
       });
       expect(starts).toBe(1);
+    });
+  });
+
+  describe('v6: protected core re-seed on start', () => {
+    it('ERR core-untrusted → install-core from the bundled dir (no UAC) → retry start', async () => {
+      const sent: string[][] = [];
+      class V6 extends WindowsServiceHelper {
+        protected async sendCommand(rest: string[]): Promise<string> {
+          sent.push(rest);
+          if (rest[0] === 'stop') return 'OK notrunning';
+          if (rest[0] === 'core-info') return 'ERR unknown';
+          if (rest[0] === 'install-core') return 'OK installed';
+          return sent.filter((r) => r[0] === 'start').length === 1
+            ? 'ERR core-untrusted ab12'
+            : 'OK started 77';
+        }
+      }
+      jest
+        .spyOn(resourceManager, 'getBundledSingBoxPath')
+        .mockReturnValue('C:\\FlowZ\\resources\\win\\sing-box.exe');
+      let elevated = 0;
+      const h = new V6();
+      (h as unknown as { runElevatedPowerShell: () => Promise<unknown> }).runElevatedPowerShell =
+        async () => {
+          elevated++;
+          return { success: true };
+        };
+      await expect(h.startCore('C:\\cfg.json', '', false)).resolves.toEqual({ ok: true, pid: 77 });
+      expect(sent.filter((r) => r[0] === 'install-core')).toHaveLength(1);
+      expect(elevated).toBe(0); // connect never prompts
+    });
+
+    it('untrusted user core: install-core refused → UAC only when allowElevation', async () => {
+      class V6 extends WindowsServiceHelper {
+        protected async sendCommand(): Promise<string> {
+          return 'ERR untrusted-hash sing-box.exe ff';
+        }
+      }
+      const h = new V6();
+      let elevated = 0;
+      (h as unknown as { installCoreElevated: () => Promise<unknown> }).installCoreElevated =
+        async () => {
+          elevated++;
+          return { ok: true };
+        };
+      expect((await h.installCore('C:\\x')).ok).toBe(false);
+      expect(elevated).toBe(0);
+      expect(await h.installCore('C:\\x', { allowElevation: true })).toEqual({ ok: true });
+      expect(elevated).toBe(1);
+    });
+
+    it('elevated core script hashes the bytes it writes and appends to trusted-hashes', () => {
+      const h = new WindowsServiceHelper() as unknown as {
+        buildElevatedCoreInstallScript(i: { name: string; src: string; sha256: string }[]): string;
+        buildVerifiedLoader(p: string, sha: string, f: string, e: string): string;
+      };
+      const sha = 'b'.repeat(64);
+      const s = h.buildElevatedCoreInstallScript([
+        { name: 'sing-box.exe', src: "C:\\Users\\O'Neil\\core\\sing-box.exe", sha256: sha },
+      ]);
+      expect(s).toContain('[System.IO.File]::ReadAllBytes($src)');
+      expect(s).toContain('if ($got -ne $want)');
+      expect(s).toContain("$al = Join-Path $core 'trusted-hashes'");
+      expect(s).toContain(
+        `Install-One 'sing-box.exe' 'C:\\Users\\O''Neil\\core\\sing-box.exe' '${sha}'`
+      );
+      expect(() =>
+        h.buildElevatedCoreInstallScript([{ name: 'x.exe', src: 'C:\\x', sha256: sha }])
+      ).toThrow();
+      // item 8: the elevated loader reads the script bytes once, checks the hash and runs those bytes (no -File)
+      const loader = h.buildVerifiedLoader('C:\\t\\a.ps1', sha, 'C:\\t\\f', 'C:\\t\\e');
+      expect(loader).toContain("ReadAllBytes('C:\\t\\a.ps1')");
+      expect(loader).toContain(`if ($h -ne '${sha}')`);
+      expect(loader).toContain('[ScriptBlock]::Create($t)');
+    });
+  });
+
+  describe('v6 AUTH2 pipe authentication', () => {
+    const tvToken = '00112233445566778899aabbccddeeff';
+    const tvNc = '0123456789abcdef0123456789abcdef';
+    const tvNs = 'fedcba9876543210fedcba9876543210';
+
+    it('matches the Go helper test vectors (helper-win/auth_test.go)', () => {
+      expect(authServerProof(tvToken, tvNc, tvNs)).toBe(
+        '22d63aed5e2728581eb9d9f0ff8c92d88ecb7904c63283370bf5bfbb9582f10f'
+      );
+      expect(authClientProof(tvToken, tvNc, tvNs, ['start', 'C:\\cfg.json', '', '0', '42'])).toBe(
+        '697891738d0b577d2bede6e59bf378b9580cfe604786e6f053daf9dcf861f8a5'
+      );
+      const chal = `CHAL ${tvNs} ${authServerProof(tvToken, tvNc, tvNs)}`;
+      expect(parseAuthChallenge(tvToken, tvNc, chal)).toBe(tvNs);
+      expect(parseAuthChallenge('wrong-token', tvNc, chal)).toBeNull();
+      expect(parseAuthChallenge(tvToken, tvNc, 'ERR auth')).toBeNull();
+      expect(() => buildAuthRequest(tvToken, tvNc, tvNs, ['a\nb'])).toThrow();
+    });
+
+    // Real socket round-trip (unix socket stands in for the named pipe; same net.Socket code path).
+    const describePosix = process.platform === 'win32' ? describe.skip : describe;
+    describePosix('round-trip', () => {
+      const net = require('net');
+      const os = require('os');
+      const fsSync = require('fs');
+      const pathMod = require('path');
+      const crypto = require('crypto');
+
+      function serve(sockPath: string, token: string | null, seen: string[]): Promise<() => void> {
+        const server = net.createServer((c: import('net').Socket) => {
+          let buf = '';
+          let ns = '';
+          let nc = '';
+          c.on('data', (d: Buffer) => {
+            buf += d.toString();
+            seen.push(d.toString());
+            if (!ns) {
+              const nl = buf.indexOf('\n');
+              if (nl < 0) return;
+              nc = buf.slice(6, nl);
+              buf = buf.slice(nl + 1);
+              ns = crypto.randomBytes(16).toString('hex');
+              // an impostor (token === null) cannot compute the proof
+              const proof = token ? authServerProof(token, nc, ns) : 'f'.repeat(64);
+              c.write(`CHAL ${ns} ${proof}\n`);
+              return;
+            }
+            const lines = buf.split('\n');
+            const [mac, n] = lines[0].split(' ');
+            if (lines.length < Number(n) + 2) return;
+            const req = lines.slice(1, 1 + Number(n));
+            const ok = token && mac === authClientProof(token, nc, ns, req);
+            c.end(ok ? `OK echo ${req.join('|')}\n` : 'ERR auth\n');
+          });
+        });
+        return new Promise((resolve) =>
+          server.listen(sockPath, () => resolve(() => server.close()))
+        );
+      }
+
+      class PipeHelper extends WindowsServiceHelper {
+        constructor(
+          sockPath: string,
+          private readonly tok: string
+        ) {
+          super();
+          this.pipePath = sockPath;
+        }
+        protected token(): string {
+          return this.tok;
+        }
+        call(rest: string[]): Promise<string> {
+          return this.sendCommandAuth2(rest, 3000);
+        }
+      }
+
+      it('authenticates without ever sending the token; an impostor server learns nothing', async () => {
+        const dir = fsSync.mkdtempSync(pathMod.join(os.tmpdir(), 'fz-'));
+        const token = crypto.randomBytes(16).toString('hex');
+        const sock = pathMod.join(dir, 's');
+        const seen: string[] = [];
+        let close = await serve(sock, token, seen);
+        const h = new PipeHelper(sock, token);
+        await expect(h.call(['start', 'C:\\cfg.json', '', '1', '9'])).resolves.toBe(
+          'OK echo start|C:\\cfg.json||1|9'
+        );
+        expect(seen.join('')).not.toContain(token);
+        close();
+
+        const sock2 = pathMod.join(dir, 's2');
+        const seen2: string[] = [];
+        close = await serve(sock2, null, seen2);
+        await expect(new PipeHelper(sock2, token).call(['ping'])).rejects.toThrow(
+          /failed authentication/
+        );
+        expect(seen2.join('')).not.toContain(token);
+        expect(seen2.join('')).not.toContain('ping'); // request not sent to an unproven server
+        close();
+        fsSync.rmSync(dir, { recursive: true, force: true });
+      });
     });
   });
 });

@@ -52,7 +52,11 @@ func main() {
 		}
 		// 等在途后台收割（stop 刚摘除 child + go terminateChild 的窗口）跑完 KILL 升级，再退出——杜绝孤儿。
 		waitReaps(6 * time.Second)
-		setForward(false) // 退出兜底：不留全局转发态
+		mu.Lock()
+		if fwdSaved != nil {
+			restoreForwarding() // 退出兜底：恢复会话前的转发态
+		}
+		mu.Unlock()
 		_ = l.Close()
 		os.Exit(0)
 	}()

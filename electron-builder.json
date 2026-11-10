@@ -208,7 +208,8 @@
     ]
   },
   "deb": {
-    "recommends": ["policykit-1"]
+    "recommends": ["policykit-1"],
+    "afterRemove": "build/linux/after-remove.sh"
   },
   "publish": null
 }

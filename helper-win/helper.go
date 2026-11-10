@@ -27,6 +27,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
+	"crypto/subtle"
 	"fmt"
 	"net"
 	"os"
@@ -44,7 +46,17 @@ import (
 // Set-NetIPInterface（netsh store=active 未关 AutomaticMetric 设了不生效，真机实证）；v5 = PowerShell 全路径 +
 // 两族（无 -AddressFamily，IPv6 的 ::/0 同样会抢，必须一并降权；SYSTEM 服务 PATH 可能找不到 powershell）。
 // 无 install-core（macOS 专属 proto v5，与 Windows 谱系不共享）。
-const protoVersion = "5"
+// v6 (security):
+//   - AUTH2 HMAC challenge-response (auth.go): the token never crosses the pipe; legacy token line still accepted.
+//   - The SYSTEM core runs only from <support>\core (SYSTEM/Administrators-only ACL), never from the user-writable
+//     userData / per-user install dir. It must hash to the compiled-in bundled core or to an entry of
+//     <support>\core\trusted-hashes (written only by the UAC path); libcronet.dll likewise. Missing/untrusted →
+//     re-seeded from --bundledcore (bytes hashed once, written only if trusted).
+//   - install-core <srcDir> [ignored hash]: trusted binaries only (sing-box.exe, libcronet.dll; regular files).
+//   - core-info → "OK bundled=<h|-> core=<h|->".
+//   - start: config policy (cfgcheck.go) + run on a SYSTEM-only copy; log only inside --confdir (single link);
+//     IPEnableRouter restored on every child exit.
+const protoVersion = "6"
 
 // route-add/route-del 安全约束：仅允许 FlowZ 自己的内核接口名（flowz-ts/flowz-wg/flowz-tun0…），杜绝任意接口注入。
 func ifaceAllowed(s string) bool {
@@ -60,16 +72,41 @@ func ifaceAllowed(s string) bool {
 }
 
 var (
-	singboxBin string // 安装时锁定的 sing-box 路径
+	singboxBin string // the core that runs: always <coreDir>\sing-box.exe (v6)
 	confDir    string // 允许的配置文件目录
 	supportDir string // 命名管道 token 所在目录（SYSTEM 侧）
-	// coreDir：Windows 上接受并忽略（镜像 macOS flag 形态，便于 TS 侧统一安装脚本；Windows 无 install-core）。
+	// coreDir (v6): protected core dir, always inside supportDir (inherits its locked ACL).
 	coreDir string
+	// bundledCorePath (v6): the app's bundled sing-box.exe recorded at install time — seed source, trusted by hash only.
+	bundledCorePath string
 
 	mu        sync.Mutex
 	child     *exec.Cmd
 	childDone chan struct{} // 与 child 同生命周期：start 时创建，c.Wait() 收割后 close；摘除 child 时同步置 nil
 )
+
+// lockedSingboxPaths: images cleanup/freeport may kill — the protected core plus the app's own core locations.
+func lockedSingboxPaths() []string {
+	paths := []string{singboxBin, bundledCorePath}
+	if confDir != "" {
+		paths = append(paths, filepath.Join(confDir, "core_update", coreFileName))
+	}
+	return paths
+}
+
+func bundledSeedDir() string {
+	if bundledCorePath == "" {
+		return ""
+	}
+	return filepath.Dir(bundledCorePath)
+}
+
+func hashOrDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
 
 func tokenValue() string {
 	b, _ := os.ReadFile(filepath.Join(supportDir, "helper.token"))
@@ -164,11 +201,24 @@ func handle(conn net.Conn) {
 	// 在 mu.Lock() 之后阻塞读 → 永久持锁拖垮整个 helper。镜像 macOS 5s deadline。
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	r := bufio.NewReader(conn)
-	tok := readLine(r)
-	cmd := readLine(r)
-	if tok == "" || tok != tokenValue() {
-		fmt.Fprintln(conn, "ERR auth")
-		return
+	first := readLine(r)
+	var cmd string
+	if strings.HasPrefix(first, authPrefix) {
+		// v6 AUTH2: the client never sends the token (auth.go).
+		lines, err := serverHandshake(conn, r, strings.TrimPrefix(first, authPrefix), tokenValue(), rand.Read)
+		if err != nil {
+			fmt.Fprintln(conn, "ERR auth")
+			return
+		}
+		r = bufio.NewReader(strings.NewReader(strings.Join(lines, "\n") + "\n"))
+		cmd = readLine(r)
+	} else {
+		cmd = readLine(r)
+		tok := tokenValue()
+		if first == "" || tok == "" || subtle.ConstantTimeCompare([]byte(first), []byte(tok)) != 1 {
+			fmt.Fprintln(conn, "ERR auth")
+			return
+		}
 	}
 
 	mu.Lock()
@@ -206,7 +256,7 @@ func handle(conn net.Conn) {
 			child, childDone = nil, nil
 			go terminateChild(c, done) // 不持 mu 收割（见 stop 注释）
 		}
-		n := killAllSingbox(singboxBin)
+		n := killAllSingbox(lockedSingboxPaths())
 		_ = n
 		fmt.Fprintln(conn, "OK cleaned")
 	case "route-add", "route-del":
@@ -284,7 +334,7 @@ func handle(conn net.Conn) {
 			child, childDone = nil, nil
 			go terminateChild(c, done) // 不持 mu 收割（见 stop 注释）
 		}
-		_ = killAllSingbox(singboxBin) // 兜底清外部孤儿 sing-box（占 9090/TUN），与 cleanup 对齐
+		_ = killAllSingbox(lockedSingboxPaths()) // 兜底清外部孤儿 sing-box（占 9090/TUN），与 cleanup 对齐
 		spawnSelfUninstall()
 		fmt.Fprintln(conn, "OK uninstalling")
 		// 给回复 flush + 旁路 ping 延迟留窗口后自退；os.Exit 使服务进程消失 → SCM 标记停止 → 旁路 sc delete 生效。
@@ -317,7 +367,7 @@ func handle(conn net.Conn) {
 		var killed, foreign []string
 		for _, p := range pids {
 			img := processImageName(p) // 仅可执行映像全路径（不含参数）→ 避免「参数里碰巧含 sing-box」被误杀
-			if isLockedSingbox(img, singboxBin) {
+			if isLockedSingbox(img, lockedSingboxPaths()) {
 				_ = terminatePid(p)
 				killed = append(killed, strconv.Itoa(int(p)))
 			} else {
@@ -354,24 +404,50 @@ func handle(conn net.Conn) {
 			fmt.Fprintln(conn, "ERR config-path-denied")
 			return
 		}
-		// allowLan：开启 IP 转发。Windows 是真平台特异（HKLM\...\Tcpip\Parameters\IPEnableRouter=1）。
-		// 最小实现 + 不阻塞 start：失败/未生效不影响 sing-box 启动。真机必验项（注册表生效需重启 Routing/RAS 服务或重启）。
+		// v6: trusted core only (re-seeded from the bundle if missing/untrusted).
+		if _, err := ensureTrustedCore(coreDir, bundledSeedDir()); err != nil {
+			fmt.Fprintf(conn, "ERR %v\n", err)
+			return
+		}
+		// v6: validate the config; the core runs on a SYSTEM-only copy of exactly those bytes.
+		runCfg, warnings, err := prepareRunConfig(cfg)
+		if err != nil {
+			fmt.Fprintf(conn, "ERR %v\n", err)
+			return
+		}
+		for _, w := range warnings {
+			fmt.Fprintln(os.Stderr, "config:", w)
+		}
+		// v6: log only inside --confdir, single-link regular file; a refused path only disables the early log.
+		var logFile *os.File
+		if logPath != "" {
+			if lf, err := openLogUnder(logPath); err == nil {
+				logFile = lf
+			} else {
+				fmt.Fprintln(os.Stderr, "start log disabled:", err)
+			}
+		}
+		// allowLan：开启 IP 转发（IPEnableRouter 先存原值，child 任何路径退出时恢复）。fwd=0 只恢复本 helper 先前改过的值。
 		if fwd == "1" {
 			enableIPForwarding() // best-effort，不阻塞、不影响返回
+		} else if fwdSaved != nil {
+			restoreIPForwarding()
 		}
-		c, logFile, err := startSingbox(singboxBin, cfg, logPath)
+		c, _, err := startSingbox(singboxBin, runCfg, logFile)
+		if logFile != nil {
+			logFile.Close() // child inherited its own handle at Start
+		}
 		if err != nil {
-			if logFile != nil {
-				logFile.Close()
+			if fwdSaved != nil && fwdOwner == nil {
+				restoreIPForwarding()
 			}
 			fmt.Fprintf(conn, "ERR start %v\n", err)
 			return
 		}
-		// 子进程已在 Start 时继承该句柄；父进程（常驻服务）立即关副本，避免每次启停泄漏句柄。
-		if logFile != nil {
-			logFile.Close()
-		}
 		child = c
+		if fwd == "1" {
+			fwdOwner = c
+		}
 		done := make(chan struct{})
 		childDone = done
 		go func() {
@@ -381,6 +457,9 @@ func handle(conn net.Conn) {
 			if child == c {
 				child, childDone = nil, nil
 			}
+			if fwdOwner == c {
+				restoreIPForwarding() // v6: every exit path restores IPEnableRouter
+			}
 			mu.Unlock()
 		}()
 		// 父死看护：覆盖 GUI 崩溃/taskkill 后管道 stop 够不到的孤儿场景。
@@ -388,6 +467,19 @@ func handle(conn net.Conn) {
 			go watchParent(ppid, c, done)
 		}
 		fmt.Fprintf(conn, "OK started %d\n", c.Process.Pid)
+	case "install-core":
+		// v6: line3=srcDir, line4=client hash (ignored). Only trusted binaries are written to <support>\core.
+		src := readLine(r)
+		_ = readLine(r)
+		fmt.Fprintln(conn, installCoreFiles(src, coreDir))
+	case "core-info":
+		h, err := ensureTrustedCore(coreDir, bundledSeedDir())
+		if err != nil {
+			h = ""
+		}
+		// optional line3 = the app's bundled-core pin → trusted=1|0|- (0 ⇒ client treats this helper as outdated)
+		fmt.Fprintf(conn, "OK bundled=%s core=%s trusted=%s\n", hashOrDash(normHash(bundledCoreSHA256)), hashOrDash(h),
+			bundledTrustFlag(coreDir, readLine(r)))
 	default:
 		fmt.Fprintln(conn, "ERR unknown")
 	}
@@ -405,6 +497,11 @@ func reapChildOnExit() {
 	if c != nil && c.Process != nil {
 		terminateChild(c, done)
 	} else {
-		_ = killAllSingbox(singboxBin)
+		_ = killAllSingbox(lockedSingboxPaths())
 	}
+	mu.Lock()
+	if fwdSaved != nil {
+		restoreIPForwarding()
+	}
+	mu.Unlock()
 }
