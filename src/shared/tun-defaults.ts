@@ -26,16 +26,13 @@ export type ConcreteTunStack = 'system' | 'gvisor' | 'mixed';
  * `Auto` 档的平台映射（单一真值）：
  *   · macOS（darwin）→ gvisor —— Apple 严格接管场景强制 gvisor / system·mixed 不可用（sing-box TunnelVision 文档）
  *     + FlowZ 历史实证（3.3.18 稳定组合）+ DNS/NetworkExtension 约束；
- *   · Windows（win32）→ gvisor —— 207 实测（wintun）：新默认组合（gvisor/65535）相对旧默认（system/1350）
- *     **+133% 吞吐、CPU 减半**；热切换环路三栈补测均 21/21 零失败（**裸 sing-box 最小配置**，FlowZ 本体
- *     回归见 benchmark 0.5），据此同批删除原「仅 system 放行」的 guard（见 ProxyManager.planHotSwitch）。
- *     注：1400B UDP 丢包的根因是 **MTU 1350**（1400+28 > 1350 需分片、system 栈不处理），不是栈本身——
- *     选 system 亦落 MTU 4064，实测 5/5 不丢；勿把它当成 gvisor 相对 system 的优势记；
+ *   · Windows（win32）→ system. With MTU 4064 on both stacks, a Windows HTTPS probe failed
+ *     through gvisor and succeeded through system. gvisor remains available as an explicit choice.
  *   · Linux → system —— 内核栈性能，实测无需改。
  */
 export const PLATFORM_DEFAULT_STACK: Record<string, ConcreteTunStack> = {
   darwin: 'gvisor',
-  win32: 'gvisor',
+  win32: 'system',
   linux: 'system',
 };
 
@@ -83,7 +80,7 @@ export const TUN_MTU_SAFE_MAX_NON_GVISOR = 9000;
 
 /**
  * 解析用户选择的 TUN stack → 下发给核的【具体】栈（恒 system|gvisor|mixed，永不返回 'auto'/省略）。
- * - `auto` / 缺省（undefined/null）→ 平台默认（PLATFORM_DEFAULT_STACK；mac·Win→gvisor / Linux→system；未知平台兜底 system）；
+ * - `auto` / 缺省（undefined/null）→ 平台默认（macOS → gvisor；Windows / Linux / 其他 → system）；
  * - 显式 `system`/`gvisor`/`mixed` → **原样下发（全平台 honor，含 mac，零强制回退）**。
  *   mac 选 system/mixed 是用户知情的实验选择（UI 默认 gvisor + 未验证提示），由真机判定其可用性，不在此静默改写。
  */
@@ -145,7 +142,7 @@ export function parseTunMtuInput(raw: string): TunMtu | null {
  *   · darwin —— 静默关掉 multiPendingPackets（上游对非 gvisor 的门槛就是 `mtu <= 9000`）；
  *   · linux  —— **不报**：`system + 65535` 两轮实测均正常（935 / 465 Mbps，无塌陷），对它弹警告是虚警。
  *
- * @param stack **必须是已解析的具体栈**：Auto 在 Windows 落 gvisor 时该组合并不成立，传用户原始值会误报。
+ * @param stack **必须是已解析的具体栈**，包括 Auto 解析后的值。
  */
 export function isDegradedMtuCombo(
   stack: ConcreteTunStack,
@@ -168,7 +165,7 @@ const LEGACY_FORCED_MTU: readonly number[] = [9000, 1350, 1400];
  * 返回是否变更（true→调用方落盘）。stack 与 mtu **各自独立幂等守卫**：
  *
  * - stack（tunStackMigrated）：存量多为旧强制默认（mac=gvisor / Win·Linux=system，旧 UI 不暴露 stack →
- *   非用户真实选择）→ 一律归 'auto'（解析回各平台原默认，行为零变化）。
+ *   非用户真实选择）→ 一律归 'auto'（解析为当前平台默认）。
  * - mtu（tunMtuMigrated）：存量落在 LEGACY_FORCED_MTU 的归 'auto'；其余（用户手改过 config.json）保留。
  *
  * **两个标记不可合并**：tunStackMigrated 对存量用户早已置 true，复用它会让这批人的 mtu 永不迁移。

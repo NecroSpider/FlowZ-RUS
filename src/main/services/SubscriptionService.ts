@@ -21,6 +21,7 @@ import { isXrayConfigArray, parseXrayConfigArray, parseXrayOutbounds } from './x
 import { isServerComplete } from '../../shared/server-completeness';
 import { customOutboundRejectReason } from '../../shared/config-portability';
 import { normalizeDuration } from '../../shared/duration';
+import { isXrayVlessEncryption } from '../../shared/xray-node';
 import {
   classifySubscriptionError,
   type SubscriptionPreviewResult,
@@ -227,7 +228,13 @@ export class SubscriptionService {
     // network 维度：同 host:port:cred 但传输不同（tcp vs ws vs grpc）是不同节点，缺此维度会被误并静默吞节点。
     // 指纹不持久化——reconcile 对新旧两侧用同一函数现算，归一化（h2→http/raw→tcp）对两侧等价，
     // 存量节点 id / selectedServerId 不受本次加维度影响。
-    return `${(s.protocol || '').toLowerCase()}|${s.address}|${s.port}|${cred}|${(s.network || 'tcp').toLowerCase()}`;
+    const base = `${(s.protocol || '').toLowerCase()}|${s.address}|${s.port}|${cred}|${(s.network || 'tcp').toLowerCase()}`;
+    const encryption = isXrayVlessEncryption(s.encryption) ? '|encrypted' : '';
+    const xhttp =
+      s.network === 'xhttp'
+        ? JSON.stringify([s.xhttpSettings?.host, s.xhttpSettings?.path, s.xhttpSettings?.mode])
+        : '';
+    return base + encryption + xhttp;
   }
 
   /**

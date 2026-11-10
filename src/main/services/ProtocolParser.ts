@@ -18,6 +18,13 @@ import type {
 import { normalizeDuration } from '../../shared/duration';
 import { dedupeTrim } from '../../shared/collections';
 import { isSupportedShareUrl } from '../../shared/protocol-url-schemes';
+import {
+  canUseXray,
+  isXhttpNetwork,
+  isXrayVlessEncryption,
+  readXrayTcpFragment,
+  requiresXray,
+} from '../../shared/xray-node';
 import type { LogManager } from './LogManager';
 
 /**
@@ -62,23 +69,21 @@ function parseJsonNoEcho(text: string): any {
 }
 
 /**
- * VLESS Encryption（Xray 25.x 的 `mlkem768x25519plus.<mode>.<rtt>.<keys…>` 点分配置）：sing-box 内核不支持，
- * 入库只会产出「静默连不上」的假节点。无点的旧值（none / auto / zero 等历史噪声）一直被内核忽略、节点照常
- * 可用，保持放行。返回拒绝时的加密方法名（首段），否则 null。
+ * Recognize Xray's VLESS Encryption without treating legacy plain labels (none/auto/zero)
+ * as encryption. Return only the method name for unsupported configurations.
  */
 export function unsupportedVlessEncryption(enc: unknown): string | null {
   if (typeof enc !== 'string') return null;
   const v = enc.trim();
   if (!v) return null;
+  if (isXrayVlessEncryption(v)) return null;
   if (v.includes('.') || /^mlkem/i.test(v)) return v.split('.')[0].slice(0, 40) || 'unknown';
   return null;
 }
 
 /** VLESS Encryption 拒绝文案：沿用「Unsupported transport type: X」形态 → 订阅聚合计数 + 预检 errorKind:'transport'。 */
 export function vlessEncryptionError(method: string): Error {
-  return new Error(
-    `Unsupported transport type: vless-encryption:${method} (VLESS Encryption is not supported by the sing-box core)`
-  );
+  return new Error(`Unsupported transport type: vless-encryption:${method}`);
 }
 
 /**
@@ -271,6 +276,8 @@ export class ProtocolParser implements IProtocolParser {
     }
     const encMethod = unsupportedVlessEncryption(params.get('encryption'));
     if (encMethod) throw vlessEncryptionError(encMethod);
+    const fm = params.get('fm');
+    const xrayTcpFragment = fm ? readXrayTcpFragment(parseJsonNoEcho(fm)) : undefined;
 
     const config: ServerConfig = {
       id: randomUUID(),
@@ -279,13 +286,22 @@ export class ProtocolParser implements IProtocolParser {
       address,
       port,
       uuid,
-      encryption: params.get('encryption') || 'none',
+      encryption: params.get('encryption')?.trim() || 'none',
       flow: params.get('flow') || undefined,
+      ...(xrayTcpFragment && { xrayTcpFragment }),
     };
 
     // 归一化/白名单收口于 parseTransportSettings（未知类型 throw 整节点拒绝）。
-    const network = params.get('type');
-    if (network) {
+    const network = params.get('type')?.toLowerCase();
+    if (isXhttpNetwork(network)) {
+      if (params.get('extra')) throw new Error('Unsupported transport type: XHTTP extra settings');
+      config.network = 'xhttp';
+      config.xhttpSettings = {
+        path: params.get('path') || undefined,
+        host: params.get('host') || undefined,
+        mode: params.get('mode') || undefined,
+      };
+    } else if (network) {
       this.parseTransportSettings(config, params, network);
     }
 
@@ -304,6 +320,9 @@ export class ProtocolParser implements IProtocolParser {
       }
     }
 
+    if (requiresXray(config) && !canUseXray(config)) {
+      throw new Error('Unsupported transport type: Xray VLESS combination');
+    }
     return config;
   }
 
@@ -1044,6 +1063,8 @@ export class ProtocolParser implements IProtocolParser {
     if (multiMode === 'multi') {
       settings.multiMode = true;
     }
+    const authority = params.get('authority');
+    if (authority) settings.authority = authority;
 
     return settings;
   }
@@ -1108,6 +1129,8 @@ export class ProtocolParser implements IProtocolParser {
     const settings: RealitySettings = {
       publicKey,
     };
+    if (params.get('spx')) settings.spiderX = params.get('spx')!;
+    if (params.get('pqv')) settings.mldsa65Verify = params.get('pqv')!;
 
     const shortId = params.get('sid');
     if (shortId) {
@@ -1236,6 +1259,12 @@ export class ProtocolParser implements IProtocolParser {
 
     if (config.flow) {
       params.set('flow', config.flow);
+    }
+    if (config.xrayTcpFragment) {
+      params.set(
+        'fm',
+        JSON.stringify({ tcp: [{ type: 'fragment', settings: config.xrayTcpFragment }] })
+      );
     }
 
     this.appendTransportParams(params, config);
@@ -1429,6 +1458,12 @@ export class ProtocolParser implements IProtocolParser {
     if (config.network) {
       params.set('type', config.network);
     }
+    if (config.network === 'xhttp' && config.xhttpSettings) {
+      const { path, host, mode } = config.xhttpSettings;
+      if (path) params.set('path', path);
+      if (host) params.set('host', host);
+      if (mode) params.set('mode', mode);
+    }
 
     // WebSocket / HTTPUpgrade 配置（httpupgrade 复用 ws 形态的 path/host 承载，见 parseTransportSettings）
     if ((config.network === 'ws' || config.network === 'httpupgrade') && config.wsSettings) {
@@ -1453,6 +1488,7 @@ export class ProtocolParser implements IProtocolParser {
       if (config.grpcSettings.multiMode) {
         params.set('mode', 'multi');
       }
+      if (config.grpcSettings.authority) params.set('authority', config.grpcSettings.authority);
     }
 
     if (config.network === 'http' && config.httpSettings) {
@@ -1493,6 +1529,9 @@ export class ProtocolParser implements IProtocolParser {
       if (config.realitySettings.shortId) {
         params.set('sid', config.realitySettings.shortId);
       }
+      if (config.realitySettings.spiderX) params.set('spx', config.realitySettings.spiderX);
+      if (config.realitySettings.mldsa65Verify)
+        params.set('pqv', config.realitySettings.mldsa65Verify);
     }
   }
 }

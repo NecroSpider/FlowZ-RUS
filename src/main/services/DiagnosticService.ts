@@ -332,6 +332,7 @@ export class DiagnosticService {
       rendererWatchdog,
       appLogTail,
       singboxLogTail,
+      recentCoreErrors: this.logManager.getRecentCoreErrors(),
       startupLogTail,
       startupLogSource,
       watchdogLogTail,

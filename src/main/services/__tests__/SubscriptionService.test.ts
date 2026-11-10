@@ -661,20 +661,23 @@ describe('issue #263 — 聚合可见性 / 指纹传输维度 / ssh 映射', () 
     expect(infos).toMatch(/plus 3 skipped\/failed/);
   });
 
-  it('URL-list：xhttp 节点 fail 计入结果 info（issue #263 主症状可见化）', async () => {
+  it('imports XHTTP and counts KCP as unsupported in URL-list subscriptions', async () => {
     const log = new FakeLog();
     const svc = newService(log);
-    const content = ['anytls://pw@a.com:443#any', 'vless://uuid-1@a.com:443?type=xhttp#dead'].join(
-      '\n'
-    );
+    const content = [
+      'anytls://pw@a.com:443#any',
+      'vless://uuid-1@a.com:443?type=xhttp#xhttp',
+      'vless://uuid-1@a.com:443?type=kcp#dead',
+    ].join('\n');
     const r = await (svc as any).parseSubscriptionContent(content, 'sub-x', CTX);
-    expect(r.servers).toHaveLength(1);
+    expect(r.servers).toHaveLength(2);
     expect(r.servers[0].protocol).toBe('anytls');
     const warns = log.entries
       .filter((e) => e.level === 'warn')
       .map((e) => e.message)
       .join('\n');
-    expect(warns).toMatch(/Unsupported transport type: xhttp/);
+    expect(r.servers[1].network).toBe('xhttp');
+    expect(warns).toMatch(/Unsupported transport type: kcp/);
     const infos = log.entries
       .filter((e) => e.level === 'info')
       .map((e) => e.message)

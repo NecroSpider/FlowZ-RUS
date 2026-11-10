@@ -117,6 +117,7 @@ export interface SingBoxInbound {
   tag: string;
   listen?: string;
   listen_port?: number;
+  users?: { username: string; password: string }[];
   // TUN 模式
   interface_name?: string;
   address?: string[];
@@ -147,6 +148,7 @@ export interface SingBoxOutbound {
   tag: string;
   detour?: string; // 代理链
   bind_interface?: string; // Dial Fields：工作 VPN 出站绑定 VPN 接口（shared/work-vpn）
+  inet4_bind_address?: string;
   server?: string;
   server_port?: number;
   override_address?: string;

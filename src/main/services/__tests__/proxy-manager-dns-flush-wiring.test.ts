@@ -72,6 +72,46 @@ function makeSvc(): any {
   return svc;
 }
 
+describe('Windows work VPN changes', () => {
+  it('rechecks the same interface address when routes arrive after the first poll', async () => {
+    const interfaces = jest.spyOn(os, 'networkInterfaces').mockReturnValue({
+      'OpenVPN DCO': [{ family: 'IPv4', address: '10.8.0.6' }],
+    });
+    try {
+      await withPlatformAsync('win32', async () => {
+        const svc = makeSvc();
+        svc.currentConfig = { proxyModeType: 'tun' };
+        svc.scheduleDebouncedRestart = jest.fn();
+        svc.detectWorkVpnNow = jest
+          .fn()
+          .mockResolvedValueOnce({ interfaces: [], serverIps: [] })
+          .mockResolvedValueOnce({
+            interfaces: [
+              {
+                name: 'OpenVPN DCO',
+                addresses: ['10.8.0.6'],
+                cidrs: ['10.20.0.0/16'],
+                dnsServers: [],
+                domains: [],
+                fullTunnel: false,
+              },
+            ],
+            serverIps: [],
+          });
+
+        await svc.checkWorkVpnChange();
+        expect(svc.scheduleDebouncedRestart).not.toHaveBeenCalled();
+        await svc.checkWorkVpnChange();
+        expect(svc.scheduleDebouncedRestart).toHaveBeenCalledTimes(1);
+        await svc.checkWorkVpnChange();
+        expect(svc.detectWorkVpnNow).toHaveBeenCalledTimes(2);
+      });
+    } finally {
+      interfaces.mockRestore();
+    }
+  });
+});
+
 beforeEach(() => {
   mockFlush.mockReset();
   mockFlush.mockResolvedValue({ ok: true, detail: 'stub' });

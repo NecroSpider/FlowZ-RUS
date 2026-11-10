@@ -35,6 +35,10 @@ import {
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
+function normalizeXhttpMode(mode: string | undefined) {
+  return mode === 'packet-up' || mode === 'stream-up' || mode === 'stream-one' ? mode : 'auto';
+}
+
 const createVlessSchema = (t: any) =>
   z.object({
     address: z.string().min(1, t('servers.addressRequired')),
@@ -48,7 +52,8 @@ const createVlessSchema = (t: any) =>
       ),
     encryption: z.string().optional(),
     flow: z.string().optional(),
-    network: z.enum(['Tcp', 'Ws', 'Grpc', 'Http', 'HttpUpgrade']),
+    network: z.enum(['Tcp', 'Ws', 'Grpc', 'Http', 'HttpUpgrade', 'Xhttp']),
+    xhttpMode: z.enum(['auto', 'packet-up', 'stream-up', 'stream-one']),
     security: z.enum(['None', 'Tls', 'Reality']),
     tlsServerName: z.string().optional(),
     tlsAllowInsecure: z.boolean(),
@@ -88,9 +93,11 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
         address: serverConfig.address || '',
         port: serverConfig.port || 443,
         uuid: serverConfig.uuid || '',
-        encryption: serverConfig.encryption?.toLowerCase() || 'none',
+        encryption: serverConfig.encryption || 'none',
         flow: (serverConfig.flow || '').toLowerCase(),
-        network: normalizeNetworkUpper(serverConfig.network),
+        network:
+          serverConfig.network === 'xhttp' ? 'Xhttp' : normalizeNetworkUpper(serverConfig.network),
+        xhttpMode: normalizeXhttpMode(serverConfig.xhttpSettings?.mode),
         security: normalizeSecurity(serverConfig.security),
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
@@ -99,6 +106,10 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
         realityPublicKey: serverConfig.realitySettings?.publicKey || '',
         realityShortId: serverConfig.realitySettings?.shortId || '',
         ...readTransportDefaults(serverConfig),
+        ...(serverConfig.network === 'xhttp' && {
+          wsPath: serverConfig.xhttpSettings?.path || '',
+          wsHost: serverConfig.xhttpSettings?.host || '',
+        }),
         ...readEchDefault(serverConfig),
         ...readMultiplexDefaults(serverConfig),
         ...readTlsSpoofDefault(serverConfig),
@@ -111,6 +122,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
       encryption: 'none',
       flow: '',
       network: 'Tcp',
+      xhttpMode: 'auto',
       security: 'Tls',
       tlsServerName: '',
       tlsAllowInsecure: false,
@@ -134,7 +146,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
     const network = values.network.toLowerCase();
     const security = values.security.toLowerCase() as 'none' | 'tls' | 'reality';
 
-    const serverConfig = {
+    const updatedServer = {
       protocol: 'vless' as const,
       address: values.address,
       port: values.port,
@@ -143,12 +155,15 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
       flow: values.flow || undefined,
       network,
       security,
+      xrayTcpFragment:
+        network === (serverConfig?.network ?? 'tcp') ? serverConfig?.xrayTcpFragment : undefined,
       tlsSettings:
         security === 'tls' || security === 'reality'
           ? {
               serverName: values.tlsServerName?.trim() || null,
               allowInsecure: security === 'tls' ? values.tlsAllowInsecure : false,
               fingerprint: values.tlsFingerprint || 'chrome',
+              alpn: serverConfig?.tlsSettings?.alpn,
               engine:
                 security === 'tls' && values.tlsEngine && values.tlsEngine !== 'go'
                   ? values.tlsEngine
@@ -163,20 +178,39 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
           ? {
               publicKey: values.realityPublicKey?.trim() || '',
               shortId: values.realityShortId?.trim() || undefined,
+              spiderX: serverConfig?.realitySettings?.spiderX,
+              mldsa65Verify: serverConfig?.realitySettings?.mldsa65Verify,
             }
           : null,
       ...buildTransportSettings(network, values),
+      ...(network === 'grpc' && {
+        grpcSettings: {
+          ...serverConfig?.grpcSettings,
+          serviceName: values.grpcServiceName?.trim() || '',
+        },
+      }),
+      xhttpSettings:
+        network === 'xhttp'
+          ? {
+              path: values.wsPath || undefined,
+              host: values.wsHost || undefined,
+              mode: values.xhttpMode,
+            }
+          : null,
       multiplexSettings: buildMultiplexSettings(values, { skipVisionFlow: true }),
     };
 
-    await onSubmit(serverConfig);
+    await onSubmit(updatedServer);
   };
 
   const isTlsEnabled = form.watch('security') === 'Tls';
   const isRealityEnabled = form.watch('security') === 'Reality';
   const watchedNetwork = form.watch('network');
   const showPathHostFields =
-    watchedNetwork === 'Ws' || watchedNetwork === 'HttpUpgrade' || watchedNetwork === 'Http';
+    watchedNetwork === 'Ws' ||
+    watchedNetwork === 'HttpUpgrade' ||
+    watchedNetwork === 'Http' ||
+    watchedNetwork === 'Xhttp';
   const isGrpcEnabled = watchedNetwork === 'Grpc';
 
   return (
@@ -242,6 +276,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
                     <SelectItem value="Grpc">gRPC</SelectItem>
                     <SelectItem value="HttpUpgrade">HTTPUpgrade</SelectItem>
                     <SelectItem value="Http">HTTP/2</SelectItem>
+                    <SelectItem value="Xhttp">XHTTP</SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage className="fld-err" />
@@ -328,6 +363,28 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
               <WsPathField control={form.control} t={t} />
               <WsHostField control={form.control} t={t} />
             </FieldGrid>
+          )}
+          {watchedNetwork === 'Xhttp' && (
+            <FormField
+              control={form.control}
+              name="xhttpMode"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">XHTTP</span>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">auto</SelectItem>
+                      <SelectItem value="packet-up">packet-up</SelectItem>
+                      <SelectItem value="stream-up">stream-up</SelectItem>
+                      <SelectItem value="stream-one">stream-one</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            />
           )}
 
           {isGrpcEnabled && (

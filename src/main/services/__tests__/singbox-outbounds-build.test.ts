@@ -52,6 +52,34 @@ afterEach(() =>
 );
 
 describe('buildOutbounds — 基础装配 + 载体', () => {
+  it('routes an Xray-only node through its bridge and never emits it as plain VLESS', () => {
+    const native = vless('native', 'Native');
+    const xray = { ...vless('xray', 'Xray'), network: 'xhttp' } as const;
+    const servers = [native, xray];
+    const config = cfg(servers, { selectedServerId: xray.id });
+    const bridge = {
+      type: 'socks',
+      tag: xray.name,
+      server: '127.0.0.1',
+      server_port: 12345,
+    };
+    const result = buildOutbounds(
+      xray,
+      config,
+      idMap(servers),
+      deps({
+        xrayOutbound: (id) => (id === xray.id ? bridge : undefined),
+      })
+    );
+    expect(result.outbounds.find((outbound) => outbound.tag === xray.name)).toEqual(bridge);
+    expect(result.outbounds.find((outbound) => outbound.tag === native.name)?.type).toBe('vless');
+    expect(result.outbounds.find((outbound) => outbound.tag === 'proxy-selector')?.default).toBe(
+      xray.name
+    );
+    const missing = buildOutbounds(native, cfg(servers), idMap(servers), deps());
+    expect(missing.outbounds.some((outbound) => outbound.tag === xray.name)).toBe(false);
+  });
+
   it('单节点：节点出站 + proxy-selector(default=节点) + direct（无 legacy block 出站）；载体空', () => {
     const servers = [vless('s1', '香港')];
     const r = buildOutbounds(servers[0], cfg(servers), idMap(servers), deps());

@@ -208,4 +208,5 @@ console.log(
       ? ` — ${unverified} of them unverified, the files on disk may not be ${VERSION} (add coreBinarySha256 or use --force)`
       : ` (version ${VERSION}).`)
 );
-process.exit(failed > 0 ? 1 : 0);
+if (failed > 0) process.exit(1);
+await import('./fetch-xray.mjs');

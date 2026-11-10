@@ -3,7 +3,7 @@ import {
   applyYandexDnsPlanToPool,
   isDefaultYandexDnsPlan,
   planYandexDns,
-  yandexDohUrl,
+  ipDohUrl,
 } from '../dns-failover';
 
 const reach = (ok: string[]): Record<string, boolean> =>
@@ -36,9 +36,10 @@ describe('planYandexDns', () => {
     });
   });
 
-  it('changes nothing when nothing answers (offline / probe failed)', () => {
-    expect(planYandexDns(reach([]))).toEqual(DEFAULT_YANDEX_DNS_PLAN);
-    expect(planYandexDns({})).toEqual(DEFAULT_YANDEX_DNS_PLAN);
+  it('reports that no endpoint answered and keeps the default configuration', () => {
+    const unavailable = { ...DEFAULT_YANDEX_DNS_PLAN, unavailable: true };
+    expect(planYandexDns(reach([]))).toEqual(unavailable);
+    expect(planYandexDns({})).toEqual(unavailable);
   });
 
   it('isDefaultYandexDnsPlan tells a changed plan from the default', () => {
@@ -50,6 +51,15 @@ describe('planYandexDns', () => {
 
 describe('applyYandexDnsPlanToPool', () => {
   const safe = { primaryIp: '77.88.8.88', useSafePool: true };
+
+  it('replaces the unreachable Yandex pair and preserves other configured upstreams', () => {
+    const plan = planYandexDns({ '223.5.5.5': true, '1.12.12.12': true });
+    expect(applyYandexDnsPlanToPool(['yandex', 'custom-1', 'yandex2', 'ali'], plan)).toEqual([
+      'ali',
+      'custom-1',
+      'dnspod',
+    ]);
+  });
 
   it("swaps only the Yandex ids when the Safe pool is in use, keeping order and the user's other picks", () => {
     expect(applyYandexDnsPlanToPool(['yandex', 'yandex2'], safe)).toEqual([
@@ -85,8 +95,8 @@ describe('applyYandexDnsPlanToPool', () => {
   });
 });
 
-describe('yandexDohUrl', () => {
+describe('ipDohUrl', () => {
   it('builds the domesticDns form', () => {
-    expect(yandexDohUrl('77.88.8.88')).toBe('https://77.88.8.88/dns-query');
+    expect(ipDohUrl('77.88.8.88')).toBe('https://77.88.8.88/dns-query');
   });
 });

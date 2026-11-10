@@ -13,6 +13,7 @@
  */
 import { ProtocolParser } from '../ProtocolParser';
 import type { ServerConfig } from '../../../shared/types';
+import { wantsXray } from '../../../shared/xray-node';
 
 const parser = new ProtocolParser();
 
@@ -56,6 +57,21 @@ describe('isSupported', () => {
 });
 
 describe('VLESS', () => {
+  it('preserves TCP FinalMask fragmentation in the share link and uses Xray automatically', () => {
+    const settings = { packets: 'tlshello', lengths: ['0', '5-8'], delays: ['0'], maxSplit: '20' };
+    const fm = encodeURIComponent(JSON.stringify({ tcp: [{ type: 'fragment', settings }] }));
+    const node = expectRoundTripStable(`vless://u@a.example.com:443?security=tls&fm=${fm}#masked`);
+    expect(node.xrayTcpFragment).toEqual(settings);
+    expect(wantsXray(node, false)).toBe(true);
+  });
+
+  it('rejects TCP masks the bridge cannot preserve', () => {
+    const fm = encodeURIComponent(JSON.stringify({ tcp: [{ type: 'header-custom' }] }));
+    expect(() => parser.parseUrl(`vless://u@a.example.com:443?fm=${fm}`)).toThrow(
+      'Unsupported transport type: Xray TCP FinalMask'
+    );
+  });
+
   it('ws+tls 特征', () => {
     const c = parser.parseUrl(
       'vless://11111111-1111-1111-1111-111111111111@a.example.com:443?encryption=none&type=ws&path=%2Fws&host=cdn.example.com&security=tls&sni=cdn.example.com&alpn=h2&fp=chrome#vless-ws'
@@ -754,10 +770,13 @@ describe('传输层归一化与白名单（issue #263）', () => {
     expect(parser.parseUrl('vless://u@a.com:443?type=WS&path=%2Fp#n').network).toBe('ws');
   });
 
-  it('vless/trojan type=xhttp|splithttp|kcp（sing-box 不支持）→ 整节点拒绝且消息可检索', () => {
-    expect(() => parser.parseUrl('vless://u@a.com:443?type=xhttp#n')).toThrow(
-      /Unsupported transport type: xhttp/
+  it('round-trips VLESS XHTTP and still rejects unsupported transport combinations', () => {
+    const node = parser.parseUrl(
+      'vless://u@a.com:443?type=splitHttp&path=%2Fp&host=example.com&mode=stream-up#n'
     );
+    expect(node.network).toBe('xhttp');
+    expect(node.xhttpSettings).toEqual({ path: '/p', host: 'example.com', mode: 'stream-up' });
+    expect(parser.parseUrl(parser.generateUrl(node)).xhttpSettings).toEqual(node.xhttpSettings);
     expect(() => parser.parseUrl('trojan://pw@a.com:443?type=splithttp#n')).toThrow(
       /Unsupported transport type: splithttp/
     );

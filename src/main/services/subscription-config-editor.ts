@@ -1,5 +1,17 @@
 import type { UserConfig, SubscriptionConfig } from '../../shared/types';
 
+// A previous parser may have skipped nodes even if the HTTP body is unchanged.
+export const SUBSCRIPTION_PARSER_REVISION = 2;
+
+export function subscriptionValidators(subscription: SubscriptionConfig) {
+  if (subscription.hasProviders) return undefined;
+  const current = subscription.parserRevision === SUBSCRIPTION_PARSER_REVISION;
+  return {
+    etag: current ? subscription.etag : undefined,
+    lastModified: current ? subscription.lastModified : undefined,
+  };
+}
+
 /** Only short read/modify/write sections are serialized; provider requests stay outside this queue. */
 export function createSubscriptionConfigEditor(load: () => Promise<UserConfig>) {
   let tail: Promise<unknown> = Promise.resolve();

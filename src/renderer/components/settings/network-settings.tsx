@@ -866,7 +866,7 @@ export function NetworkSettings() {
             )}
           </Srow>
           {/* 已知坏组合非阻断提示（不禁止：与 mac 允许显式选 system/mixed 的 honor 原则一致，由用户知情决定）。
-              判据用【已解析的具体栈】，因为 Auto 在 Windows 落 gvisor 时该组合并不成立。 */}
+              判据用【已解析的具体栈】，包括 Auto 解析后的值。 */}
           {isDegradedMtuCombo(
             resolveTunStack(config.tunConfig?.stack, platform),
             config.tunConfig?.mtu,
@@ -1150,6 +1150,16 @@ export function NetworkSettings() {
             checked={config.mainSessionViaProxy !== false}
             onChange={(checked) =>
               saveConfig({ ...config, mainSessionViaProxy: checked }).catch(() =>
+                toast.error(t('common.saveFailed'))
+              )
+            }
+          />
+        </Srow>
+        <Srow label={t('settings.network.xrayReality')} desc={t('settings.network.xrayRealityDesc')}>
+          <Swt
+            checked={config.xrayForVlessReality === true}
+            onChange={(checked) =>
+              saveConfig({ ...config, xrayForVlessReality: checked }).catch(() =>
                 toast.error(t('common.saveFailed'))
               )
             }

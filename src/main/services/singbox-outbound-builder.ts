@@ -34,6 +34,7 @@ import {
   getDomesticResolverTag,
 } from './singbox-config-helpers';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
+import { requiresXray } from '../../shared/xray-node';
 
 /** Reality 与 ShadowTLS 内层必须带 uTLS：空值/none 退回 chrome，其余走 normalizeUtlsFingerprint。 */
 function utlsFingerprintOrChrome(raw: string | undefined): string {
@@ -177,6 +178,7 @@ export function buildProxyOutbound(
   // 与「显式选择字符串形态」在类型上不可区分。改必填后，任何新增 call site 漏传 = 编译错误，被迫显式表态。
   nodeResolverTag: SingBoxDomainResolver
 ): SingBoxOutbound {
+  if (requiresXray(server)) throw new Error('This VLESS node requires Xray');
   // sing-box 要求协议类型必须是小写
   const protocol = server.protocol.toLowerCase();
   const tlsProtocols = ['trojan', 'anytls', 'hysteria2', 'tuic'];
@@ -684,6 +686,7 @@ export interface PendingRuleSelector {
 
 /** 注入依赖：generateOutbounds 原读/写的实例态（gateInvalidNodes Map 就地改 / log 回调）。 */
 export interface OutboundsDeps {
+  xrayOutbound?: (serverId: string, tag: string) => SingBoxOutbound | undefined;
   gateInvalidNodes: Map<string, InvalidNodeInfo>;
   log: (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
   // Phase 2：本次启动 sing-box 是否会以提权运行（内核接口可创建）= TUN 模式 + helper。缺省 undefined/false
@@ -958,7 +961,9 @@ export function buildOutbounds(
         continue;
       }
       try {
-        const ob = buildProxyOutbound(server, idToTagMap, getNodeDialDomainResolver(config));
+        const ob =
+          deps.xrayOutbound?.(server.id, tag) ??
+          buildProxyOutbound(server, idToTagMap, getNodeDialDomainResolver(config));
         ob.tag = tag;
         if (server.detour && config.servers.some((s) => s.id === server.detour)) {
           // 环检测：沿 detour 链行进，若回到本节点即成环 → 不设 detour，避免 sing-box 报循环引用启动失败

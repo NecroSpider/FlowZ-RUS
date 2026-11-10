@@ -66,6 +66,7 @@ import {
   applyRuleSetPrune,
   buildIdToTagMap,
   getNodeResolverTag,
+  getNodeDialDomainResolver,
   nodeOwnHosts,
 } from './singbox-config-helpers';
 import { buildDnsConfig } from './singbox-dns-builder';
@@ -75,6 +76,8 @@ import { buildLogConfig } from './singbox-log-builder';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../../shared/constants';
 import { resourceManager } from './ResourceManager';
+import { XrayBridge } from './xray-bridge';
+import { requiresXray, wantsXray } from '../../shared/xray-node';
 import { seedBuiltinRuleSets } from './builtin-geo-rulesets';
 import type { SingBoxConfig, SingBoxOutbound, SingBoxEndpoint } from './singbox-config-types';
 import {
@@ -149,13 +152,17 @@ import {
 } from '../utils/paths';
 import { ruleConditions } from '../../shared/rules';
 import { planCustomRule, buildCustomRuleFiles, condMatcherFields } from './custom-rule-files';
-import { resolveWinTunInterfaceName, WIN_TUN_ROTATION_SLOTS } from '../../shared/tun-interface';
+import {
+  isFlowzWinTunName,
+  resolveWinTunInterfaceName,
+  WIN_TUN_ROTATION_SLOTS,
+} from '../../shared/tun-interface';
 import { DEFAULT_DOMESTIC_DNS } from '../../shared/dns';
 import { ensureYandexDnsPlan, getYandexDnsPlan } from './dns-reachability';
 import {
   applyYandexDnsPlanToPool,
   isDefaultYandexDnsPlan,
-  yandexDohUrl,
+  ipDohUrl,
 } from '../../shared/dns-failover';
 import { findMemoryOffenders } from '../../shared/process-metrics';
 import {
@@ -349,9 +356,12 @@ export function connectionMatchesSwitchedPairs(
 }
 
 /** 网卡名 + IPv4 地址指纹（廉价，无子进程）：Windows 上判断「网卡变了、值得起 PowerShell 复查工作 VPN」。 */
-function winIfaceFingerprint(): string {
+function winIfaceFingerprint(ownTunName: string): string {
   try {
     return Object.entries(networkInterfaces())
+      .filter(
+        ([name]) => name.toLowerCase() !== ownTunName.toLowerCase() && !isFlowzWinTunName(name)
+      )
       .map(([name, addrs]) => {
         const v4 = (addrs ?? []).filter((a) => a.family === 'IPv4').map((a) => a.address);
         return `${name}=${v4.sort().join(',')}`;
@@ -412,9 +422,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private workVpnOwnTunAddrs = new Set<string>(['172.19.0.1']);
   // 当前 TUN 的 route_exclude_address（识别 sing-tun 拆出来的 /32 补集路由）。
   private workVpnTunExcludes: string[] = [];
-  // Windows：运行中的 TUN 是否开着 strict_route，及起核时的网卡地址指纹（VPN 后连上时据此决定是否重生成）。
-  private winRunningStrictRoute = false;
   private winIfaceFingerprint = '';
+  private winWorkVpnRecheck = false;
   // 本次生成是否发射了 evaluate 探测；内核拒绝时本会话关闭自动识别（回退为仅推送/手填域名）。
   private workVpnUsedEvaluate = false;
   private workVpnEvaluateRejected = false;
@@ -608,6 +617,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   //   实际(重)启核时刷新——defer/no-op 分支的 currentConfig 赋值**不刷**（那不是运行核真值）。ConfigManager 最新
   //   servers 与它的差集 = 待应用变更（added/modified/removed）；modified 集 = dirty（防热切到旧参数节点）。null=核未起。
   private runningServersFingerprint: Map<string, string> | null = null;
+  private xrayBridge?: XrayBridge;
   // 启动时生成的「节点 id → selector 成员 tag」映射，用于 clash_api 热切换时定位目标 tag
   private currentIdToTagMap: Map<string, string> | null = null;
   // 启动时生成的「规则 key → { selectorTag, memberTag }」映射，用于「改规则目标节点」clash_api 热切换
@@ -870,6 +880,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // 启动失败终态收口：① 清进程引用——否则 singboxProcess/pid 仍指向已死进程，下次 start 的内部 stop() 会对
       //   死进程挂 once('exit')（exit 早发过、永不再触发）→ 永挂 → UI 恒「启动中」（修「二次点击卡死」根因 A）。
       //   cleanup 在此只在「最终失败」执行，不影响 retry 成功路径的探针端口。② 清可能残留的系统代理（L-2′）。
+      if (this.startTimeline === timeline) this.stopXray();
       this.cleanup();
       await this.ensureSystemProxyCleared();
       throw e;
@@ -931,9 +942,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.rejectIfCoreSwapInProgress('proxy start');
     // Windows：本次起核换一个新的 TUN 接口名（须在下方释放门预热与配置生成**之前**定，后续各处都读 winTunNameFor）。
     this.rotateWinTunName(config);
-    // Which Yandex DoH addresses answer on this network (a blocked default makes every direct domain fail to resolve).
-    // Started now so it overlaps with the other preparation; awaited right before the race resolver is built.
-    const dnsPlanProbe = ensureYandexDnsPlan(0);
     // B1：清掉上一次 start 可能遗留的释放门预热（那次 start 若在首腿之前就抛错，promise 会没人消费）。
     //   必须在本方法**入口**清、且在下方重新 arm 之前——否则首腿会吃到一个早于本次 stop/killOrphans 的陈旧结论。
     this.pendingAdapterReleaseGate = null;
@@ -965,6 +973,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (this.singboxProcess || this.singboxPid) {
       await this.stop();
     }
+    const startGen = this.lifecycleGeneration;
     this.markStart('stopOld'); // 未在跑时 ≈0，正在跑时 = 拆旧核耗时（重启路径的前半段）
 
     // 复位自动重启取消标记：必须在上面的内部 stop() 之后（stop 会置 true）——真正开始一次启动即清掉，
@@ -1016,6 +1025,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
     await this.killOrphanedSingBoxProcesses(isTunMode);
     this.markStart('killOrphans'); // win: helper 管道 cleanup + tasklist/taskkill（execSync，阻塞 event loop）
+    // Probe after removing the previous TUN so its routes cannot affect the result.
+    const dnsPlanProbe = ensureYandexDnsPlan(0);
 
     // 孤儿清理后仍占 9090 → 按端口清掉占用者（helper freePort / osascript），否则明确终态（L2，含外部/旧路径
     // sing-box）。把「裸 spawn 撞 9090 占用 → retry 风暴」收敛为一次明确、可定位的失败。
@@ -1209,7 +1220,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //     的本地 server 起停 + effective config 降级见下（startNodeDnsRaceServer）。
     {
       const plan = await dnsPlanProbe;
-      if (!isDefaultYandexDnsPlan(plan)) {
+      if (plan.unavailable) {
+        this.logToManager(
+          'warn',
+          'Built-in DoH: no Yandex, AliDNS or DNSPod endpoint returned a DNS answer'
+        );
+      } else if (plan.fallbackPool) {
+        this.logToManager(
+          'warn',
+          `Yandex DoH did not answer. Using built-in DoH fallback ${plan.primaryIp} for bootstrap and default DNS`
+        );
+      } else if (!isDefaultYandexDnsPlan(plan)) {
         this.logToManager(
           'warn',
           plan.useSafePool
@@ -1234,6 +1255,34 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 3.9.7 与工作 VPN 共存：收 3.2b 识别的外部 VPN 网段 / DNS / 服务器，供 generateSingBoxConfig 注入（无 VPN 时零改动）。
     await workVpnRefresh;
     this.markStart('workVpnWait'); // 含 3.9.6 的 macOS route get；Windows 下应 ≈0（PowerShell 已被前面的步骤藏住）
+
+    this.throwIfStartSuperseded(startGen);
+    const xrayNodes = config.servers.filter((node) => wantsXray(node, config.xrayForVlessReality));
+    this.stopXray();
+    if (xrayNodes.length) {
+      let bridge: XrayBridge | undefined;
+      try {
+        bridge = await XrayBridge.start(resourceManager.getXrayPath(), xrayNodes);
+      } catch {
+        this.logToManager('warn', 'Xray core failed to start');
+      }
+      if (this.lifecycleGeneration !== startGen) {
+        bridge?.stop();
+        this.throwIfStartSuperseded(startGen);
+      }
+      this.xrayBridge = bridge;
+      if (bridge) {
+        const ready = xrayNodes.filter((node) => bridge.hasNode(node.id)).length;
+        this.logToManager('info', `Xray VLESS bridge ready for ${ready}/${xrayNodes.length} nodes`);
+        bridge.onExit(() => {
+          if (this.xrayBridge === bridge) this.logToManager('warn', 'Xray core exited unexpectedly');
+        });
+      }
+      const selected = xrayNodes.find((node) => node.id === config.selectedServerId);
+      if (selected && requiresXray(selected) && !bridge?.hasNode(selected.id)) {
+        throw new Error('This VLESS node requires a working bundled Xray core');
+      }
+    }
 
     // 4. 生成 sing-box 配置文件
     let singboxConfig = this.generateSingBoxConfig(config, resolvedServerIps);
@@ -1273,9 +1322,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     await this.ensureCronetReadyForLaunch();
     this.markStart('cronetCheck'); // 含上面的 deletePidFile；热路径应仅 stat
 
-    // issue #176 L1.2：快照本次起核世代——就绪/重试腿据此判 supersede 让位。捕获点在本方法上方内部 stop()
-    //   （它会 lifecycleGeneration++）之后，故此值即本次 start 的稳定基线；之后任一外部 start/stop 接管即令其变化。
-    const startGen = this.lifecycleGeneration;
     let readyRetries = 0; // 本次启动累计的就绪重试次数（onRetry 自增），成功后落 lastStartReadyRetries 供诊断。
     this.lastStartReadyRetries = 0;
     // issue #324：仅 win32+TUN 开正向适配器观测 tracker（否则 null → 全链路 no-op，macOS/Linux/非 TUN 零改动）。
@@ -1831,6 +1877,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.tailscaleApiClient = null;
     // 生命周期世代 +1：标记一次停止接管（退避中的 attemptAutoRestart 比对到变化即让位，M-2′/L-1′）。
     this.lifecycleGeneration++;
+    this.stopXray();
     // 取消未决的去抖重启（停止/退出优先于 trailing 重启，避免停了又被自动拉起）
     if (this.restartDebounceTimer) {
       clearTimeout(this.restartDebounceTimer);
@@ -4029,7 +4076,7 @@ done
   }
 
   /**
-   * The primary Yandex DoH addresses are unreachable here (probed at start): use the address that answers for the
+   * When the primary Yandex DoH address is unavailable, use the address that answers for the
    * default domestic DNS. Only the untouched default is replaced; a domestic DNS the user typed in stays as it is.
    */
   private withYandexDnsPlan(config: UserConfig): UserConfig {
@@ -4037,7 +4084,7 @@ done
     const dns = config.dnsConfig;
     if (!ip || !dns) return config;
     if (dns.domesticDns && dns.domesticDns !== DEFAULT_DOMESTIC_DNS) return config;
-    return { ...config, dnsConfig: { ...dns, domesticDns: yandexDohUrl(ip) } };
+    return { ...config, dnsConfig: { ...dns, domesticDns: ipDohUrl(ip) } };
   }
 
   /** 与工作 VPN 共存是否生效（macOS / Windows；缺省开）。 */
@@ -4098,6 +4145,14 @@ done
     this.workVpnFingerprint = workVpnFingerprint(snap);
     const summary = describeWorkVpn(snap);
     if (summary) this.logToManager('info', `Work VPN detected: ${summary}`);
+    else if (process.platform === 'win32' && config.proxyModeType === 'tun') {
+      this.logToManager(
+        snap ? 'debug' : 'warn',
+        snap
+          ? 'Work VPN: no active VPN routes or DNS found'
+          : 'Work VPN: Windows network snapshot unavailable'
+      );
+    }
   }
 
   /** 把工作 VPN 的路由 / DNS / 服务器直连注入生成的配置，并记下 TUN 排除段供下次识别。 */
@@ -4133,29 +4188,28 @@ done
     const tun = singboxConfig.inbounds.find((ib) => ib.type === 'tun');
     this.workVpnTunExcludes = tun?.route_exclude_address ?? [];
     if (process.platform === 'win32') {
-      this.winRunningStrictRoute = !!tun && tun.strict_route !== false;
-      this.winIfaceFingerprint = winIfaceFingerprint();
+      this.winIfaceFingerprint = winIfaceFingerprint(this.winTunNameFor(config));
+      this.winWorkVpnRecheck = true;
     }
   }
 
-  /**
-   * Windows：起核时还没有带 DNS 的工作 VPN（strict_route 开着），之后 VPN 连上——VPN 客户端的 DNS 防泄漏与
-   * strict_route 互相封死、整机断网（见 shared/work-vpn 关 strict_route 处）。这时只能重生成配置，重启一次的十余秒
-   * 好过一直断网。watcher 是 30 s 指纹轮询、每轮都走到这里，而探测要起一次 PowerShell，故先比网卡地址指纹，
-   * 网卡没变就不探测。VPN 断开不重启：strict_route 关着无害，下次连接时恢复。
-   */
-  private async checkWinWorkVpnStrictRoute(): Promise<void> {
+  /** Windows can publish a VPN address before installing its routes and DNS policy. Recheck on the next poll. */
+  private async checkWinWorkVpnChange(): Promise<void> {
     const config = this.currentConfig;
     if (!config || config.proxyModeType !== 'tun' || !this.workVpnEnabled(config)) return;
-    if (!this.winRunningStrictRoute) return;
-    const fp = winIfaceFingerprint();
-    if (fp === this.winIfaceFingerprint) return;
+    const fp = winIfaceFingerprint(this.winTunNameFor(config));
+    const changed = fp !== this.winIfaceFingerprint;
+    if (!changed && !this.winWorkVpnRecheck) return;
     this.winIfaceFingerprint = fp;
+    this.winWorkVpnRecheck = changed;
+    const generation = this.lifecycleGeneration;
     const snap = await this.detectWorkVpnNow(config);
-    if (!snap?.interfaces.some((it) => it.dnsServers.length > 0)) return;
+    if (generation !== this.lifecycleGeneration || this.currentConfig !== config) return;
+    if (!snap?.interfaces.some((it) => it.cidrs.length > 0 || it.dnsServers.length > 0)) return;
+    if (workVpnFingerprint(snap) === this.workVpnFingerprint) return;
     this.logToManager(
       'warn',
-      `Work VPN connected (${describeWorkVpn(snap)}): regenerating the config with strict_route off to avoid deadlocking with the VPN's DNS leak protection`
+      `Work VPN changed (${describeWorkVpn(snap)}): regenerating the config to use its routes and DNS`
     );
     this.scheduleDebouncedRestart();
   }
@@ -4177,7 +4231,7 @@ done
    */
   private async checkWorkVpnChange(): Promise<void> {
     if (process.platform === 'win32') {
-      await this.checkWinWorkVpnStrictRoute();
+      await this.checkWinWorkVpnChange();
       return;
     }
     if (process.platform !== 'darwin') return;
@@ -4311,6 +4365,7 @@ done
     // outbounds 须先于 route/endpoints 生成：其产出的两载体（pendingEndpoints / pendingRuleSelectors）
     // 由下方 route deps + endpoints 注入 + 末尾 currentRuleTargetMap 回填消费。回写 this.* 维持原时序。
     const outboundsResult = buildOutbounds(selectedServer, cfg, idToTagMap, {
+      xrayOutbound: (id, tag) => this.xrayBridge?.outbound(id, tag),
       gateInvalidNodes: this.gateInvalidNodes,
       log: (level, message) => this.logToManager(level, message),
       // Phase 2：reverseMesh(system 内核接口)需提权,仅 TUN 模式可行（系统代理路径不提权）。非 TUN →
@@ -4462,12 +4517,21 @@ done
     );
     this.pendingRuleSelectors = [];
 
+    if (this.xrayBridge && singboxConfig.route) {
+      singboxConfig.inbounds.push(this.xrayBridge.directInbound());
+      singboxConfig.outbounds.push(this.xrayBridge.directOutbound(getNodeDialDomainResolver(cfg)));
+      singboxConfig.route.rules.unshift(this.xrayBridge.directRule());
+    }
     this.logToManager(
       'debug',
       `Config generated: inbounds=${singboxConfig.inbounds.length}, outbounds=${singboxConfig.outbounds.length}, rule_set=${singboxConfig.route?.rule_set?.length || 0}`
     );
-
     return singboxConfig;
+  }
+
+  private stopXray(): void {
+    this.xrayBridge?.stop();
+    this.xrayBridge = undefined;
   }
 
   /** 隐私模式 provider 注入（index：getPrivacyMode）：隐私开时 sing-box 日志级别经 effectiveLogLevel 抬到 ≥warn。 */
@@ -8346,13 +8410,14 @@ rm -f "$STOPFLAG"
       return;
     }
 
-    // 过滤低价值日志（连接建立、DNS 查询等频繁日志）
-    if (this.isLowValueLog(line)) {
+    const logInfo = this.parseSingBoxLog(line);
+    // Routine handshake messages are noisy, but handshake failures explain broken nodes.
+    const isHandshakeFailure =
+      (logInfo?.level === 'error' || logInfo?.level === 'fatal') &&
+      /\btls handshake\b/i.test(logInfo.message);
+    if (!isHandshakeFailure && this.isLowValueLog(line)) {
       return;
     }
-
-    // 解析 sing-box 日志格式
-    const logInfo = this.parseSingBoxLog(line);
 
     if (logInfo) {
       // 先翻译消息中的代理标签
@@ -9330,6 +9395,7 @@ rm -f "$STOPFLAG"
   }
 
   private handleProcessExit(code: number | null, signal: NodeJS.Signals | null): void {
+    this.stopXray();
     // 解析退出原因
     const exitReason = this.parseExitReason(code, signal);
 

@@ -16,6 +16,7 @@ import type {
   WebSocketSettings,
   GrpcSettings,
   HttpSettings,
+  XrayTcpFragment,
 } from './types/protocol-settings';
 
 import type { Rule, CustomRuleSet, RuleResource, AppRule, CustomAppPreset } from './types/rules';
@@ -125,10 +126,10 @@ export type Protocol =
   | 'wireguard'
   | 'tailscale'
   | 'custom';
-export type Network = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
+export type Network = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade' | 'xhttp';
 export type Security = 'none' | 'tls' | 'reality';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
-// 'auto' = 默认档：跟随平台映射（macOS·Windows→gvisor / Linux→system），经 shared/tun-defaults#resolveTunStack
+// 'auto' follows the platform default (macOS → gvisor, Windows and Linux → system) in resolveTunStack.
 // 解析成下发给核的具体栈。system/gvisor/mixed = 显式高级兜底。详见 docs/design/tun-stack-option.md。
 export type TunStack = 'auto' | 'system' | 'gvisor' | 'mixed';
 // 'auto' = 默认档：跟随 (平台 × 具体栈) 映射，经 shared/tun-defaults#resolveTunMtu 解析成下发给核的具体数值；
@@ -166,6 +167,7 @@ export interface SubscriptionConfig {
   // 服务端 304 → 短路 parse/reconcile（零节点扰动、省流省渲染）。缺省=首次/无 validator 源，全量 GET（零回归）。
   etag?: string;
   lastModified?: string;
+  parserRevision?: number;
   // 上次解析含 proxy-providers（Clash provider 型订阅）→ 主正文 304 会掩盖 provider 子资源独立变化 → 不发条件头（保守豁免）。
   hasProviders?: boolean;
   // 订阅 URL 并非用户亲手输入（Clash 本地导入的 provider / 备份恢复）→ 首跳照常过 SSRF guard（不信任内网地址）。
@@ -244,6 +246,8 @@ export interface ServerConfig {
   wsSettings?: WebSocketSettings;
   grpcSettings?: GrpcSettings;
   httpSettings?: HttpSettings;
+  xhttpSettings?: { path?: string; host?: string; mode?: string };
+  xrayTcpFragment?: XrayTcpFragment;
 
   createdAt?: string;
   updatedAt?: string;
@@ -525,6 +529,7 @@ export interface UserConfig {
   // 节点测速端点 URL（经各节点代理 GET 量 TTFB）。默认 generate_204（见 shared/speed-test）；用户可自配，兼容 http/https。
   // 非法值由 SpeedTestService 经 resolveSpeedTestTarget 回落默认，不阻断测速。
   speedTestUrl?: string;
+  xrayForVlessReality?: boolean;
   // fake-ip-filter 默认清单（NTP/STUN/Captive 等在 FakeIP 下会坏的域名 → 真实解析）。默认开（undefined/true=开），仅 false=关。
   fakeIpFilter?: boolean;
   // FakeIP 例外域名清单（用户可编辑）：undefined=用内置默认（DEFAULT_FAKEIP_FILTER_DOMAINS，与历史字节一致）；
