@@ -2,6 +2,7 @@ import { IpcMainInvokeEvent, app, shell } from 'electron';
 import { release } from 'node:os';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import { REPOSITORY_URL } from '../../../shared/repository';
+import { LOGIN_ITEMS_SETTINGS_URL } from '../../../shared/constants';
 import { registerIpcHandler } from '../ipc-handler';
 // 内核版本以 core-manifest.json 为权威（构建时随内核打包的真相），非 package.json.singboxVersion（旧值易漂移）。
 import coreManifest from '../../../shared/core-manifest.json';
@@ -23,6 +24,22 @@ interface VersionInfo {
 }
 
 import { CoreUpdateService } from '../../services/CoreUpdateService';
+
+/**
+ * shell:openExternal 白名单：渲染端只允许打开 http(s) 网页 + macOS「登录项」设置深链（精确匹配常量）。
+ * 其它 scheme（file:/smb:/javascript:/ms-msdt:/自定义协议处理器等）一律拒绝——openExternal 交 OS 协议处理器执行，
+ * 放行任意 URL 等于让渲染端可触发本地文件/任意协议处理器。
+ */
+export function isAllowedExternalUrl(url: unknown): url is string {
+  if (typeof url !== 'string' || url.length === 0 || url.length > 8192) return false;
+  if (url === LOGIN_ITEMS_SETTINGS_URL) return true;
+  try {
+    const u = new URL(url);
+    return (u.protocol === 'https:' || u.protocol === 'http:') && u.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 export function registerVersionHandlers(coreUpdateService?: CoreUpdateService): void {
   registerIpcHandler<void, VersionInfo>(
@@ -58,6 +75,11 @@ export function registerVersionHandlers(coreUpdateService?: CoreUpdateService): 
   registerIpcHandler<string, boolean>(
     IPC_CHANNELS.SHELL_OPEN_EXTERNAL,
     async (_event: IpcMainInvokeEvent, url: string) => {
+      if (!isAllowedExternalUrl(url)) {
+        throw Object.assign(new Error('Refusing to open a non-http(s) URL'), {
+          code: 'URL_NOT_ALLOWED',
+        });
+      }
       await shell.openExternal(url);
       return true;
     }

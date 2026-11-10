@@ -146,3 +146,59 @@ describe('UpdateService 安装包完整性校验', () => {
     ).toBe(mt('updErrIntegrity'));
   });
 });
+
+describe('安装包文件名白名单（落盘路径 / 更新脚本注入防护）', () => {
+  const { safeInstallerFileName } = require('../UpdateService');
+
+  it('接受 release 常规命名', () => {
+    for (const n of [
+      'FlowZ-4.3.19-win-x64-setup.exe',
+      'FlowZ-4.3.19-win-x64-portable.exe',
+      'FlowZ-4.3.19-mac-arm64.dmg',
+      'FlowZ-4.4.0-beta.1-linux-x86_64.AppImage',
+      'flowz_4.3.19_amd64.deb',
+    ]) {
+      expect(safeInstallerFileName(n)).toBe(n);
+    }
+  });
+
+  it('拒绝路径穿越 / 目录分隔 / 引号与 shell 元字符 / 非字符串', () => {
+    for (const n of [
+      '../evil.exe',
+      '..\\evil.exe',
+      'a/b.exe',
+      'C:\\x.exe',
+      '.hidden.exe',
+      'a"b.exe',
+      "a'b.dmg",
+      'a b.exe',
+      'a$(x).sh',
+      '',
+      'x'.repeat(300),
+      null,
+      42,
+    ]) {
+      expect(safeInstallerFileName(n)).toBeNull();
+    }
+  });
+
+  it('checkForUpdate 遇到文件名不合规的资产 → 视为无可用安装包', async () => {
+    const svc = new UpdateService(log);
+    const asset = {
+      name: '../../FlowZ-1.1.0.exe',
+      size: 4,
+      browser_download_url: URL,
+      digest: `sha256:${sha('good')}`,
+    };
+    internals(svc).fetchReleases = async () => [
+      {
+        tag_name: 'v1.1.0',
+        prerelease: false,
+        published_at: '2026-11-01T00:00:00Z',
+        assets: [asset],
+      },
+    ];
+    internals(svc).findSuitableAsset = () => asset;
+    await expect(svc.checkForUpdate()).resolves.toMatchObject({ hasUpdate: false });
+  });
+});

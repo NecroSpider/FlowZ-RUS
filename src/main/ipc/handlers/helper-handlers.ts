@@ -32,6 +32,26 @@ export function clearSingboxDashboardCache(): void {
 // sing-box 官方面板内窗口单例（dashboard #55）：再次「打开面板」时聚焦复用而非重复开窗；closed 时置 null。
 let dashboardWindow: BrowserWindow | null = null;
 
+/**
+ * 面板 preload 取连接 payload 的同步 IPC 通道（dashboard-preload.ts 内联同名字面量——沙箱 preload 不能 require
+ * 本地模块；一致性由单测钉死）。走窗口私有 webContents.ipc，只有面板窗能取到。
+ */
+export const DASHBOARD_BOOTSTRAP_CHANNEL = 'dashboard:bootstrap';
+
+/**
+ * 面板 bootstrap 请求方校验（纯函数，可单测）：必须是主 frame，且 frame URL 尚未提交（空 / about:blank，preload
+ * 极早期）或已位于本地面板源（http://127.0.0.1:<port>/…）。子 frame / 其它源一律拒绝（不下发 secret）。
+ */
+export function isDashboardBootstrapSenderAllowed(
+  frame: { url: string; parent: unknown } | null | undefined,
+  localOrigin: string
+): boolean {
+  if (!frame || frame.parent) return false;
+  const u = frame.url;
+  if (!u || u === 'about:blank') return true;
+  return u.startsWith(`${localOrigin}/`);
+}
+
 export function registerHelperHandlers(
   helperManager: IPrivilegedHelper,
   proxyManager: IProxyManager
@@ -93,6 +113,7 @@ export function registerHelperHandlers(
         language: dashLang,
       });
 
+      const localOrigin = info.apiUrl; // http://127.0.0.1:<port>（无尾斜杠）
       dashboardWindow = new BrowserWindow({
         width: 1100,
         height: 760,
@@ -101,29 +122,38 @@ export function registerHelperHandlers(
         title: 'sing-box Dashboard',
         autoHideMenuBar: true,
         webPreferences: {
-          // 面板专用 preload：经 additionalArguments 拿 server payload，在页面脚本前于同源写 localStorage。
+          // 面板专用 preload：经同步 IPC（DASHBOARD_BOOTSTRAP_CHANNEL）拿 server payload，在页面脚本前于同源写 localStorage。
           // dashboard-preload.ts 在 src/main/ 顶层（rootDir=src/outDir=dist/main）→ 编到 dist/main/main/dashboard-preload.js。
           // 锚 app.getAppPath()（dev=项目根、打包=app.asar 根）+ 固定相对路径，比从本文件 __dirname 上跳目录稳——
           // 后者随本 handler 文件迁移层级即失配（曾因上跳级数不符解析到不存在路径 → preload 静默不加载 → localStorage
           // 未预写 → 面板空表单，dashboard #55 自动连真机回归根因）。
           preload: path.join(app.getAppPath(), 'dist/main/main/dashboard-preload.js'),
-          // 本窗口仅加载本地 127.0.0.1 受信面板，关 contextIsolation 让 preload 直写页面同源 localStorage；零 Node 暴露（preload 不挂 API）。
-          contextIsolation: false,
+          // 第三方面板 JS（zashboard）跑在本窗：开 contextIsolation + sandbox，preload 在隔离世界里写同源
+          // localStorage（隔离世界与页面共享同一 origin 的 storage），页面拿不到 preload 的任何引用。
+          // secret 不再经 additionalArguments（会出现在渲染进程命令行、本机任何进程 ps 可见），改由 preload
+          // 经窗口私有同步 IPC 取（见下方 DASHBOARD_BOOTSTRAP_CHANNEL）。
+          contextIsolation: true,
           nodeIntegration: false,
-          sandbox: false,
-          additionalArguments: [`--flowz-dashboard-server=${serverPayload}`],
+          sandbox: true,
         },
       });
+      // 连接 payload 只经本窗口私有 IPC 下发（webContents.ipc：其它窗口/页面无从调用），且只给主 frame / 本地面板源。
+      dashboardWindow.webContents.ipc.on(DASHBOARD_BOOTSTRAP_CHANNEL, (event) => {
+        event.returnValue = isDashboardBootstrapSenderAllowed(event.senderFrame, localOrigin)
+          ? serverPayload
+          : null;
+      });
+      // 权限：本窗在默认会话，由 index.ts installPermissionPolicy 的 deny-by-default 策略覆盖（本机面板源仅放行
+      // 剪贴板写，供面板复制按钮；摄像头/麦克风/通知/地理位置/设备等一律拒绝）。
       if (process.platform !== 'darwin') dashboardWindow.setMenu(null);
       dashboardWindow.once('closed', () => {
         dashboardWindow = null;
       });
 
-      // 安全闸（H1）：本窗口 contextIsolation 关 + 加载第三方面板代码，必须锁死导航边界——否则面板内任意链接/重定向/
+      // 安全闸（H1）：本窗口加载第三方面板代码且 localStorage 里有 secret，必须锁死导航边界——否则面板内任意链接/重定向/
       // window.open 可把本窗口（或继承同 webPreferences 的子窗口）导航到远端源，泄漏已写入 localStorage 的 secret。
       //  - setWindowOpenHandler：拒绝一切子窗口；http(s) 外链改走系统浏览器（绝不在带这套 prefs 的窗口里开）。
       //  - will-navigate：只允许停留在本地 api service 源（http://127.0.0.1:<port>），跨源导航一律拦下。
-      const localOrigin = info.apiUrl; // http://127.0.0.1:<port>（无尾斜杠）
       const wc = dashboardWindow.webContents;
       wc.setWindowOpenHandler(({ url }) => {
         if (/^https?:\/\//i.test(url)) void shell.openExternal(url);

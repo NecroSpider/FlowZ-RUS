@@ -203,11 +203,14 @@ export function buildLinuxDebScript(opts: { installerPath: string; exePath: stri
 
 /**
  * macOS 更新脚本（原子替换，避免 DMG 累积）。appBundlePath 非空=自动替换 .app；为空（定位不到 .app）=回退 open DMG。
- * 提权策略：先**无提权** mv 原子替换（/Applications 对 admin 用户组可写，绝大多数免密码）；失败才 osascript 一次性
- * 管理员授权（系统原生密码框，**不依赖常驻 helper**）。
- * brick 安全：替换一律「mv 暂存↔目标」，**绝不先 rm 目标再建**；任一步失败回滚旧版、**保留 $BAK 不删**；
- * 提权步骤把替换命令落盘成脚本、osascript 只跑 `bash '<脚本>'`（单层引号，复用 runRootScript 套路；路径经 printf %q
- * 转义，免三层引号脆弱性）；仅当 $DEST 确为新版到位才善后（删 BAK/STAGE/DMG），否则保留可恢复 + 回退手动。
+ *
+ * 暂存：先把 DMG 里的 .app 拷进**用户私有临时目录**（mktemp -d，任何用户都可写）——绝不在提权前往 /Applications
+ * 写东西（标准用户对 /Applications 无写权，旧实现 ditto 暂存直接失败 → 删 DMG 退出，app 已退出却从不重启）。
+ * 提权策略：先**无提权**在目标同卷暂存 + mv 原子替换（admin 组对 /Applications 可写，绝大多数免密码）；失败才
+ * osascript 一次性管理员授权（系统原生密码框，**不依赖常驻 helper**）跑同一套「同卷暂存 + mv-swap」。
+ * brick 安全：替换一律「mv 暂存↔目标」，**绝不先 rm 目标再建**；任一步失败回滚旧版。提权步骤把命令落盘到私有
+ * 临时目录的脚本里、osascript 只跑 `bash '<脚本>'`（单层引号；路径经 printf %q 转义，免三层引号脆弱性）。
+ * **任何失败都重启旧版 app**（用户只经本 app 上网，app 不回来=断网）并保留 DMG 便于重试；仅确认替换成功才删 DMG。
  */
 export function buildMacUpdateScript(opts: {
   dmgPath: string;
@@ -225,43 +228,62 @@ export function buildMacUpdateScript(opts: {
     `DEST=${dest}`,
     'BAK="$DEST.bak-$$"',
     'STAGE="$(dirname "$DEST")/.flowz-update-$$.app"',
-    // 清历史中断遗留的暂存（M2，防 /Applications 下 .flowz-update-*.app 垃圾堆积）
-    'rm -rf "$(dirname "$DEST")"/.flowz-update-*.app 2>/dev/null',
-    // 挂载 DMG（失败=极罕见→回退手动 open，唯一保留 DMG 的分支）
-    'MNT=$(hdiutil attach "$DMG" -nobrowse -noautoopen -mountrandom /tmp 2>/dev/null | grep -o "/tmp/[^[:space:]]*" | tail -1)',
-    '[ -z "$MNT" ] && { open "$DMG"; exit 0; }',
-    'SRC=$(/usr/bin/find "$MNT" -maxdepth 1 -name "*.app" | head -1)',
-    '[ -z "$SRC" ] && { hdiutil detach "$MNT" >/dev/null 2>&1; rm -f "$DMG"; exit 0; }',
-    // 整包暂存到目标同卷（mv 原子），失败即清理退出
-    'rm -rf "$STAGE"',
-    'if ! ditto "$SRC" "$STAGE"; then hdiutil detach "$MNT" >/dev/null 2>&1; rm -rf "$STAGE"; rm -f "$DMG"; exit 0; fi',
-    'hdiutil detach "$MNT" >/dev/null 2>&1',
-    // 原子替换（mv-swap，绝不先毁后建；失败回滚旧版、保留 $BAK 可恢复）。先尝试无提权。
-    'replace() {',
-    '  mv "$DEST" "$BAK" 2>/dev/null || return 1',
-    '  if mv "$STAGE" "$DEST" 2>/dev/null; then rm -rf "$BAK"; return 0; fi',
-    '  mv "$BAK" "$DEST" 2>/dev/null; return 1',
+    'MNT=""',
+    'WORK=""',
+    // 任何失败：卸载镜像 + 清私有暂存 + 保留 DMG + 重启旧版（$DEST 在则开它；极端情况下只剩 $BAK 则开 $BAK）。
+    'fail() {',
+    '  [ -n "$MNT" ] && hdiutil detach "$MNT" >/dev/null 2>&1',
+    '  [ -n "$WORK" ] && rm -rf "$WORK"',
+    '  if [ -d "$DEST" ]; then open "$DEST"; elif [ -d "$BAK" ]; then open "$BAK"; fi',
+    '  exit 0',
     '}',
-    'if ! replace; then',
-    // 无提权失败 → 把同一 mv-swap 落盘成脚本（路径 printf %q 转义），osascript 一次性 root 跑 `bash '<脚本>'`（单层引号）
-    '  ELEV="$(dirname "$DEST")/.flowz-elev-$$.sh"',
+    'WORK="$(mktemp -d "${TMPDIR:-/tmp}/flowz-update.XXXXXX")" || { WORK=""; fail; }',
+    'TMPAPP="$WORK/FlowZ.app"',
+    // 清历史中断遗留的同卷暂存（M2，防 /Applications 下 .flowz-update-*.app 垃圾堆积；无写权时静默无效）
+    'rm -rf "$(dirname "$DEST")"/.flowz-update-*.app 2>/dev/null',
+    // 挂载 DMG（失败=极罕见 → 重启旧版、保留 DMG）
+    'MNT=$(hdiutil attach "$DMG" -nobrowse -noautoopen -mountrandom /tmp 2>/dev/null | grep -o "/tmp/[^[:space:]]*" | tail -1)',
+    '[ -z "$MNT" ] && fail',
+    'SRC=$(/usr/bin/find "$MNT" -maxdepth 1 -name "*.app" | head -1)',
+    '[ -z "$SRC" ] && fail',
+    // 暂存到用户私有临时目录（任何用户可写）；失败 → 重启旧版
+    'ditto "$SRC" "$TMPAPP" || fail',
+    'hdiutil detach "$MNT" >/dev/null 2>&1',
+    'MNT=""',
+    'xattr -dr com.apple.quarantine "$TMPAPP" 2>/dev/null',
+    // 无提权：同卷暂存 + 原子 mv-swap（绝不先毁后建；失败回滚旧版）。
+    'replace() {',
+    '  rm -rf "$STAGE" 2>/dev/null',
+    '  ditto "$TMPAPP" "$STAGE" 2>/dev/null || { rm -rf "$STAGE" 2>/dev/null; return 1; }',
+    '  mv "$DEST" "$BAK" 2>/dev/null || { rm -rf "$STAGE" 2>/dev/null; return 1; }',
+    '  if mv "$STAGE" "$DEST" 2>/dev/null; then rm -rf "$BAK"; return 0; fi',
+    '  mv "$BAK" "$DEST" 2>/dev/null; rm -rf "$STAGE" 2>/dev/null; return 1',
+    '}',
+    'OK=0',
+    'if replace; then',
+    '  OK=1',
+    'else',
+    // 无提权失败（标准用户 / 目录只读）→ 同一套「暂存 + mv-swap」落盘到私有临时目录，osascript 一次性 root 跑
+    '  ELEV="$WORK/elevate.sh"',
     '  cat > "$ELEV" <<EOF',
     '#!/bin/bash',
-    'mv $(printf %q "$DEST") $(printf %q "$BAK") || exit 1',
-    'mv $(printf %q "$STAGE") $(printf %q "$DEST") || { mv $(printf %q "$BAK") $(printf %q "$DEST"); exit 1; }',
+    'rm -rf $(printf %q "$STAGE")',
+    'ditto $(printf %q "$TMPAPP") $(printf %q "$STAGE") || { rm -rf $(printf %q "$STAGE"); exit 1; }',
+    'mv $(printf %q "$DEST") $(printf %q "$BAK") || { rm -rf $(printf %q "$STAGE"); exit 1; }',
+    'mv $(printf %q "$STAGE") $(printf %q "$DEST") || { mv $(printf %q "$BAK") $(printf %q "$DEST"); rm -rf $(printf %q "$STAGE"); exit 1; }',
     'rm -rf $(printf %q "$BAK")',
     'EOF',
-    '  osascript -e "do shell script \\"/bin/bash \'$ELEV\'\\" with administrator privileges" 2>/dev/null',
-    '  rm -f "$ELEV"',
+    '  osascript -e "do shell script \\"/bin/bash \'$ELEV\'\\" with administrator privileges" >/dev/null 2>&1 && OK=1',
     'fi',
-    // 仅当新版确到位（$DEST 存在且无残留 $BAK=替换成功）才善后；失败则 $BAK/$STAGE 保留可人工恢复、不删 DMG 便于重试
-    'if [ -d "$DEST" ] && [ ! -d "$BAK" ]; then',
-    '  xattr -dr com.apple.quarantine "$DEST" 2>/dev/null',
-    '  rm -rf "$STAGE" 2>/dev/null',
+    'rm -rf "$WORK"',
+    'WORK=""',
+    // 仅确认替换成功才删 DMG 并启动新版；否则（取消授权 / 非管理员 / 任何错误）走 fail：重启旧版 + 保留 DMG。
+    'if [ "$OK" = 1 ] && [ -d "$DEST" ]; then',
+    '  rm -rf "$BAK" 2>/dev/null',
     '  rm -f "$DMG"',
     '  open "$DEST"',
     'else',
-    '  open "$DMG"',
+    '  fail',
     'fi',
     '',
   ].join('\n');

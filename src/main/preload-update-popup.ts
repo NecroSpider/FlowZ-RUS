@@ -6,8 +6,12 @@
  * 与 dashboard-preload 同路径规律）。
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import { IPC_CHANNELS } from '../shared/ipc-channels';
 import type { UpdatePopupState, UpdatePopupAction } from '../shared/types/update';
+
+// 沙箱 preload（sandbox:true）只能 require('electron') 等少数内置模块，不能 require 本地模块 → 通道名内联为字面量
+// （不 import shared/ipc-channels）。与 IPC_CHANNELS.UPDATE_POPUP_STATE / UPDATE_POPUP_ACTION 的一致性由单测钉死。
+export const POPUP_STATE_CHANNEL = 'update:popupState';
+export const POPUP_ACTION_CHANNEL = 'update:popupAction';
 
 // 界面语言注入（主进程 additionalArguments `--flowz-popup-lang=<code>`）：据此设 <html lang/dir>，
 // 修弹窗页 lang 写死 zh-CN（fa 需 rtl）。DOMContentLoaded 后设，覆盖 HTML 静态 lang 属性。
@@ -35,11 +39,11 @@ contextBridge.exposeInMainWorld('flowzUpdatePopup', {
   /** 订阅主进程推送的状态载荷；返回退订函数。 */
   onState(cb: (state: UpdatePopupState) => void): () => void {
     const listener = (_e: IpcRendererEvent, state: UpdatePopupState) => cb(state);
-    ipcRenderer.on(IPC_CHANNELS.UPDATE_POPUP_STATE, listener);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_POPUP_STATE, listener);
+    ipcRenderer.on(POPUP_STATE_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(POPUP_STATE_CHANNEL, listener);
   },
   /** 回传按钮/关闭动作到主进程。 */
   sendAction(action: UpdatePopupAction): void {
-    ipcRenderer.send(IPC_CHANNELS.UPDATE_POPUP_ACTION, action);
+    ipcRenderer.send(POPUP_ACTION_CHANNEL, action);
   },
 });

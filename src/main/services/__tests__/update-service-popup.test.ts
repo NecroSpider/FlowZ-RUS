@@ -142,12 +142,18 @@ describe('prerelease confirmation and stable channel', () => {
     downloadUrl: 'https://example.com/test.exe',
     fileSize: 1,
   };
+  /** 下载只认本会话 checkForUpdate 返回过的记录：测试里直接登记（等价于一次成功的检查）。 */
+  const seeded = (record: typeof info = info): any => {
+    const svc = new UpdateService(log) as any;
+    svc.checkedUpdates.set(record.downloadUrl, record);
+    return svc;
+  };
   afterEach(() => jest.restoreAllMocks());
 
   it('cancel prevents downloading from settings and is distinguishable from a network error', async () => {
     const { dialog } = require('electron');
     dialog.showMessageBox.mockResolvedValue({ response: 1 });
-    const svc = new UpdateService(log) as any;
+    const svc = seeded();
     const download = jest.spyOn(svc, 'downloadFile');
     await expect(svc.downloadUpdate(info)).rejects.toMatchObject({ code: 'UPDATE_CANCELLED' });
     expect(download).not.toHaveBeenCalled();
@@ -158,7 +164,7 @@ describe('prerelease confirmation and stable channel', () => {
 
   it('cancel also prevents popup downloads, while explicit acceptance permits the download', async () => {
     const { dialog } = require('electron');
-    const svc = new UpdateService(log) as any;
+    const svc = seeded();
     const download = jest.spyOn(svc, 'downloadFile').mockResolvedValue(undefined);
     jest.spyOn(svc, 'verifyInstaller').mockResolvedValue(undefined);
     dialog.showMessageBox.mockResolvedValue({ response: 1 });
@@ -172,11 +178,57 @@ describe('prerelease confirmation and stable channel', () => {
   it('stable downloads do not request prerelease consent', async () => {
     const { dialog } = require('electron');
     dialog.showMessageBox.mockClear();
-    const svc = new UpdateService(log) as any;
+    const svc = seeded({ ...info, isPrerelease: false });
     jest.spyOn(svc, 'downloadFile').mockResolvedValue(undefined);
     jest.spyOn(svc, 'verifyInstaller').mockResolvedValue(undefined);
     await svc.downloadUpdate({ ...info, isPrerelease: false });
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('the prerelease flag comes from the last check, not from the renderer', async () => {
+    const { dialog } = require('electron');
+    dialog.showMessageBox.mockReset();
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    const svc = seeded(); // 检查结果：预发布
+    const download = jest.spyOn(svc, 'downloadFile');
+    // 渲染端谎称 isPrerelease:false → 仍弹预发布确认，取消即不下载
+    await expect(svc.downloadUpdate({ ...info, isPrerelease: false })).rejects.toMatchObject({
+      code: 'UPDATE_CANCELLED',
+    });
+    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('refuses updates that were not returned by a check (unknown URL)', async () => {
+    const svc = seeded();
+    const download = jest.spyOn(svc, 'downloadFile');
+    await expect(
+      svc.downloadUpdate({ ...info, downloadUrl: 'https://evil.example/x.exe' })
+    ).rejects.toMatchObject({ code: 'UPDATE_UNKNOWN' });
+    await expect(
+      svc.downloadUpdateWithProgress({ ...info, downloadUrl: 'https://evil.example/x.exe' })
+    ).resolves.toBeNull();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('uses the checked file name (basename only) inside a private mkdtemp dir', async () => {
+    const { dialog } = require('electron');
+    dialog.showMessageBox.mockResolvedValue({ response: 0 });
+    const svc = seeded({ ...info, isPrerelease: false });
+    const download = jest.spyOn(svc, 'downloadFile').mockResolvedValue(undefined);
+    jest.spyOn(svc, 'verifyInstaller').mockResolvedValue(undefined);
+    // 渲染端回传的 fileName 含路径穿越 → 忽略，取主进程记录的 test.exe
+    const filePath: string = await svc.downloadUpdate({
+      ...info,
+      fileName: '../../../../etc/passwd',
+    });
+    expect(path.basename(filePath)).toBe('test.exe');
+    const dir = path.dirname(filePath);
+    expect(path.basename(dir)).toMatch(/^flowz-update-/);
+    expect(path.dirname(dir)).toBe(os.tmpdir());
+    if (process.platform !== 'win32') expect(fsSync.statSync(dir).mode & 0o077).toBe(0); // 仅属主可访问
+    expect(download.mock.calls[0][1]).toBe(filePath);
+    fsSync.rmSync(dir, { recursive: true, force: true });
   });
 
   it('ordinary checks exclude drafts, flagged prereleases and unflagged beta tags', async () => {

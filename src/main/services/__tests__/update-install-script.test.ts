@@ -164,7 +164,11 @@ describe('buildMacUpdateScript', () => {
       appBundlePath: '/Applications/FlowZ.app',
     });
     expect(s).toContain('hdiutil attach');
-    expect(s).toContain('ditto "$SRC" "$STAGE"');
+    // 先暂存到用户私有临时目录（任何用户可写），再同卷暂存；绝不在提权前直接往 /Applications ditto
+    expect(s).toContain('mktemp -d');
+    expect(s).toContain('ditto "$SRC" "$TMPAPP"');
+    expect(s).not.toContain('ditto "$SRC" "$STAGE"');
+    expect(s).toContain('ditto "$TMPAPP" "$STAGE"');
     // mv-swap 原子替换 + 回滚（绝不先毁后建）
     expect(s).toContain('mv "$DEST" "$BAK"');
     expect(s).toContain('mv "$STAGE" "$DEST"');
@@ -180,6 +184,8 @@ describe('buildMacUpdateScript', () => {
     expect(s).toContain('xattr -dr com.apple.quarantine');
     expect(s).toContain('rm -f "$DMG"'); // 删 DMG 避免累积
     expect(s).toContain('open "$DEST"');
+    // 提权脚本落在私有临时目录（不写 /Applications）
+    expect(s).toContain('ELEV="$WORK/elevate.sh"');
   });
 
   it('无 .app 路径：回退原行为仅 open DMG', () => {

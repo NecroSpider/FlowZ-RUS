@@ -6,6 +6,7 @@ import { isPrereleaseVersion } from '../../shared/update-channel';
 
 import { app, shell, BrowserWindow, dialog, net, type Session } from 'electron';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import { LogManager } from './LogManager';
@@ -45,6 +46,32 @@ import { GITHUB_OWNER, GITHUB_REPO } from '../../shared/repository';
 const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
 /** 下载进度推送最小间隔（≈10 帧/秒）：够流畅，又不让 IPC/重绘随数据块狂刷。 */
 const PROGRESS_THROTTLE_MS = 100;
+
+/**
+ * 安装包文件名白名单（用于拼本地落盘路径）：只允许 release 资产的常规命名字符，且必须是纯文件名（无目录分隔）。
+ * 文件名还会被内嵌进 VBS/bash 更新脚本，白名单同时杜绝引号/元字符注入。不合规 → null（拒绝该资产）。
+ */
+export function safeInstallerFileName(name: unknown): string | null {
+  if (typeof name !== 'string') return null;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$/.test(name)) return null;
+  if (path.posix.basename(name) !== name || path.win32.basename(name) !== name) return null;
+  return name;
+}
+
+/** 每次下载一个私有临时目录（mkdtemp，0700）：不在共享 /tmp 用固定文件名（防同机其它用户预置/符号链接劫持）。 */
+function makePrivateTempDir(prefix: string): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+/** best-effort 删除私有临时目录（失败无害，OS 自清 temp）。 */
+function removeDirQuietly(dir: string | null): void {
+  if (!dir) return;
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+}
 
 /** 流式 sha256（安装包 100MB+，不整读进内存）。 */
 function sha256OfFile(filePath: string): Promise<string> {
@@ -93,6 +120,9 @@ export class UpdateService {
   // 安装包完整性锚：downloadUrl → sha256，仅取自 checkForUpdate 直连 api.github.com 的 asset.digest（主进程私有）。
   // 不信任渲染端经 IPC 回传的 UpdateInfo：只有本会话 API 列出的资产才能通过下载校验。
   private assetSha256ByUrl = new Map<string, string>();
+  // 本会话 checkForUpdate 实际返回过的更新（downloadUrl → UpdateInfo，主进程私有）。下载只认这里的记录：
+  // 文件名 / 是否预发布 / 大小 / 版本一律取主进程自己的值，不信渲染端经 IPC 回传的 UpdateInfo 字段。
+  private checkedUpdates = new Map<string, UpdateInfo>();
   // 已通过校验的安装包：filePath → sha256。installUpdate 只执行此表内文件，且执行前重算摘要（防下载后被替换）。
   private verifiedInstallers = new Map<string, string>();
   // #60：注入配置读取器（仅用于读 ghProxyPrefix 下载镜像前缀），构造后注入。未配置→null（直连，旧行为）。
@@ -200,8 +230,16 @@ export class UpdateService {
       }
 
       const asset = this.findSuitableAsset(latestRelease.assets);
+      const fileName = asset ? safeInstallerFileName(asset.name) : null;
+      if (asset && !fileName) {
+        this.logManager.addLog(
+          'warn',
+          'Installer asset has an unexpected file name and will be ignored',
+          'UpdateService'
+        );
+      }
 
-      if (!asset) {
+      if (!asset || !fileName) {
         this.logManager.addLog('warn', 'No installer found for this platform', 'UpdateService');
         this.updateProgress({
           status: 'no-update',
@@ -228,7 +266,7 @@ export class UpdateService {
         fileSize: asset.size,
         publishedAt: latestRelease.published_at,
         isPrerelease: isPrereleaseVersion(latestRelease.tag_name, latestRelease.prerelease),
-        fileName: asset.name,
+        fileName,
       };
 
       if (this.skippedVersion === latestVersion) {
@@ -245,6 +283,7 @@ export class UpdateService {
         return { hasUpdate: false };
       }
 
+      this.checkedUpdates.set(updateInfo.downloadUrl, updateInfo);
       this.logManager.addLog('info', `New version available: ${latestVersion}`, 'UpdateService');
       this.updateProgress({
         status: 'update-available',
@@ -282,6 +321,21 @@ export class UpdateService {
     }
   }
 
+  /**
+   * 把调用方给的 UpdateInfo 绑定回本会话检查结果：按 downloadUrl 取主进程自己记录的那份（文件名/预发布标志/大小
+   * 均以此为准）。未经检查的 URL → 抛 UPDATE_UNKNOWN（渲染端不能借 update:download 下载/落盘任意东西）。
+   */
+  private resolveCheckedUpdate(updateInfo: UpdateInfo | null | undefined): UpdateInfo {
+    const url = typeof updateInfo?.downloadUrl === 'string' ? updateInfo.downloadUrl : '';
+    const trusted = url ? this.checkedUpdates.get(url) : undefined;
+    if (!trusted || !safeInstallerFileName(trusted.fileName)) {
+      throw Object.assign(new Error('Unknown update package, please check for updates again'), {
+        code: 'UPDATE_UNKNOWN',
+      });
+    }
+    return trusted;
+  }
+
   private async confirmPrerelease(updateInfo: UpdateInfo): Promise<boolean> {
     if (!isPrereleaseVersion(updateInfo.version, updateInfo.isPrerelease)) return true;
     const options = {
@@ -300,11 +354,13 @@ export class UpdateService {
     return response === 0;
   }
 
-  async downloadUpdate(updateInfo: UpdateInfo): Promise<string | null> {
+  async downloadUpdate(requested: UpdateInfo): Promise<string | null> {
+    const updateInfo = this.resolveCheckedUpdate(requested);
     if (!(await this.confirmPrerelease(updateInfo))) {
       throw Object.assign(new Error('Prerelease download cancelled'), { code: 'UPDATE_CANCELLED' });
     }
     // 手动下载不传 cancel token → 不可取消、与弹窗流的取消 token 完全隔离（无跨流污染）。
+    let downloadDir: string | null = null;
     try {
       this.logManager.addLog('info', `Downloading update: ${updateInfo.version}`, 'UpdateService');
       this.updateProgress({
@@ -313,12 +369,8 @@ export class UpdateService {
         message: 'Downloading update...',
       });
 
-      const downloadDir = app.getPath('temp');
+      downloadDir = makePrivateTempDir('flowz-update-');
       const filePath = path.join(downloadDir, updateInfo.fileName);
-
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
 
       await this.downloadFile(updateInfo.downloadUrl, filePath, updateInfo.fileSize);
       await this.verifyInstaller(filePath, updateInfo.downloadUrl);
@@ -328,6 +380,7 @@ export class UpdateService {
 
       return filePath;
     } catch (error: any) {
+      removeDirQuietly(downloadDir);
       const errorMessage = error?.message || 'Update download failed';
       this.logManager.addLog('error', `Update download failed: ${errorMessage}`, 'UpdateService');
       this.updateProgress({
@@ -470,7 +523,7 @@ export class UpdateService {
       } else if (process.platform === 'darwin') {
         // macOS: 自动挂载 DMG → 原子替换 .app（定位到则自动；定位不到回退手动 open DMG）。只换 .app、不碰 data。
         const { spawn } = require('child_process');
-        const scriptPath = path.join(app.getPath('temp'), 'flowz_update.sh');
+        const scriptPath = path.join(makePrivateTempDir('flowz-install-'), 'flowz_update.sh');
 
         const appBundlePath = macAppBundleFromExe(app.getPath('exe'));
         this.logManager.addLog(
@@ -482,7 +535,7 @@ export class UpdateService {
         );
         const scriptContent = buildMacUpdateScript({ dmgPath: installerPath, appBundlePath });
 
-        fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 });
+        fs.writeFileSync(scriptPath, scriptContent, { mode: 0o700 });
 
         // 使用 spawn 启动独立进程执行脚本
         const child = spawn('/bin/bash', [scriptPath], {
@@ -513,11 +566,12 @@ export class UpdateService {
         const isDeb = this.isDebUpdateForm(installerPath); // 与顶部确认框谓词同源（双守卫单一真值）
         if (isAppImage || isDeb) {
           const { spawn } = require('child_process');
-          const scriptPath = path.join(app.getPath('temp'), 'flowz_update.sh');
+          // 私有 mkdtemp 目录（0700）：不在共享 /tmp 用固定名 flowz_update.sh（防同机其它用户预置/替换脚本）。
+          const scriptPath = path.join(makePrivateTempDir('flowz-install-'), 'flowz_update.sh');
           const scriptContent = isAppImage
             ? buildLinuxAppImageScript({ installerPath, appImageTarget: appImageTarget as string })
             : buildLinuxDebScript({ installerPath, exePath: app.getPath('exe') });
-          fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 });
+          fs.writeFileSync(scriptPath, scriptContent, { mode: 0o700 });
           const child = spawn('/bin/bash', [scriptPath], { detached: true, stdio: 'ignore' });
           child.unref();
           this.logManager.addLog(
@@ -681,7 +735,8 @@ export class UpdateService {
         preload: path.join(app.getAppPath(), 'dist/main/main/preload-update-popup.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        // preload-update-popup 只 require('electron')（通道名已内联），可沙箱化。
+        sandbox: true,
         // 当前界面语言注入 preload：弹窗页据此设 <html lang/dir>（fa=rtl），修 lang 写死 zh-CN。
         additionalArguments: [`--flowz-popup-lang=${getMainLanguage()}`],
       },
@@ -689,6 +744,10 @@ export class UpdateService {
     if (process.platform !== 'darwin') win.setMenu(null);
     // 拒绝任何子窗口打开（纯本地受信内容，belt-and-braces；对齐 dashboard 窗先例）。
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    // 导航锁：弹窗页只停留在自己（拖进来的链接/文件不得把带 preload 的弹窗导航走）；重载自身放行。
+    win.webContents.on('will-navigate', (event, url) => {
+      if (url !== win.webContents.getURL()) event.preventDefault();
+    });
 
     const isDev = process.env.NODE_ENV === 'development';
     const loaded = isDev
@@ -843,13 +902,25 @@ export class UpdateService {
    * 下载走统一 downloadFile（mirrorToPopup=true → 进度只镜像弹窗，不打扰关于页；与旧 downloadFileWithProgressWindow
    * 的「不触碰 mainWindow 进度」语义一致）。
    */
-  async downloadUpdateWithProgress(updateInfo: UpdateInfo): Promise<string | null> {
+  async downloadUpdateWithProgress(requested: UpdateInfo): Promise<string | null> {
+    let updateInfo: UpdateInfo;
+    try {
+      updateInfo = this.resolveCheckedUpdate(requested);
+    } catch (error: any) {
+      this.logManager.addLog(
+        'error',
+        `Update download refused: ${error?.message}`,
+        'UpdateService'
+      );
+      this.closeUpdatePopup();
+      return null;
+    }
     if (!(await this.confirmPrerelease(updateInfo))) {
       this.closeUpdatePopup();
       return null;
     }
     this.currentUpdateInfo = updateInfo;
-    const downloadDir = app.getPath('temp');
+    const downloadDir = makePrivateTempDir('flowz-update-');
     const filePath = path.join(downloadDir, updateInfo.fileName);
 
     // 复用 remind 弹窗续进 progress，或新建 progress 态弹窗。
@@ -884,7 +955,7 @@ export class UpdateService {
         );
 
         // 竞态：取消恰在下载完成瞬间到达（download 已 resolve）→ 仍按取消处理，不进 done/不安装。
-        if (ctl.cancelled) return this.finishPopupCancel(filePath, ' (at completion)');
+        if (ctl.cancelled) return this.finishPopupCancel(downloadDir, ' (at completion)');
         await this.verifyInstaller(filePath, updateInfo.downloadUrl);
 
         this.popupDownloadControl = null;
@@ -904,7 +975,7 @@ export class UpdateService {
         return filePath;
       } catch (error: any) {
         // 用户取消（progress 态 × / OS 关窗）：abort 触发的 reject 不是真错误 → 静默关窗、不显 error 态、不安装、删残件。
-        if (ctl.cancelled) return this.finishPopupCancel(filePath, '');
+        if (ctl.cancelled) return this.finishPopupCancel(downloadDir, '');
 
         this.popupDownloadControl = null;
         const errorMessage = error?.message || 'Update download failed';
@@ -930,6 +1001,7 @@ export class UpdateService {
           continue;
         }
         this.closeUpdatePopup(); // manualDownload（已外链）/ close / __closed__
+        removeDirQuietly(downloadDir);
         return null;
       }
     }
@@ -975,14 +1047,10 @@ export class UpdateService {
     this.logManager.addLog('info', `Installer sha256 verified: ${expected}`, 'UpdateService');
   }
 
-  /** 取消下载的统一收尾：清 token + 删残件 + 关窗 + 返回 null（不安装）。 */
-  private finishPopupCancel(filePath: string, note: string): null {
+  /** 取消下载的统一收尾：清 token + 删残件（整个私有下载目录） + 关窗 + 返回 null（不安装）。 */
+  private finishPopupCancel(downloadDir: string, note: string): null {
     this.popupDownloadControl = null;
-    try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch {
-      /* 残件清理失败无害（temp 目录 OS 自清） */
-    }
+    removeDirQuietly(downloadDir); // 残件清理失败无害（temp 目录 OS 自清）
     this.logManager.addLog('info', `User cancelled the update download${note}`, 'UpdateService');
     this.closeUpdatePopup();
     return null;

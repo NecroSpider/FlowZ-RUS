@@ -102,8 +102,12 @@ function injectStaticFailureDom(root: HTMLElement, err: unknown): void {
     '<div style="max-width:520px">' +
     '<h1 style="font-size:18px;font-weight:600;margin:0 0 12px">Failed to initialize</h1>' +
     '<p style="font-size:13px;line-height:1.6;color:#9DA7B3;margin:0 0 20px">The interface failed to load. Please try reloading.</p>' +
-    '<button type="button" onclick="location.reload()" style="font-size:13px;color:#fff;background:#2F81F7;border:0;border-radius:8px;padding:9px 20px;cursor:pointer">Reload</button>' +
+    '<button type="button" data-flowz-reload style="font-size:13px;color:#fff;background:#2F81F7;border:0;border-radius:8px;padding:9px 20px;cursor:pointer">Reload</button>' +
     '</div></div>';
+  // 不用内联 onclick：生产 CSP 禁止内联事件处理器（无需 'unsafe-hashes'）。
+  root
+    .querySelector('[data-flowz-reload]')
+    ?.addEventListener('click', () => window.location.reload());
 }
 
 const rootEl = document.getElementById('root');

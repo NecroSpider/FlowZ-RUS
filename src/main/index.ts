@@ -1,4 +1,13 @@
-import { app, BrowserWindow, dialog, Menu, powerMonitor, shell } from 'electron';
+import {
+  app,
+  BaseWindow,
+  BrowserWindow,
+  dialog,
+  Menu,
+  powerMonitor,
+  session,
+  shell,
+} from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ConfigManager } from './services/ConfigManager';
@@ -55,7 +64,14 @@ import {
   registerRuleResourceHandlers,
   registerStatsSubscriptionHandlers,
 } from './ipc/handlers';
-import { setIpcLogger, registerIpcHandler } from './ipc/ipc-handler';
+import {
+  setIpcLogger,
+  registerIpcHandler,
+  configureTrustedRenderer,
+  isTrustedRendererUrl,
+  isPermissionAllowed,
+  DEV_SERVER_ORIGIN,
+} from './ipc/ipc-handler';
 import { createAutoStartManager } from './services/AutoStartManager';
 import { UpdateService } from './services/UpdateService';
 import { CoreUpdateService } from './services/CoreUpdateService';
@@ -790,7 +806,9 @@ async function createWindow(forceShow = false) {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // 沙箱化渲染进程：preload.ts 只 require('electron')（contextBridge/ipcRenderer/webFrame），只读
+      // process.argv/platform/arch/getHeapStatistics/getProcessMemoryInfo——均在沙箱 preload 的受限 process 内可用。
+      sandbox: true,
       devTools: isDevelopment,
       // OS 偏好语言注入 preload（同步、无 IPC 时序问题）：供 i18n「自动跟随系统」解析。
       //   app.getLocale() 恒返 app bundle locale=en（与系统脱钩，代码多处实证），故必须用 getPreferredSystemLanguages。
@@ -909,6 +927,9 @@ async function createWindow(forceShow = false) {
   }
 
   ipcEventEmitter.registerWindow(mainWindow);
+  lockMainWindowNavigation(mainWindow);
+  // 主窗回来了 → 不再需要 Windows 注销/关机哨兵窗（主窗自身的 session-end 接管）。
+  destroySessionEndSentinel();
 
   // 刷新持有窗口引用的各服务（关窗默认销毁重建后，构造时只捕获一次的引用会永久指向已销毁窗口，
   // 致 ProxyManager 的事件广播 / UpdateService 的更新对话框此后静默失效——见 ProxyManager.setMainWindow 的注释）。
@@ -970,7 +991,7 @@ async function createWindow(forceShow = false) {
   // 开不了。（原注释自述「devTools 仍 enable、可用快捷键打开」与代码矛盾，已更正。）
   const loadAppContent = (win: BrowserWindow) => {
     if (isDevelopment) {
-      win.loadURL('http://localhost:5173').catch((err) => {
+      win.loadURL(DEV_SERVER_ORIGIN).catch((err) => {
         logManager.addLog('error', `Failed to load dev server: ${err.message}`, 'Main');
       });
     } else {
@@ -1254,6 +1275,10 @@ async function createWindow(forceShow = false) {
     updateService?.setMainWindow(null);
     // 轻量 destroy 的 Dock 摘除由模块级 browser-window-created → 'closed' 钩子统一处理（不在此重复）。
     logManager.addLog('info', 'Main window closed', 'Main');
+    // Windows：主窗没了但 app 常驻（轻量模式 / 关窗销毁仍驻托盘）→ 起隐藏哨兵窗接 session-end，否则注销/关机
+    // 不触发任何清理、注册表系统代理残留致重启断网。将退出（pendingQuitOnAllClosed / isQuitting）则不起——
+    // 哨兵窗计入窗口计数，会挡住 window-all-closed 的退出。
+    if (!isQuitting && !pendingQuitOnAllClosed) ensureSessionEndSentinel();
   });
 
   // Windows 系统注销/关机：BrowserWindow 的 win32 'session-end' 是真实事件（app 不发它）。
@@ -1389,11 +1414,84 @@ async function updateTrayMenuState(isProxyRunning: boolean, hasError?: boolean):
   }
 }
 
+// ── 渲染层安全边界 ───────────────────────────────────────────────────────────────────────────────
+// 「本应用页面」= dist/renderer 下的 file:// 页（生产）/ vite dev server 源（开发）。导航锁、IPC 来源校验
+// （ipc-handler.registerIpcHandler）、权限判定共用这一策略（单一真值见 ipc-handler.isAppRendererUrl）。
+configureTrustedRenderer({
+  rendererDir: path.join(__dirname, '../../renderer'),
+  devOrigin: isDevelopment ? DEV_SERVER_ORIGIN : null,
+});
+
+/** 仅 http(s) 外链交系统浏览器（绝不在带 preload 的窗口里打开）；其它 scheme 一律丢弃。 */
+function openHttpExternally(url: string): void {
+  if (/^https?:\/\//i.test(url)) void shell.openExternal(url).catch(() => {});
+}
+
+/** 日志里只记 scheme（URL 可能含 token 等敏感 query）。 */
+function urlSchemeForLog(url: string): string {
+  try {
+    return new URL(url).protocol;
+  } catch {
+    return '<invalid>';
+  }
+}
+
+/**
+ * 主窗导航锁：渲染端发起的导航（拖进窗口的链接/.html 文件、页面内跳转、表单提交）只允许停留在本应用页面；
+ * 重载当前文档放行（含终局 data: 错误页的 location.reload 回退）。主进程 loadURL/loadFile 不触发 will-navigate，
+ * 终局错误页 / fatal:retry 重载不受影响。子窗口一律拒绝，http(s) 改交系统浏览器。
+ */
+function lockMainWindowNavigation(win: BrowserWindow): void {
+  const wc = win.webContents;
+  wc.on('will-navigate', (event, url) => {
+    if (isTrustedRendererUrl(url) || url === wc.getURL()) return;
+    event.preventDefault();
+    logManager?.addLog(
+      'warn',
+      `Blocked main window navigation to a ${urlSchemeForLog(url)} URL`,
+      'Main'
+    );
+    openHttpExternally(url);
+  });
+  wc.setWindowOpenHandler(({ url }) => {
+    openHttpExternally(url);
+    return { action: 'deny' };
+  });
+}
+
+// 全局兜底（任何 webContents，含将来新增的窗口）：默认拒绝子窗口（各窗口可再设自己的 handler 覆盖）、禁 <webview>。
+app.on('web-contents-created', (_event, contents) => {
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  contents.on('will-attach-webview', (event) => event.preventDefault());
+});
+
+/**
+ * 默认会话权限 deny-by-default：仅本应用页面 / 本机 sing-box 面板可获剪贴板写（复制按钮），其它一律拒绝；
+ * HID/串口/USB 设备权限全拒。主窗、更新弹窗、sing-box 面板窗都在默认会话。
+ */
+function installPermissionPolicy(): void {
+  const ses = session.defaultSession;
+  ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const requestingUrl = details?.requestingUrl || wc?.getURL() || '';
+    callback(isPermissionAllowed(permission, requestingUrl));
+  });
+  ses.setPermissionCheckHandler((wc, permission, requestingOrigin, details) => {
+    const requestingUrl = details?.requestingUrl || wc?.getURL() || requestingOrigin || '';
+    return isPermissionAllowed(permission, requestingUrl);
+  });
+  ses.setDevicePermissionHandler(() => false);
+}
+
 if (gotTheLock) {
   // app ready 前注册图标代理 scheme（privileged）：renderer 外部图标 <img> 经 flowz-icon:// 由 main update-in 拉取
   registerIconProtocolSchemes();
   app.whenReady().then(async () => {
     startupMark('whenReady');
+    try {
+      installPermissionPolicy();
+    } catch (e) {
+      console.error('Failed to install the permission policy:', e);
+    }
     // Windows 便携自更新遗留的 .exe.old（旧版本被 stub 锁、上次 rename 挪开的）→ 启动期清理（此刻无进程占用，可删）。
     if (process.env.PORTABLE_EXECUTABLE_DIR) {
       try {
@@ -1569,6 +1667,8 @@ if (gotTheLock) {
       // macOS：无窗口时主动进入菜单栏-only（原静默分支在 presentWindow 内做，现无窗口 → 在此做）；
       // 首次唤出 showWindow 会 restoreDockPresence 复原。
       if (process.platform === 'darwin') hideDockIfMenubarOnly();
+      // Windows：无主窗期间由隐藏哨兵窗接注销/关机 session-end（首次建主窗时销毁）。
+      ensureSessionEndSentinel();
     } else {
       await ensureWindow(); // 走串行化入口，与 activate/托盘/second-instance 共享创建
     }
@@ -2407,6 +2507,55 @@ process.on('SIGTERM', async () => {
   trayManager?.destroyTray();
   process.exit(0);
 });
+
+// ── Windows 注销/关机哨兵窗 ─────────────────────────────────────────────────────────────────────
+// 'session-end' 只由窗口发（app 不发；powerMonitor 'shutdown' 在 win32 不触发）。静默启动 / 轻量模式下 mainWindow
+// 为 null → 注销/关机时无人跑 syncCleanupOnExit → 注册表系统代理残留、重启后断网。故主窗不存在时保留一个隐藏的
+// BaseWindow（无 webContents = 无渲染进程，近乎零开销）只为接 session-end；主窗重建时销毁。仅 win32。
+let sessionEndSentinel: BaseWindow | null = null;
+
+function ensureSessionEndSentinel(): void {
+  if (process.platform !== 'win32' || !gotTheLock || isQuitting) return;
+  if (sessionEndSentinel && !sessionEndSentinel.isDestroyed()) return;
+  if (mainWindow && !mainWindow.isDestroyed()) return;
+  try {
+    const w = new BaseWindow({
+      show: false,
+      width: 1,
+      height: 1,
+      frame: false,
+      skipTaskbar: true,
+      focusable: false,
+      title: 'FlowZ',
+    });
+    w.on('session-end', () => {
+      if (!gotTheLock) return;
+      logManager?.addLog(
+        'warn',
+        'OS session-end detected (no main window), syncing cleanup',
+        'Main'
+      );
+      syncCleanupOnExit();
+    });
+    w.on('closed', () => {
+      if (sessionEndSentinel === w) sessionEndSentinel = null;
+    });
+    sessionEndSentinel = w;
+  } catch (e) {
+    // 哨兵失败只丢失「无窗注销清理」这一兜底，绝不影响启动；下次启动 marker 恢复仍会清残留代理。
+    logManager?.addLog(
+      'warn',
+      `Failed to create the session-end sentinel window: ${e instanceof Error ? e.message : String(e)}`,
+      'Main'
+    );
+  }
+}
+
+function destroySessionEndSentinel(): void {
+  const w = sessionEndSentinel;
+  sessionEndSentinel = null;
+  if (w && !w.isDestroyed()) w.destroy();
+}
 
 // 系统关机/注销 / 进程退出的同步兜底：停代理(fire-and-forget) + 同步关系统代理，防重启后代理残留。
 function syncCleanupOnExit(): void {

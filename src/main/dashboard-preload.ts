@@ -9,13 +9,17 @@
  *  - `sing-box-dashboard.servers`：权威存储 {servers:[{id,name,url,secret}],activeId}（面板渲染/连接实际数据源）。
  *  - `sing-box-dashboard.server` ：旧版迁移键 扁平 {url,secret}（面板读一次即 removeItem 并入 servers 存储）兜底极旧版。
  *
- * payload 经 webPreferences.additionalArguments 以 `--flowz-dashboard-server=<json>` 传入（主进程构造，含运行期动态
- * 端口 + secret），结构 {servers:<对象>, legacy:<对象>}。此窗口是 FlowZ 自有受信内容（本地 127.0.0.1 面板），
- * contextIsolation 关、零 Node 暴露：本脚本只写 localStorage，不 expose 任何 API、不引 ipcRenderer。
+ * 运行环境：contextIsolation:true + sandbox:true。隔离世界与页面共享同源 localStorage，故仍可预写；页面拿不到本脚本
+ * 任何引用。沙箱 preload 只能 require('electron')，故通道名内联（与 helper-handlers.DASHBOARD_BOOTSTRAP_CHANNEL 一致，
+ * 单测钉死）。payload（含运行期动态端口 + secret）经窗口私有**同步** IPC 取——必须同步：异步 invoke 会晚于页面脚本
+ * 读 localStorage。不再经 additionalArguments（命令行对本机其它进程可见）。本脚本不 expose 任何 API。
  */
+import { ipcRenderer } from 'electron';
+
+const DASHBOARD_BOOTSTRAP_CHANNEL = 'dashboard:bootstrap';
 
 // 本文件经 tsconfig.main.json（lib=ES2020，无 DOM）编译，但运行在渲染/页面上下文。经 globalThis 取 localStorage 形状，
-// 避免 `declare const window`（与 base tsconfig 的 DOM lib window 冲突）。运行时 globalThis 即页面 window，同源 localStorage 可写。
+// 避免 `declare const window`（与 base tsconfig 的 DOM lib window 冲突）。隔离世界的 globalThis.localStorage 即页面同源存储。
 const ls = (
   globalThis as {
     localStorage?: {
@@ -25,12 +29,10 @@ const ls = (
   }
 ).localStorage;
 
-const ARG_PREFIX = '--flowz-dashboard-server=';
-
 try {
-  const arg = process.argv.find((a) => a.startsWith(ARG_PREFIX));
-  if (arg && ls) {
-    const payload = JSON.parse(arg.slice(ARG_PREFIX.length)) as {
+  const raw: unknown = ipcRenderer.sendSync(DASHBOARD_BOOTSTRAP_CHANNEL);
+  if (typeof raw === 'string' && raw && ls) {
+    const payload = JSON.parse(raw) as {
       servers?: unknown;
       legacy?: unknown;
       language?: string;
@@ -45,5 +47,5 @@ try {
     }
   }
 } catch {
-  // 写失败（隐私/无痕策略禁 localStorage 等）不阻断面板加载：面板回落自身「添加后端」表单，用户可手填（复制按钮兜底）。
+  // 取 payload / 写失败（隐私策略禁 localStorage 等）不阻断面板加载：面板回落自身「添加后端」表单，用户可手填（复制按钮兜底）。
 }

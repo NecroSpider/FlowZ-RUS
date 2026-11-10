@@ -12,6 +12,14 @@
   ],
   "electronLanguages": ["en-US", "ru", "fa"],
   "asar": true,
+  "electronFuses": {
+    "runAsNode": false,
+    "enableNodeOptionsEnvironmentVariable": false,
+    "enableNodeCliInspectArguments": false,
+    "enableEmbeddedAsarIntegrityValidation": true,
+    "onlyLoadAppFromAsar": true,
+    "resetAdHocDarwinSignature": true
+  },
   "win": {
     "target": [
       {
