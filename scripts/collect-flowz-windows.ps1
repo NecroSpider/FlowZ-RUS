@@ -44,7 +44,7 @@ function Test-Endpoint([string]$HostName, [int]$Port, [string]$Path) {
     }
   }
   $http = @{ available = $false }
-  $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue
+  $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($curl) {
     $url = 'https://{0}:{1}{2}' -f $HostName, $Port, $Path
     $status = & $curl.Source -q --noproxy '*' --silent --head --output NUL --write-out '%{http_code}' --connect-timeout 4 --max-time 8 $url
