@@ -149,6 +149,13 @@ import {
 import { ruleConditions } from '../../shared/rules';
 import { planCustomRule, buildCustomRuleFiles, condMatcherFields } from './custom-rule-files';
 import { resolveWinTunInterfaceName, WIN_TUN_ROTATION_SLOTS } from '../../shared/tun-interface';
+import { DEFAULT_DOMESTIC_DNS } from '../../shared/dns';
+import { ensureYandexDnsPlan, getYandexDnsPlan } from './dns-reachability';
+import {
+  applyYandexDnsPlanToPool,
+  isDefaultYandexDnsPlan,
+  yandexDohUrl,
+} from '../../shared/dns-failover';
 import { findMemoryOffenders } from '../../shared/process-metrics';
 import {
   MemoryTimelineRing,
@@ -908,6 +915,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.rejectIfCoreSwapInProgress('proxy start');
     // Windows：本次起核换一个新的 TUN 接口名（须在下方释放门预热与配置生成**之前**定，后续各处都读 winTunNameFor）。
     this.rotateWinTunName(config);
+    // Which Yandex DoH addresses answer on this network (a blocked default makes every direct domain fail to resolve).
+    // Started now so it overlaps with the other preparation; awaited right before the race resolver is built.
+    const dnsPlanProbe = ensureYandexDnsPlan(0);
     // B1：清掉上一次 start 可能遗留的释放门预热（那次 start 若在首腿之前就抛错，promise 会没人消费）。
     //   必须在本方法**入口**清、且在下方重新 arm 之前——否则首腿会吃到一个早于本次 stop/killOrphans 的陈旧结论。
     this.pendingAdapterReleaseGate = null;
@@ -1172,6 +1182,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 3.9 issue #147：节点 outbound.server 恒用域名（buildProxyOutbound）→ 内核 resolveDialer 运行时解析多 A →
     //     DialSerial 逐 IP 重试（取代旧 resolve-ahead 烧单 IP，那会关闭内核多 IP 容错，见设计 §1.1）。多上游 race
     //     的本地 server 起停 + effective config 降级见下（startNodeDnsRaceServer）。
+    {
+      const plan = await dnsPlanProbe;
+      if (!isDefaultYandexDnsPlan(plan)) {
+        this.logToManager(
+          'warn',
+          plan.useSafePool
+            ? `Yandex DNS 77.88.8.8 / 77.88.8.1 are unreachable on this network, using Yandex Safe (${plan.primaryIp}) for bootstrap, domestic DNS and the node-domain race`
+            : `Yandex DNS 77.88.8.8 is unreachable on this network, using ${plan.primaryIp} for bootstrap and domestic DNS`
+        );
+      }
+    }
     await this.startNodeDnsRaceServer(config);
     this.markStart('dnsRace');
 
@@ -3894,7 +3915,7 @@ done
     }
     const dns = config.dnsConfig;
     const ups = resolveUpstreams(
-      dns?.nodeResolverPool ?? DEFAULT_POOL_IDS,
+      applyYandexDnsPlanToPool(dns?.nodeResolverPool ?? DEFAULT_POOL_IDS, getYandexDnsPlan()),
       dns?.nodeResolverCustom
     );
     try {
@@ -3922,6 +3943,18 @@ done
       ...config,
       dnsConfig: { ...config.dnsConfig, resolveNodeDomainsAhead: false } as UserConfig['dnsConfig'],
     };
+  }
+
+  /**
+   * The primary Yandex DoH addresses are unreachable here (probed at start): use the address that answers for the
+   * default domestic DNS. Only the untouched default is replaced; a domestic DNS the user typed in stays as it is.
+   */
+  private withYandexDnsPlan(config: UserConfig): UserConfig {
+    const ip = getYandexDnsPlan().primaryIp;
+    const dns = config.dnsConfig;
+    if (!ip || !dns) return config;
+    if (dns.domesticDns && dns.domesticDns !== DEFAULT_DOMESTIC_DNS) return config;
+    return { ...config, dnsConfig: { ...dns, domesticDns: yandexDohUrl(ip) } };
   }
 
   /** 与工作 VPN 共存是否生效（macOS / Windows；缺省开）。 */
@@ -4166,7 +4199,7 @@ done
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig {
     // issue #147：race server 就绪(raceServerPort>0)才走 race 解析；否则（off/起失败/snapshot/preflight/诊断）
     // 强制 race off → getNodeResolverTag/buildDnsConfig 一致走单上游、不引用 dns-node-race（防 FATAL，快照零变化）。
-    const cfg = this.raceServerPort > 0 ? config : this.withRaceOff(config);
+    const cfg = this.withYandexDnsPlan(this.raceServerPort > 0 ? config : this.withRaceOff(config));
     // 全局直连哨兵（#73 proxifier）：无真实选中节点，proxy-selector default=direct（在 buildOutbounds 内置）。
     const isDirect = isDirectSelection(config.selectedServerId);
     const selectedServer = isDirect
@@ -4225,7 +4258,9 @@ done
         this.probePoolPorts,
         // V37 出口伴测 / 出口 IP 探测（§17.5）：注入 dns-probe-exit-proxy(EXIT_RESOLVER_IP DoH:443) + probe-proxy-in inbound rule
         // ——治 WG/WARP 伴测无值，且 DoH/TCP 全栈通（不踩 TS-exit UDP 弱腿）。
-        this.probeProxyPort
+        this.probeProxyPort,
+        // 启动时探测到默认 Yandex 地址不可达 → dns-bootstrap 改用可达的那个（null = 保持内置默认）。
+        getYandexDnsPlan().primaryIp ?? undefined
       ),
       inbounds: buildInbounds(config, resolvedIps, {
         probeDirectPort: this.probeDirectPort,

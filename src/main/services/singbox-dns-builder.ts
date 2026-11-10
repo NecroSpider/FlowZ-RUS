@@ -105,7 +105,10 @@ export function buildDnsConfig(
   // detour=proxy-selector) + inbound 键控 rule，把探测目标域名解析绕过 S0/S1、穿当前出口隧道解析（解析视角=出口 geo 正确），
   // 且 transport(DoH/TCP)+resolver(China-reachable) 全栈通（治 WG/WARP 伴测无值 · 不踩 TS-exit UDP 弱腿 · 不踩大陆出口
   // dns.google 超时）。null/缺省=不注入（无 probe-proxy-in）。
-  probeProxyPort: number | null = null
+  probeProxyPort: number | null = null,
+  // The reachable Yandex DoH address to use for dns-bootstrap when the default 77.88.8.8 is blocked (shared/dns-failover).
+  // undefined = the built-in default.
+  bootstrapDohIp?: string
 ): SingBoxDnsConfig {
   const proxyMode = (config.proxyMode || 'smart').toLowerCase();
 
@@ -174,7 +177,7 @@ export function buildDnsConfig(
       // 相比 UDP 53，对运营商的 UDP 53 限速/劫持/投毒免疫，避免节点域名解析失败导致断流。
       tag: 'dns-bootstrap',
       type: 'https',
-      server: DOH_YANDEX_IP,
+      server: bootstrapDohIp ?? DOH_YANDEX_IP,
       server_port: 443,
       path: '/dns-query',
     },

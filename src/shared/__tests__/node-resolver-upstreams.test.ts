@@ -13,6 +13,8 @@ import { DOH_ALIDNS_IP, DOH_DNSPOD_IP } from '../dns';
 
 describe('内置上游单一真值', () => {
   it('ali/dnspod=Tier1 DoH，IP 派生 DOH_*_IP；system=Tier2', () => {
+    expect(BUILTIN_UPSTREAMS.yandexSafe).toMatchObject({ ip: '77.88.8.88', http2: true, tier: 1 });
+    expect(BUILTIN_UPSTREAMS.yandexSafe2).toMatchObject({ ip: '77.88.8.2', http2: true, tier: 1 });
     expect(BUILTIN_UPSTREAMS.ali).toMatchObject({ kind: 'doh', ip: DOH_ALIDNS_IP, tier: 1 });
     expect(BUILTIN_UPSTREAMS.dnspod).toMatchObject({ kind: 'doh', ip: DOH_DNSPOD_IP, tier: 1 });
     expect(BUILTIN_UPSTREAMS.system).toMatchObject({ kind: 'system', tier: 2 });

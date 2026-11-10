@@ -6,6 +6,8 @@ import {
   DOH_DNSPOD_IP,
   DOH_YANDEX_ALT_IP,
   DOH_YANDEX_IP,
+  DOH_YANDEX_SAFE_ALT_IP,
+  DOH_YANDEX_SAFE_IP,
   isBootstrapDirectDnsIp,
 } from '../dns';
 import {
@@ -51,6 +53,8 @@ describe('受控 DNS IP 选择守卫（核心不变量）', () => {
     expect(BOOTSTRAP_DIRECT_DNS_IPS).toEqual([
       '77.88.8.8',
       '77.88.8.1',
+      '77.88.8.88',
+      '77.88.8.2',
       '223.5.5.5',
       '223.6.6.6',
       '1.12.12.12',
@@ -71,6 +75,8 @@ describe('受控 DNS IP 选择守卫（核心不变量）', () => {
     expect(DOH_UPSTREAM_IPS).toEqual([
       DOH_YANDEX_IP,
       DOH_YANDEX_ALT_IP,
+      DOH_YANDEX_SAFE_IP,
+      DOH_YANDEX_SAFE_ALT_IP,
       DOH_ALIDNS_IP,
       DOH_DNSPOD_IP,
     ]);

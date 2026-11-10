@@ -754,6 +754,8 @@
       "nodeResolverFallbackHint": "Used only if all DoH fail; doesn't count toward the limit.",
       "nodeResolverYandex": "Yandex DNS (DoH)",
       "nodeResolverYandex2": "Yandex DNS backup (DoH)",
+      "nodeResolverYandexSafe": "Yandex DNS Safe (DoH, filters unsafe sites)",
+      "nodeResolverYandexSafe2": "Yandex DNS Safe, backup (DoH)",
       "nodeResolverAli": "AliDNS (DoH)",
       "nodeResolverAddCustom": "+ Add custom upstream",
       "nodeResolverCustomPlaceholder": "1.1.1.1 or https://1.1.1.1/dns-query",

@@ -9,11 +9,20 @@ import { isIpv4 } from './ip';
  */
 export const DOH_YANDEX_IP = '77.88.8.8';
 export const DOH_YANDEX_ALT_IP = '77.88.8.1';
+/**
+ * Yandex DNS "Safe" mode (77.88.8.88 / 77.88.8.2): same Russian operator and the same IP-DoH over HTTP/2, but other
+ * addresses - a reserve for networks that block 77.88.8.8 / 77.88.8.1. It filters malicious/adult domains, so it is never
+ * the primary DNS: it is substituted only when the primary addresses are unreachable (see shared/dns-failover.ts).
+ */
+export const DOH_YANDEX_SAFE_IP = '77.88.8.88';
+export const DOH_YANDEX_SAFE_ALT_IP = '77.88.8.2';
 export const DOH_ALIDNS_IP = '223.5.5.5';
 export const DOH_DNSPOD_IP = '1.12.12.12';
 export const DOH_UPSTREAM_IPS: readonly string[] = [
   DOH_YANDEX_IP,
   DOH_YANDEX_ALT_IP,
+  DOH_YANDEX_SAFE_IP,
+  DOH_YANDEX_SAFE_ALT_IP,
   DOH_ALIDNS_IP,
   DOH_DNSPOD_IP,
 ];
@@ -44,6 +53,8 @@ export const EXIT_RESOLVER_IP = '8.8.8.8';
 export const BOOTSTRAP_DIRECT_DNS_IPS: readonly string[] = [
   DOH_YANDEX_IP, // 77.88.8.8（Yandex IP-DoH：dns-bootstrap / 国内 DNS 默认 / race 池默认）
   DOH_YANDEX_ALT_IP, // 77.88.8.1（Yandex 备，race 池默认第二路）
+  DOH_YANDEX_SAFE_IP, // 77.88.8.88 (Yandex Safe: reserve when the primary addresses are blocked)
+  DOH_YANDEX_SAFE_ALT_IP, // 77.88.8.2 (Yandex Safe, second address)
   DOH_ALIDNS_IP, // 223.5.5.5（AliDNS IP-DoH 上游）
   '223.6.6.6',
   DOH_DNSPOD_IP, // 1.12.12.12（DNSPod IP-DoH 上游，#57）

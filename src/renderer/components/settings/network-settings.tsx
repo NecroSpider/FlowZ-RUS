@@ -1238,6 +1238,8 @@ function NodeResolverSection({
   const tier1Items: { id: string; label: string; custom?: CustomDnsUpstream }[] = [
     { id: 'yandex', label: t('settings.advanced.nodeResolverYandex') },
     { id: 'yandex2', label: t('settings.advanced.nodeResolverYandex2') },
+    { id: 'yandexSafe', label: t('settings.advanced.nodeResolverYandexSafe') },
+    { id: 'yandexSafe2', label: t('settings.advanced.nodeResolverYandexSafe2') },
     { id: 'ali', label: t('settings.advanced.nodeResolverAli') },
     { id: 'dnspod', label: t('settings.advanced.nodeResolverDnspod') },
     ...customTier1.map((c) => ({ id: c.id, label: c.spec, custom: c })),

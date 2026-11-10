@@ -3,7 +3,7 @@
  * 覆盖：HIT 抢跑 / EMPTY 不抢跑 / 全 EMPTY→空 / 全 FAIL→SERVFAIL / Tier2 兜底 / id 回填 / 畸形→SERVFAIL。
  */
 import { encodeDnsQuery, decodeDnsQuestion, classifyDnsResponse } from '../dns-wire';
-import { raceForward, type UpstreamQueryFn } from '../node-dns-race';
+import { raceForward, resetRaceFailLogStateForTest, type UpstreamQueryFn } from '../node-dns-race';
 import type { ResolveUpstream } from '../node-resolver-upstreams';
 
 const U = (id: string, tier: 1 | 2 = 1): ResolveUpstream => ({
@@ -261,5 +261,44 @@ describe('classifyDnsResponse 边界（review 修复）', () => {
     const ansStart = r.length - 16;
     new DataView(r.buffer, r.byteOffset, r.byteLength).setUint16(ansStart + 4, 0x0003); // class CH
     expect(classifyDnsResponse(r, 1)).toBe('EMPTY');
+  });
+});
+
+describe('upstream failure logging', () => {
+  beforeEach(() => resetRaceFailLogStateForTest());
+
+  const failAll = (): UpstreamQueryFn => async (up) => {
+    throw new Error(`connect ETIMEDOUT ${up.id}`);
+  };
+
+  it('logs one warning naming every upstream and its reason when all of them fail', async () => {
+    const log = jest.fn();
+    await raceForward(
+      makeQ(),
+      { tier1: [U('yandex'), U('yandex2')], tier2: [] },
+      { query: failAll(), log }
+    );
+    const warns = log.mock.calls.filter(([level]) => level === 'warn');
+    expect(warns).toHaveLength(1);
+    expect(warns[0][1]).toContain('yandex: connect ETIMEDOUT yandex');
+    expect(warns[0][1]).toContain('yandex2: connect ETIMEDOUT yandex2');
+  });
+
+  it('does not repeat the warning for the same upstream set within the interval', async () => {
+    const log = jest.fn();
+    const ups = { tier1: [U('yandex'), U('yandex2')], tier2: [] };
+    for (let i = 0; i < 5; i++) await raceForward(makeQ(), ups, { query: failAll(), log });
+    expect(log.mock.calls.filter(([level]) => level === 'warn')).toHaveLength(1);
+  });
+
+  it('stays quiet when an upstream answers', async () => {
+    const log = jest.fn();
+    const q = makeQ();
+    await raceForward(
+      q,
+      { tier1: [U('a'), U('b')], tier2: [] },
+      { query: mockQuery(q, { a: { fail: true }, b: { kind: 'HIT' } }), log }
+    );
+    expect(log.mock.calls.filter(([level]) => level === 'warn')).toHaveLength(0);
   });
 });

@@ -39,6 +39,7 @@ interface SpeedTestRunContext {
 import { isEndpointProtocol, isSpeedTestable } from '../../shared/endpoint-routes';
 import { normalizeDuration } from '../../shared/duration';
 import { DOH_YANDEX_IP, EXIT_RESOLVER_IP } from '../../shared/dns';
+import { ensureYandexDnsPlan, getYandexDnsPlan } from './dns-reachability';
 
 /** 基于 UDP/QUIC 的协议，需要走真实代理测速 */
 const UDP_PROTOCOLS = new Set(['hysteria2', 'tuic']);
@@ -472,6 +473,7 @@ export class SpeedTestService {
       usable.forEach((u, idx) => serverPortMap.set(u.server.id, ports[idx]));
 
       // 2. 生成临时 sing-box 配置（每节点独立 HTTP 入站 → 该节点出站；端点目标解析走穿隧道 EXIT_RESOLVER_IP，geo 正确）
+      await ensureYandexDnsPlan(5 * 60_000);
       const config = this.generateProxyTestConfig(usable, serverPortMap);
       tempConfig = config;
 
@@ -820,7 +822,8 @@ export class SpeedTestService {
       {
         tag: 'dns-direct',
         type: 'https',
-        server: DOH_YANDEX_IP,
+        // The default Yandex address is blocked on some networks; the plan names one that answers.
+        server: getYandexDnsPlan().primaryIp ?? DOH_YANDEX_IP,
         server_port: 443,
         path: '/dns-query',
       },

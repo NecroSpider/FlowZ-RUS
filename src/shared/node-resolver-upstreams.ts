@@ -12,6 +12,8 @@ import {
   DOH_DNSPOD_IP,
   DOH_YANDEX_ALT_IP,
   DOH_YANDEX_IP,
+  DOH_YANDEX_SAFE_ALT_IP,
+  DOH_YANDEX_SAFE_IP,
   parseDnsServerSpec,
 } from './dns';
 import type { CustomDnsUpstream } from './types';
@@ -32,7 +34,14 @@ export interface ResolveUpstream {
 export const MAX_TIER1_UPSTREAMS = 3;
 
 /** 内置上游 id。 */
-export type BuiltinUpstreamId = 'yandex' | 'yandex2' | 'ali' | 'dnspod' | 'system';
+export type BuiltinUpstreamId =
+  | 'yandex'
+  | 'yandex2'
+  | 'yandexSafe'
+  | 'yandexSafe2'
+  | 'ali'
+  | 'dnspod'
+  | 'system';
 
 /** 内置上游单一真值（id → ResolveUpstream），IP 派生 DOH_*_IP，杜绝硬编漂移。 */
 export const BUILTIN_UPSTREAMS: Record<BuiltinUpstreamId, ResolveUpstream> = {
@@ -49,6 +58,26 @@ export const BUILTIN_UPSTREAMS: Record<BuiltinUpstreamId, ResolveUpstream> = {
     id: 'yandex2',
     kind: 'doh',
     ip: DOH_YANDEX_ALT_IP,
+    port: 443,
+    path: '/dns-query',
+    http2: true,
+    tier: 1,
+  },
+  // Yandex "Safe" mode: reserve for networks that block 77.88.8.8 / 77.88.8.1 (see shared/dns-failover.ts). Filters
+  // malicious/adult domains, so it is not in DEFAULT_POOL_IDS; ProxyManager swaps it in when the primary pair is down.
+  yandexSafe: {
+    id: 'yandexSafe',
+    kind: 'doh',
+    ip: DOH_YANDEX_SAFE_IP,
+    port: 443,
+    path: '/dns-query',
+    http2: true,
+    tier: 1,
+  },
+  yandexSafe2: {
+    id: 'yandexSafe2',
+    kind: 'doh',
+    ip: DOH_YANDEX_SAFE_ALT_IP,
     port: 443,
     path: '/dns-query',
     http2: true,

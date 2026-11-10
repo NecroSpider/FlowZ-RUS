@@ -754,6 +754,8 @@
       "nodeResolverFallbackHint": "Используется только если все DoH не сработали; не учитывается в лимите.",
       "nodeResolverYandex": "Яндекс DNS (DoH)",
       "nodeResolverYandex2": "Яндекс DNS, резерв (DoH)",
+      "nodeResolverYandexSafe": "Яндекс DNS Safe (DoH, фильтрует опасные сайты)",
+      "nodeResolverYandexSafe2": "Яндекс DNS Safe, резерв (DoH)",
       "nodeResolverAli": "AliDNS (DoH)",
       "nodeResolverAddCustom": "+ Добавить свой upstream",
       "nodeResolverCustomPlaceholder": "1.1.1.1 или https://1.1.1.1/dns-query",

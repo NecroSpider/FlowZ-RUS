@@ -754,6 +754,8 @@
       "nodeResolverFallbackHint": "فقط در صورت شکست همهٔ DoH استفاده می‌شود؛ در سهمیه حساب نمی‌شود.",
       "nodeResolverYandex": "Yandex DNS (DoH)",
       "nodeResolverYandex2": "Yandex DNS پشتیبان (DoH)",
+      "nodeResolverYandexSafe": "Yandex DNS Safe (DoH، سایت‌های ناامن را فیلتر می‌کند)",
+      "nodeResolverYandexSafe2": "Yandex DNS Safe پشتیبان (DoH)",
       "nodeResolverAli": "AliDNS (DoH)",
       "nodeResolverAddCustom": "+ افزودن upstream سفارشی",
       "nodeResolverCustomPlaceholder": "1.1.1.1 یا https://1.1.1.1/dns-query",

@@ -44,6 +44,33 @@ interface TierResult {
   empty?: Uint8Array;
 }
 
+/** At most one "every upstream failed" line per upstream set per interval, so a dead network cannot flood the log. */
+const FAIL_LOG_INTERVAL_MS = 30_000;
+const lastFailLogAt = new Map<string, number>();
+
+/** Test hook: forget the rate-limit state. */
+export function resetRaceFailLogStateForTest(): void {
+  lastFailLogAt.clear();
+}
+
+function logTierFailure(
+  log: ((level: 'debug' | 'info' | 'warn', message: string) => void) | undefined,
+  upstreams: readonly ResolveUpstream[],
+  errors: readonly string[],
+  pending: number,
+  now: number = Date.now()
+): void {
+  if (!log) return;
+  const key = upstreams.map((u) => u.id).join(',');
+  if (now - (lastFailLogAt.get(key) ?? -Infinity) < FAIL_LOG_INTERVAL_MS) return;
+  lastFailLogAt.set(key, now);
+  const reasons = errors.length > 0 ? errors.join('; ') : 'no reason reported';
+  log(
+    'warn',
+    `dns-race: no upstream answered (${reasons}${pending > 0 ? `; ${pending} still pending when the time budget ran out` : ''}). Resolution of direct domains fails until one of them is reachable`
+  );
+}
+
 /**
  * 单层 race：并发查一组上游。HIT 抢跑（first wins，取消其余）；无 HIT 等全部 settle、记录任一 EMPTY 整包。
  * 外部 budgetSignal abort → 用已收集到的 EMPTY 收口（仍取消 in-flight）。
@@ -61,6 +88,7 @@ function raceTier(
     let pending = upstreams.length;
     let empty: Uint8Array | undefined;
     let settled = false;
+    const errors: string[] = [];
     const ctrl = new AbortController();
     const finish = (r: TierResult) => {
       if (settled) return;
@@ -69,7 +97,10 @@ function raceTier(
       ctrl.abort(); // 取消其余 in-flight
       resolve(r);
     };
-    const onBudget = () => finish({ empty });
+    const onBudget = () => {
+      if (!empty) logTierFailure(log, upstreams, errors, pending);
+      finish({ empty });
+    };
     if (budgetSignal.aborted) {
       resolve({});
       return;
@@ -95,9 +126,13 @@ function raceTier(
           if (cls === 'EMPTY' && !empty) empty = resp;
           if (--pending === 0) finish({ empty });
         },
-        () => {
+        (err: unknown) => {
           if (settled) return;
-          if (--pending === 0) finish({ empty }); // FAIL：不抢跑，递减
+          errors.push(`${up.id}: ${err instanceof Error ? err.message : String(err)}`);
+          if (--pending === 0) {
+            if (!empty) logTierFailure(log, upstreams, errors, 0);
+            finish({ empty }); // FAIL：不抢跑，递减
+          }
         }
       );
     }
