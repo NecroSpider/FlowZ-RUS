@@ -49,11 +49,15 @@ export function registerCoreUpdateHandlers() {
 
   registerIpcHandler(
     IPC_CHANNELS.CORE_REPLACE_MANUAL,
-    async (_, opts?: { filePath?: string; force?: boolean }) => {
+    async (_, opts?: { token?: string; force?: boolean }) => {
       if (!coreUpdateService) {
         throw new Error('CoreUpdateService not initialized');
       }
-      return await coreUpdateService.replaceManualCore(opts);
+      // 渲染端只能传文件框换来的不透明 token，不能传路径（防任意本机文件被装成核心）。
+      return await coreUpdateService.replaceManualCoreFromRenderer({
+        token: typeof opts?.token === 'string' ? opts.token : undefined,
+        force: opts?.force === true,
+      });
     }
   );
 

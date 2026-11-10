@@ -26,6 +26,7 @@ import { validateTlsSpoof } from '../../shared/tls-spoof';
 import { isIpLiteral } from '../../shared/dns';
 import { normalizeUtlsFingerprint } from '../../shared/utls-fingerprint';
 import { tailscaleStateDir } from './tailscale-state';
+import { customOutboundRejectReason } from '../../shared/config-portability';
 import {
   effectiveCustomRules,
   effectiveAppRules,
@@ -185,6 +186,13 @@ export function buildProxyOutbound(
   if (protocol === 'custom') {
     // 强制覆盖 tag、剥离 detour：内层 detour 会绕过 FlowZ 的代理链环检测（仅走 server.detour）且 sing-box check
     // 测不出 detour 环 → 运行时拨号死循环。FlowZ 经 detour 字段统一管理链路，自定义透传不携带内层 detour。
+    // 安全闸（单一 choke point：核启动 buildOutbounds 与测速 buildSpeedTestOutbound 都经此）：tor（可拉起本机
+    // 程序）与含可执行/文件系统路径键的透传 outbound 一律拒绝——自定义 JSON 可来自订阅/文件导入/备份恢复。
+    // throw → 调用方逐节点 catch：buildOutbounds 记 warn 跳过该节点，测速返回 null。
+    const reject = customOutboundRejectReason(server.customSettings?.outbound);
+    if (reject) {
+      throw new Error(`custom outbound refused: ${reject}`);
+    }
     const { detour: _drop, ...userOutbound } = (server.customSettings?.outbound || {}) as Record<
       string,
       unknown
@@ -932,6 +940,12 @@ export function buildOutbounds(
       // 自定义协议标记为 endpoint 类型（第三方类 wireguard/tailscale 实现）→ 进 endpoints[]；
       // 否则走下方普通 outbound 路径。tag 由 generateProxyOutbound/此处统一注入。
       if (server.protocol.toLowerCase() === 'custom' && server.customSettings?.isEndpoint) {
+        // 与 buildProxyOutbound 同一安全闸（endpoint 形态不经 buildProxyOutbound，须单独拦）。
+        const reject = customOutboundRejectReason(server.customSettings.outbound);
+        if (reject) {
+          deps.log('warn', `Custom node refused, skipped: ${server.name} (${reject})`);
+          continue;
+        }
         const { detour: _d, ...epOutbound } = (server.customSettings.outbound || {}) as Record<
           string,
           unknown

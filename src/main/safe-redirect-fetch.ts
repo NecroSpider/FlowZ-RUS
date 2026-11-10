@@ -42,8 +42,8 @@ export interface SafeRedirectFetchOptions<R extends MinimalResponse> {
   /** 起始 URL，调用方已保证为 http(s)。 */
   url: string;
   userAgent: string;
-  /** 附加请求头（§16.3.4 条件 GET 的 If-None-Match / If-Modified-Since，缓存验证器非凭据，逐跳携带无泄漏面）。
-   *  与 User-Agent 合并（同名以本字段为准）；缺省不加。 */
+  /** 附加请求头（§16.3.4 条件 GET 的 If-None-Match / If-Modified-Since；订阅设备标识 x-hwid 等）。
+   *  与 User-Agent 合并（同名以本字段为准）；缺省不加。跨源重定向一跳起仅保留 CROSS_ORIGIN_SAFE_HEADERS。 */
   headers?: Record<string, string>;
   /** 仅实际经代理（proxied socks 出口、本机内网不可达）时豁免 FlowZ FakeIP；直连/端口回退传 false。 */
   exemptFakeIp: boolean;
@@ -61,6 +61,48 @@ export interface SafeRedirectFetchOptions<R extends MinimalResponse> {
 }
 
 const DEFAULT_MAX_REDIRECTS = 5;
+
+/**
+ * 跨源重定向后仍可携带的请求头（小写）：缓存验证器（§16.3.4 条件 GET 的 validator 来自终态源，跨源跳转后
+ * 正需要它）与内容协商头。其余一律视为凭据/身份（x-hwid / x-device-* 设备标识、Authorization、Cookie…）在
+ * 跨源一跳起剥离——白名单 fail-closed，新增身份头无需记得登记。User-Agent 由 helper 单独下发、恒携带。
+ */
+const CROSS_ORIGIN_SAFE_HEADERS = new Set([
+  'if-none-match',
+  'if-modified-since',
+  'accept',
+  'accept-language',
+]);
+
+const defaultPort = (u: URL): string => u.port || (u.protocol === 'https:' ? '443' : '80');
+
+/**
+ * 两跳是否「同源」（可继续携带身份头）：scheme+host+port 全同；或同 host 的 http→https 升级（默认端口）——
+ * 面板常把 http 订阅地址 301 到 https，剥掉设备头会让设备数限制面板视为「未带 HWID」。https→http 降级不算同源
+ * （明文泄漏）。
+ */
+export function isSameOriginHop(from: URL, to: URL): boolean {
+  if (from.hostname.toLowerCase() !== to.hostname.toLowerCase()) return false;
+  if (from.protocol === to.protocol) return defaultPort(from) === defaultPort(to);
+  return (
+    from.protocol === 'http:' &&
+    to.protocol === 'https:' &&
+    defaultPort(from) === '80' &&
+    defaultPort(to) === '443'
+  );
+}
+
+/** 剥离跨源不可携带的头（见 CROSS_ORIGIN_SAFE_HEADERS）。 */
+export function stripCrossOriginHeaders(
+  headers: Record<string, string> | undefined
+): Record<string, string> | undefined {
+  if (!headers) return headers;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    if (CROSS_ORIGIN_SAFE_HEADERS.has(k.toLowerCase())) out[k] = v;
+  }
+  return out;
+}
 
 /** 释放响应体，避免丢弃上一跳 body 时 socket/内存泄漏。 */
 async function drainBody(r: MinimalResponse): Promise<void> {
@@ -90,6 +132,8 @@ export async function safeRedirectFetch<R extends MinimalResponse>(
   const maxRedirects = Math.max(0, opts.maxRedirects ?? DEFAULT_MAX_REDIRECTS);
   const lookup: DnsLookupAll = opts.lookup ?? ((h) => dnsPromises.lookup(h, { all: true }));
   let currentUrl = opts.url;
+  // 逐跳请求头：一旦跨源即剥离身份/凭据头，且此后不再恢复（即便又跳回原源，对齐 fetch 规范语义）。
+  let hopHeaders = opts.headers;
 
   // 首跳 guard（起始 URL 协议由调用方保证为 http(s)）；用户亲手填写的起始 URL 免检（见 trustInitialUrl）。
   if (!opts.trustInitialUrl) await guard(new URL(currentUrl), lookup, opts.exemptFakeIp);
@@ -97,7 +141,7 @@ export async function safeRedirectFetch<R extends MinimalResponse>(
   let response: R | null = null;
   for (let hop = 0; hop <= maxRedirects; hop++) {
     response = await opts.fetchImpl(currentUrl, {
-      headers: { 'User-Agent': opts.userAgent, ...opts.headers },
+      headers: { 'User-Agent': opts.userAgent, ...hopHeaders },
       redirect: 'manual',
       ...(opts.signal ? { signal: opts.signal } : {}),
     });
@@ -128,6 +172,9 @@ export async function safeRedirectFetch<R extends MinimalResponse>(
       );
     }
     await guard(nextObj, lookup, opts.exemptFakeIp); // 重定向目标过同一 guard（含 DNS 解析）
+    if (!isSameOriginHop(new URL(currentUrl), nextObj)) {
+      hopHeaders = stripCrossOriginHeaders(hopHeaders);
+    }
     currentUrl = nextObj.toString();
   }
 

@@ -15,6 +15,8 @@ import { load as yamlLoad } from 'js-yaml';
 import type { ServerConfig, Protocol } from '../../shared/types';
 import { normalizeDuration } from '../../shared/duration';
 import { dedupeTrim } from '../../shared/collections';
+import * as vm from 'vm';
+import { certPinWarning, unsupportedVlessEncryption, vlessEncryptionError } from './ProtocolParser';
 
 // ── 探测正则 / 校验 ──────────────────────────────────────────────────────────
 /** 内联 proxies: 或 proxy-providers: 任一命中即「确为 Clash 意图」。 */
@@ -157,8 +159,15 @@ export function tryLoadClashDoc(trimmed: string): ClashDoc {
   try {
     doc = yamlLoad(trimmed, { json: true });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Failed to parse Clash YAML: ${msg}`);
+    // 不用 e.message：js-yaml 的 message 附带出错位置前后几行源码片段（code frame），订阅正文里就是
+    // `password: …` / `uuid: …` → 经日志/诊断报告泄密。只取 reason + 行列号。
+    const ye = e as { reason?: unknown; mark?: { line?: unknown; column?: unknown } };
+    const reason = typeof ye?.reason === 'string' && ye.reason ? ye.reason : 'invalid YAML';
+    const line = typeof ye?.mark?.line === 'number' ? ye.mark.line + 1 : undefined;
+    const col = typeof ye?.mark?.column === 'number' ? ye.mark.column + 1 : undefined;
+    const where =
+      line !== undefined ? ` (line ${line}${col !== undefined ? `, column ${col}` : ''})` : '';
+    throw new Error(`Failed to parse Clash YAML: ${reason}${where}`);
   }
   if (!doc || typeof doc !== 'object') {
     throw new Error(
@@ -338,7 +347,7 @@ function applySsPlugin(
 
 // ── 单节点映射 ───────────────────────────────────────────────────────────────
 type NodeOutcome =
-  | { kind: 'server'; server: ServerConfig }
+  | { kind: 'server'; server: ServerConfig; warning?: string }
   | { kind: 'skip'; reason: string }
   | { kind: 'fail'; reason: string };
 
@@ -393,6 +402,9 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       const uuid = str(p['uuid']);
       if (!uuid) return { kind: 'fail', reason: `vless node "${name}" missing uuid` };
       config.uuid = uuid;
+      // mihomo vless 的 encryption 若是 VLESS Encryption（mlkem768x25519plus.…）→ 内核不支持，同 xhttp 口径拒绝。
+      const encMethod = unsupportedVlessEncryption(p['encryption']);
+      if (encMethod) throw vlessEncryptionError(encMethod);
       config.encryption = 'none';
       const flow = str(p['flow']);
       if (flow) config.flow = flow;
@@ -585,12 +597,25 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       if (Object.keys(ssh).length > 0) config.sshSettings = ssh;
     }
 
+    // Clash `fingerprint` = 服务端证书 SHA-256 钉扎（≠ client-fingerprint 的 uTLS 指纹）。sing-box 无整证书钉扎，
+    // 无法执行；节点保留（用户依赖），逐节点告警——与 skip-cert-verify 同在时连接完全未校验。
+    const certPin = str(p['fingerprint']);
+    if (certPin && config.security === 'tls') {
+      return {
+        kind: 'server',
+        server: config,
+        warning: certPinWarning(name, 'fingerprint', config.tlsSettings?.allowInsecure === true),
+      };
+    }
     return { kind: 'server', server: config };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { kind: 'fail', reason: `node "${name}" mapping error: ${msg}` };
   }
 }
+
+/** 逐节点告警（证书钉扎无法执行）的条数上限，其余汇总。 */
+const MAX_PER_NODE_WARNINGS = 20;
 
 // ── 批量解析 ─────────────────────────────────────────────────────────────────
 /**
@@ -613,11 +638,17 @@ export function parseClashProxies(
 
   const skipByReason = new Map<string, number>();
   const failReasons: string[] = [];
+  let pinWarnings = 0;
 
   for (const proxy of proxies) {
     const outcome = mapNode(proxy, subscriptionId, now);
     if (outcome.kind === 'server') {
       servers.push(outcome.server);
+      if (outcome.warning) {
+        // 逐节点告警，但封顶防千节点订阅刷屏；超出部分汇总一条。
+        if (pinWarnings < MAX_PER_NODE_WARNINGS) warnings.push(outcome.warning);
+        pinWarnings++;
+      }
     } else if (outcome.kind === 'skip') {
       skipped++;
       skipByReason.set(outcome.reason, (skipByReason.get(outcome.reason) ?? 0) + 1);
@@ -627,6 +658,11 @@ export function parseClashProxies(
     }
   }
 
+  if (pinWarnings > MAX_PER_NODE_WARNINGS) {
+    warnings.push(
+      `...and ${pinWarnings - MAX_PER_NODE_WARNINGS} more node(s) whose certificate pin (fingerprint) cannot be enforced by the sing-box core`
+    );
+  }
   if (skipByReason.size > 0) {
     const detail = [...skipByReason.entries()].map(([r, c]) => `${r}(${c})`).join(', ');
     warnings.push(`Skipped ${skipped} unsupported/unknown-plugin node(s): ${detail}`);
@@ -660,18 +696,65 @@ export function compileProviderFilter(pattern: string | undefined): RegExp | nul
 }
 
 /**
+ * 一次 provider filter 过程（filter + exclude-filter）的总执行预算。长度上限挡不住 `^(a+)+$` 这类短而灾难性
+ * 回溯的 pattern（机场可控）——同步 RegExp.test 会冻结主进程。整个过程放进一次 vm 调用，超时由 V8 中断
+ * （ERR_SCRIPT_EXECUTION_TIMEOUT），超时的那一个及其后未跑的 filter 一律按非法 filter 处理（忽略 + warn）。
+ * 正常订阅（数千节点 × 简单正则）远低于此预算。
+ */
+export const PROVIDER_FILTER_BUDGET_MS = 250;
+
+/** vm 内执行的过滤脚本：按 stage 顺序逐个 pattern 对全部 name 求 test 结果，进度写回 ctx（超时后据此定位）。 */
+const FILTER_SCRIPT = `
+for (let i = 0; i < patterns.length; i++) {
+  stage = i;
+  const re = new RegExp(patterns[i]);
+  const out = [];
+  for (let j = 0; j < names.length; j++) out.push(re.test(names[j]));
+  results.push(out);
+}
+stage = -1;
+`;
+
+/**
+ * 在受时限 vm 中对 names 依次跑 patterns。返回每个已完成 pattern 的匹配数组；timedOutAt = 超时发生在第几个
+ * pattern（-1 = 全部完成）。pattern 须已通过 compileProviderFilter（语法合法）。
+ */
+export function runFilterPatternsWithBudget(
+  patterns: string[],
+  names: string[],
+  budgetMs: number = PROVIDER_FILTER_BUDGET_MS
+): { results: boolean[][]; timedOutAt: number } {
+  const ctx: { patterns: string[]; names: string[]; results: unknown[][]; stage: number } = {
+    patterns,
+    names,
+    results: [],
+    stage: 0,
+  };
+  try {
+    vm.runInNewContext(FILTER_SCRIPT, ctx, { timeout: Math.max(1, budgetMs) });
+  } catch (e) {
+    const code = (e as { code?: unknown })?.code;
+    if (code !== 'ERR_SCRIPT_EXECUTION_TIMEOUT') throw e;
+    return {
+      results: ctx.results.slice(0, ctx.stage).map((r) => Array.from(r, Boolean)),
+      timedOutAt: ctx.stage,
+    };
+  }
+  return { results: ctx.results.map((r) => Array.from(r, Boolean)), timedOutAt: -1 };
+}
+
+/**
  * 顺序对齐 mihomo：filter(留) → exclude-filter(剔)。作用在 parseClashProxies 之前的原始 proxy.name 上。
- * 非法正则跳过该 filter + warn（不整批失败）。
+ * 非法正则 / 执行超时（ReDoS）跳过该 filter + warn（不整批失败）。
  */
 export function applyProviderFilters(
   proxies: unknown[],
   filter: string | undefined,
   excludeFilter: string | undefined,
   warn: (msg: string) => void,
-  providerName: string
+  providerName: string,
+  budgetMs: number = PROVIDER_FILTER_BUDGET_MS
 ): unknown[] {
-  let result = proxies;
-
   // ReDoS 护栏：被匹配 name 截断到 MAX_FILTER_NAME_LEN，界定回溯输入规模（机场可控 name）。
   const safeName = (p: unknown): string => {
     const n = p && typeof p === 'object' ? str((p as Record<string, unknown>)['name']) : '';
@@ -679,30 +762,46 @@ export function applyProviderFilters(
     return s.length > MAX_FILTER_NAME_LEN ? s.slice(0, MAX_FILTER_NAME_LEN) : s;
   };
 
+  // 收集合法 stage（超长/语法非法的 pattern 经 compileProviderFilter 返回 null → 按非法 filter 处理 + warn）。
+  const stages: { pattern: string; exclude: boolean; label: string }[] = [];
   if (filter) {
-    // 超长 pattern 经 compileProviderFilter 返回 null（ReDoS 护栏），按非法 filter 处理 + warn。
-    const re = compileProviderFilter(filter);
-    if (re) {
-      result = result.filter((p) => re.test(safeName(p)));
-    } else {
+    if (compileProviderFilter(filter))
+      stages.push({ pattern: filter, exclude: false, label: 'filter' });
+    else
       warn(
         `provider [${providerName}] filter is an invalid or overly long regex, filter ignored: ${filter.slice(0, 80)}`
       );
-    }
   }
-
   if (excludeFilter) {
-    const re = compileProviderFilter(excludeFilter);
-    if (re) {
-      result = result.filter((p) => !re.test(safeName(p)));
-    } else {
+    if (compileProviderFilter(excludeFilter))
+      stages.push({ pattern: excludeFilter, exclude: true, label: 'exclude-filter' });
+    else
       warn(
         `provider [${providerName}] exclude-filter is an invalid or overly long regex, filter ignored: ${excludeFilter.slice(0, 80)}`
       );
+  }
+  if (stages.length === 0 || proxies.length === 0) return proxies;
+
+  const names = proxies.map(safeName);
+  const { results, timedOutAt } = runFilterPatternsWithBudget(
+    stages.map((st) => st.pattern),
+    names,
+    budgetMs
+  );
+  if (timedOutAt >= 0) {
+    for (const st of stages.slice(timedOutAt)) {
+      warn(
+        `provider [${providerName}] ${st.label} took longer than ${budgetMs} ms (catastrophic regex?), filter ignored: ${st.pattern.slice(0, 80)}`
+      );
     }
   }
-
-  return result;
+  // 按完成的 stage 顺序应用（filter 留 → exclude 剔），匹配结果对应原始 proxies 下标。
+  let keep = proxies.map(() => true);
+  results.forEach((matches, i) => {
+    const exclude = stages[i].exclude;
+    keep = keep.map((k, j) => k && (exclude ? !matches[j] : matches[j]));
+  });
+  return proxies.filter((_, j) => keep[j]);
 }
 
 /**

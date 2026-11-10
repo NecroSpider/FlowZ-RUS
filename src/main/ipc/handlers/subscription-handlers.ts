@@ -77,6 +77,8 @@ export function registerSubscriptionHandlers(
           userAgent: incoming.userAgent,
           updateViaProxy: incoming.updateViaProxy,
           sendHwid: incoming.sendHwid,
+          // 用户在对话框里保存 = 亲手确认该 URL → 撤销「导入来源」标记，首跳恢复信任。
+          imported: undefined,
           ...(previous.url !== incoming.url
             ? { etag: undefined, lastModified: undefined, hasProviders: undefined }
             : {}),
@@ -136,7 +138,9 @@ export function registerSubscriptionHandlers(
           resolveSubscriptionViaProxy(config.subscriptionProxyPolicy, subscription.updateViaProxy),
           subscription.userAgent ?? config.subscriptionUserAgent,
           conditional,
-          subscription.sendHwid !== false
+          subscription.sendHwid !== false,
+          // 导入来源（非用户手输）的订阅：首跳不豁免 SSRF guard（同 SubscriptionService#isImportedSubscription）。
+          subscription.imported !== true
         );
 
         return await editConfig(async (config) => {

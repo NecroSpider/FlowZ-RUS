@@ -64,6 +64,7 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
         etag: undefined,
         lastModified: undefined,
       },
+      true,
       true
     );
     expect(pending()).toBe(true);
@@ -82,6 +83,7 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
         etag: undefined,
         lastModified: undefined,
       },
+      true,
       true
     );
     expect(fetchSubscription).toHaveBeenCalledWith(
@@ -93,6 +95,7 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
         etag: undefined,
         lastModified: undefined,
       },
+      true,
       true
     );
     expect(pending()).toBe(false);
@@ -115,6 +118,7 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
         etag: undefined,
         lastModified: undefined,
       },
+      true,
       true
     );
     expect(pending()).toBe(false);
@@ -137,6 +141,7 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
         etag: undefined,
         lastModified: undefined,
       },
+      true,
       true
     );
     expect(fetchSubscription).toHaveBeenCalledWith(
@@ -148,6 +153,7 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
         etag: undefined,
         lastModified: undefined,
       },
+      true,
       true
     );
     expect(pending()).toBe(false);
@@ -294,4 +300,63 @@ it('discards an automatic refresh when its URL was edited while the provider res
   await run();
   expect(configManager.saveConfig).not.toHaveBeenCalled();
   expect(config.subscriptions[0].url).toBe('http://new-url');
+});
+
+describe('导入而来的订阅（备份恢复 / Clash provider 导入）首跳不免 SSRF 判定', () => {
+  it('imported:true → trustUrl=false；普通订阅 → true', async () => {
+    const config = makeConfig({
+      subscriptions: [
+        { id: 'd', name: 'Direct', url: 'http://direct', autoUpdate: true },
+        { id: 'i', name: 'Imported', url: 'http://imported', autoUpdate: true, imported: true },
+      ],
+    });
+    const { fetchSubscription, run } = makeScheduler(config, false);
+    await run();
+    const byUrl = new Map(fetchSubscription.mock.calls.map((c) => [c[0], c[6]]));
+    expect(byUrl.get('http://direct')).toBe(true);
+    expect(byUrl.get('http://imported')).toBe(false);
+  });
+});
+
+describe('#15 代理就绪信号落在在途更新期间不丢失', () => {
+  it('在途轮把经代理订阅挂起 → 期间 onProxyStarted → 在途轮结束后自动补跑经代理订阅', async () => {
+    const config = makeConfig();
+    // 首次查询（首轮判经代理订阅）= 代理未起；之后 = 已起（确定性，不依赖微任务时序）
+    let proxyChecks = 0;
+    let releaseFirst!: () => void;
+    const gate = new Promise<void>((r) => (releaseFirst = r));
+    const fetchSubscription = jest.fn(async (url: string) => {
+      if (url === 'http://direct' && fetchSubscription.mock.calls.length === 1) await gate;
+      return { servers: [] };
+    });
+    const scheduler = new SubscriptionScheduler(
+      {
+        loadConfig: jest.fn().mockResolvedValue(config),
+        saveConfig: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      { fetchSubscription } as never,
+      { addLog: jest.fn() } as never,
+      () => proxyChecks++ > 0,
+      jest.fn() as never,
+      jest.fn() as never
+    );
+    const internals = scheduler as unknown as {
+      runDueUpdates: (r: string, o?: object) => Promise<void>;
+    };
+    // 首轮：直连订阅拉取中（卡在 gate），经代理订阅尚未轮到
+    const first = internals.runDueUpdates('startup catch-up', { ignoreStaleness: true });
+    await new Promise((r) => setImmediate(r));
+    expect(fetchSubscription).toHaveBeenCalledTimes(1);
+    // 代理就绪信号在在途期间到达（此时 pending 尚未置位 → 旧实现直接 return，补更永久丢失）
+    scheduler.onProxyStarted();
+    // 首轮继续：经代理订阅在本轮被判「代理未起」挂起
+    releaseFirst();
+    await first;
+    // 在途轮 finally 触发的补跑：等其完成
+    for (let i = 0; i < 10 && fetchSubscription.mock.calls.length < 2; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
+    const urls = fetchSubscription.mock.calls.map((c) => c[0]);
+    expect(urls).toContain('http://proxy');
+  });
 });

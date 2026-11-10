@@ -18,7 +18,7 @@ import { getSubscriptionConfigEditor, subscriptionRequestKey } from './subscript
 
 import type { ConfigManager } from './ConfigManager';
 import type { LogManager } from './LogManager';
-import { SubscriptionService } from './SubscriptionService';
+import { SubscriptionService, isImportedSubscription } from './SubscriptionService';
 import type { UserConfig } from '../../shared/types';
 import { resolveSubscriptionViaProxy } from '../../shared/subscription-proxy';
 import { DIRECT_SERVER_ID, isDirectSelection } from '../../shared/direct-selection';
@@ -35,6 +35,9 @@ export class SubscriptionScheduler {
     SubscriptionScheduler.BACKOFF_BASE_MS,
     SubscriptionScheduler.BACKOFF_MAX_MS
   );
+  // 代理就绪信号在某轮更新在途时到达：该轮可能正把经代理订阅判为「代理未起」而挂起 → 在途轮结束后须复查，
+  // 否则 onProxyStarted 早退、挂起补更丢失（最长要等下个周期 12h）。
+  private proxyReadyWhileRunning = false;
   private pendingProxyCatchup = false; // 经代理订阅因代理未起被跳过的挂起标记（启动补更与周期巡检轮均可置位），待代理就绪 onProxyStarted 补跑
   private startupTimer: ReturnType<typeof setTimeout> | null = null; // 启动补更句柄（stop 时清，防 8s 内 stop→start 武装双补更）
 
@@ -90,8 +93,12 @@ export class SubscriptionScheduler {
 
   /** 代理就绪：补跑因 viaProxy + 代理未起而跳过的「启动补更」（忽略陈旧门，仅守 10min 地板）。 */
   onProxyStarted(): void {
-    // isRunning 时不清 flag：已有更新在途，保留挂起标记待后续触发，避免补更被静默吞掉
-    if (!this.pendingProxyCatchup || this.isRunning) return;
+    // 有更新在途：记下请求，在途轮 finally 里复查（该轮可能刚把经代理订阅挂起）。不清 pendingProxyCatchup。
+    if (this.isRunning) {
+      this.proxyReadyWhileRunning = true;
+      return;
+    }
+    if (!this.pendingProxyCatchup) return;
     this.pendingProxyCatchup = false;
     this.runDueUpdates('proxy-ready catch-up', { ignoreStaleness: true }).catch((e) => {
       this.logManager.addLog(
@@ -184,7 +191,9 @@ export class SubscriptionScheduler {
             subViaProxy,
             sub.userAgent ?? config.subscriptionUserAgent,
             conditional,
-            sub.sendHwid !== false
+            sub.sendHwid !== false,
+            // 导入而来的订阅（备份恢复 / Clash provider 导入）首跳不免 SSRF 判定。
+            !isImportedSubscription(sub)
           );
           fetched.push({
             subId: sub.id,
@@ -329,6 +338,11 @@ export class SubscriptionScheduler {
       });
     } finally {
       this.isRunning = false;
+      if (this.proxyReadyWhileRunning) {
+        this.proxyReadyWhileRunning = false;
+        // 代理在本轮期间就绪：若本轮留下了经代理订阅的挂起补更，立即补跑（onProxyStarted 自行判 pending）。
+        this.onProxyStarted();
+      }
     }
   }
 }

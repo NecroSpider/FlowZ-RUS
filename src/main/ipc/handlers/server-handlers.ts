@@ -29,7 +29,12 @@ export function registerServerHandlers(
   const runServerRemovalSideEffects = async (removed: ServerConfig): Promise<void> => {
     // Tailscale 节点 → 清其持久 state 目录 <userData>/tailscale/<id>（best-effort，不阻断删除）。
     if (removed?.protocol?.toLowerCase() === 'tailscale') {
-      await fs.rm(tailscaleStateDir(removed.id), { recursive: true, force: true }).catch(() => {});
+      // tailscaleStateDir 对非法 id（路径穿越）同步 throw → 整段包 try：跳过清理、不阻断删除。
+      try {
+        await fs.rm(tailscaleStateDir(removed.id), { recursive: true, force: true });
+      } catch {
+        /* best-effort */
+      }
     }
 
     // WARP 节点 → 带自删凭据（warpDevice.token+deviceId）则入待注销队列，后台机会式 drain 远端注销。

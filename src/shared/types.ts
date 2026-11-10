@@ -168,6 +168,9 @@ export interface SubscriptionConfig {
   lastModified?: string;
   // 上次解析含 proxy-providers（Clash provider 型订阅）→ 主正文 304 会掩盖 provider 子资源独立变化 → 不发条件头（保守豁免）。
   hasProviders?: boolean;
+  // 订阅 URL 并非用户亲手输入（Clash 本地导入的 provider / 备份恢复）→ 首跳照常过 SSRF guard（不信任内网地址）。
+  // 用户在订阅对话框里保存一次即清除（视为用户确认该 URL）。见 SubscriptionService#isImportedSubscription。
+  imported?: boolean;
 }
 
 export interface ServerConfig {

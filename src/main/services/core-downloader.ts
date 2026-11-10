@@ -18,6 +18,37 @@ import { APP_USER_AGENT } from '../../shared/constants';
 import { ghMirrorUrl, normalizeGhProxyPrefix } from '../../shared/gh-proxy';
 import { createIdleTimeout, parseExpectedBytes } from './download-hardening';
 import { powershellPath } from '../utils/win-system32';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * 解压命令（纯函数，便于单测）。Windows：路径经环境变量交给 PowerShell，命令文本里不出现任何路径 → 无需引号
+ * 转义；-LiteralPath 不做通配解释（路径含 `[` `]` 也安全）。其它平台：unzip / tar 参数数组。
+ */
+export function buildExtractInvocation(
+  platform: NodeJS.Platform,
+  archivePath: string,
+  destDir: string
+): { file: string; args: string[]; env?: Record<string, string> } {
+  if (platform === 'win32') {
+    return {
+      file: powershellPath(),
+      args: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        'Expand-Archive -LiteralPath $env:FLOWZ_ARCHIVE -DestinationPath $env:FLOWZ_EXTRACT_DIR -Force',
+      ],
+      env: { FLOWZ_ARCHIVE: archivePath, FLOWZ_EXTRACT_DIR: destDir },
+    };
+  }
+  if (archivePath.endsWith('.zip')) {
+    return { file: 'unzip', args: ['-o', archivePath, '-d', destDir] };
+  }
+  return { file: 'tar', args: ['-xzf', archivePath, '-C', destDir] };
+}
 import { MAX_GITHUB_JSON_BYTES } from '../utils/http-limits';
 import { findSuitableSingboxAsset } from './singbox-asset';
 import { UpdateNetwork } from './UpdateNetwork';
@@ -324,19 +355,14 @@ export class CoreDownloader {
     fs.mkdirSync(extractDir);
 
     try {
-      if (process.platform === 'win32') {
-        const { execSync } = require('child_process');
-        execSync(
-          `"${powershellPath()}" -command "Expand-Archive -Path '${filePath}' -DestinationPath '${extractDir}' -Force"`
-        );
-      } else {
-        const { execSync } = require('child_process');
-        if (filePath.endsWith('.zip')) {
-          execSync(`unzip -o "${filePath}" -d "${extractDir}"`);
-        } else {
-          execSync(`tar -xzf "${filePath}" -C "${extractDir}"`);
-        }
-      }
+      // 异步 execFile + 参数数组（不经 shell）：旧实现 execSync 拼命令串——用户名/配置目录含 `'` / `"` 时命令被
+      // 截断（甚至注入），且同步阻塞主进程（解压期间 UI/IPC 全冻结）。
+      const inv = buildExtractInvocation(process.platform, filePath, extractDir);
+      await execFileAsync(inv.file, inv.args, {
+        windowsHide: true,
+        timeout: 120_000,
+        ...(inv.env ? { env: { ...process.env, ...inv.env } } : {}),
+      });
 
       // 查找解压后的可执行文件
       const exeName = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';

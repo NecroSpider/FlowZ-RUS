@@ -5,6 +5,7 @@
 
 import { IpcMainInvokeEvent, dialog, app } from 'electron';
 import * as fs from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { UserConfig } from '../../../shared/types';
 import { isEndpointProtocol } from '../../../shared/endpoint-routes';
@@ -110,6 +111,40 @@ function buildBackupInfo(
   };
 }
 
+/**
+ * 导入①→② 之间的文件凭据：文件框选中的路径只留在主进程，渲染端拿不透明一次性 token。旧实现 APPLY 接收渲染端
+ * 传来的任意 filePath 直接读取 → 绕过文件框读任意本机文件当备份导入。10 分钟过期。
+ */
+const IMPORT_TOKEN_TTL_MS = 10 * 60_000;
+const importTokens = new Map<string, { path: string; expiresAt: number }>();
+
+export function issueImportToken(filePath: string, now = Date.now()): string {
+  for (const [k, v] of importTokens) if (v.expiresAt <= now) importTokens.delete(k);
+  const token = randomUUID();
+  importTokens.set(token, { path: filePath, expiresAt: now + IMPORT_TOKEN_TTL_MS });
+  return token;
+}
+
+/** 取出并作废 token；未知/过期 → null。 */
+export function takeImportToken(token: unknown, now = Date.now()): string | null {
+  if (typeof token !== 'string' || !token) return null;
+  const entry = importTokens.get(token);
+  importTokens.delete(token);
+  if (!entry || entry.expiresAt <= now) return null;
+  return entry.path;
+}
+
+/**
+ * 备份恢复的订阅一律标记 imported：地址来自备份文件内容（可被构造），拉取时首跳不免内网/本机 SSRF 判定
+ * （见 SubscriptionService.isImportedSubscription）。用户在编辑框重新保存地址即恢复信任。
+ */
+export function markRestoredSubscriptionsImported(config: Partial<UserConfig>): void {
+  if (!Array.isArray(config.subscriptions)) return;
+  for (const sub of config.subscriptions) {
+    if (sub && typeof sub === 'object') (sub as unknown as Record<string, unknown>).imported = true;
+  }
+}
+
 const IMPORT_FILTERS = [
   { name: 'FlowZ backup files', extensions: ['flowz-backup'] },
   { name: 'JSON files', extensions: ['json'] },
@@ -165,7 +200,7 @@ export function registerBackupHandlers(
     void,
     {
       canceled: boolean;
-      filePath?: string;
+      token?: string;
       available?: BackupCategory[];
       counts?: Partial<Record<BackupCategory, number>>;
       error?: string;
@@ -193,21 +228,26 @@ export function registerBackupHandlers(
     const available = detectCategories(parsed.config);
     const counts: Partial<Record<BackupCategory, number>> = {};
     for (const cat of available) counts[cat] = countCategory(parsed.config, cat);
-    return { canceled: false, filePath, available, counts };
+    return { canceled: false, token: issueImportToken(filePath), available, counts };
   });
 
   // ── 导入②APPLY：按所选类整类替换 + 空跳过 + 跨平台 sanitize + 保存 ─────────────
   registerIpcHandler<
-    { filePath: string; categories: BackupCategory[] },
+    { token: string; categories: BackupCategory[] },
     { success: boolean; info?: BackupInfo; skipped?: BackupCategory[]; error?: string }
   >(IPC_CHANNELS.BACKUP_IMPORT_APPLY, async (_event: IpcMainInvokeEvent, args) => {
     try {
-      if (!args?.filePath || !args.categories?.length) {
+      if (!args?.token || !Array.isArray(args.categories) || !args.categories.length) {
         return { success: false, error: 'invalid_args' };
+      }
+      // 只认文件框换来的 token（路径不经渲染端），未知/过期 → 让用户重新选择文件。
+      const filePath = takeImportToken(args.token);
+      if (!filePath) {
+        return { success: false, error: 'read_failed' };
       }
       let raw: string;
       try {
-        raw = await fs.readFile(args.filePath, 'utf-8');
+        raw = await fs.readFile(filePath, 'utf-8');
       } catch {
         return { success: false, error: 'read_failed' };
       }
@@ -215,6 +255,9 @@ export function registerBackupHandlers(
       if ('error' in parsed) {
         return { success: false, error: parsed.error };
       }
+
+      if (args.categories.includes('subscriptions'))
+        markRestoredSubscriptionsImported(parsed.config);
 
       const current = await configManager.loadConfig();
       const { config: merged, skipped } = mergeCategories(current, parsed.config, args.categories);

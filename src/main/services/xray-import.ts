@@ -9,6 +9,7 @@
  */
 import { randomUUID } from 'crypto';
 import type { ServerConfig, Network, Security } from '../../shared/types';
+import { unsupportedVlessEncryption } from './ProtocolParser';
 
 /** 本模块可映射的 xray outbound.protocol。 */
 const XRAY_SUPPORTED = new Set(['vmess', 'vless', 'trojan', 'shadowsocks']);
@@ -201,6 +202,19 @@ function collectXrayOutbounds(
     if (!XRAY_SUPPORTED.has(proto)) {
       if (!XRAY_INTERNAL.has(proto)) skip(proto || '(empty)');
       continue;
+    }
+    // VLESS Encryption（users[0].encryption = mlkem768x25519plus.…）：sing-box 不支持 → 同不支持传输口径跳过。
+    if (proto === 'vless') {
+      const users = (
+        (o.settings as Record<string, unknown> | undefined)?.vnext as
+          | Array<Record<string, unknown>>
+          | undefined
+      )?.[0]?.users as Array<Record<string, unknown>> | undefined;
+      const encMethod = unsupportedVlessEncryption(users?.[0]?.encryption);
+      if (encMethod) {
+        skip(`vless+encryption:${encMethod}`);
+        continue;
+      }
     }
     const ss = o.streamSettings as Record<string, unknown> | undefined;
     const network = (

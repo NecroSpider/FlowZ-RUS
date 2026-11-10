@@ -38,10 +38,62 @@ export const SECRET_KEYS: ReadonlySet<string> = new Set([
   'privacypassword',
   'psk', // snell 等第三方协议主密钥（无 customSettings.secretKeys 时的兜底）
   'userkey', // snell 多用户服务器鉴权 key（一等公民 snellSettings.userkey / 自定义 JSON 兜底）
+  // 通用凭据键（custom 透传节点常见，且订阅/文件导入的 custom 节点从不带 secretKeys 声明）：
+  'auth', // hysteria v1 auth（base64 凭据）
+  'authstr', // hysteria v1 auth_str
+  'passphrase',
+  'credential',
+  'credentials',
+  'apikey',
+  'accesskey',
+  'secretkey',
+  'sharedkey',
+  'obfspassword',
 ]);
 
-/** url 类键名（值按 url 处理：仅保留 origin，path/query 都打码——订阅 token 可能在 path 或 query）。 */
+/**
+ * 仅当值为字符串时才算密钥的键：hysteria v1 的 `obfs` 是混淆口令字符串；hy2 的 `obfs` 是对象 {type,password}
+ * （向下递归由 password 打码，保留 type 以判形态）。
+ */
+const STRING_SECRET_KEYS: ReadonlySet<string> = new Set(['obfs']);
+
+/**
+ * url 类键名（值按 url 处理：仅保留 origin，path/query 都打码——订阅 token 可能在 path 或 query）。
+ * 除精确 `url` 外，凡归一键名以 `url` / `urls` 结尾（sourceUrl、downloadUrl、singboxDashboardUrl…）同样处理，
+ * 见 isUrlKey——ruleResources[].sourceUrl 常带 ?token=。
+ */
 export const URL_KEYS: ReadonlySet<string> = new Set(['url']);
+
+/** 归一键名是否按 url 打码（`url` 或以 url/urls 结尾）。 */
+export function isUrlKey(normalizedKey: string): boolean {
+  return URL_KEYS.has(normalizedKey) || /urls?$/.test(normalizedKey);
+}
+
+/** DoH/DoT/DoQ 公共、非身份路径：保留以判形态；其它路径（NextDNS /<profile-id>、AdGuard 私有 ID 等）打码。 */
+const PUBLIC_DNS_PATHS: ReadonlySet<string> = new Set(['', '/', '/dns-query', '/resolve']);
+
+/**
+ * DNS 地址脱敏：带 scheme 的 DNS 上游（https/h3/tls/quic…）路径段常是账号 ID（NextDNS `https://dns.nextdns.io/abc123`）。
+ * 公共路径保留，其余路径与 query 打码；userinfo 一并去掉。非 URL（纯 IP、`local` 等）原样返回。
+ */
+export function redactDnsValue(raw: string): string {
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return raw;
+  try {
+    const u = new URL(raw);
+    const host = u.host;
+    const scheme = u.protocol;
+    const path = u.pathname || '';
+    const keepPath = PUBLIC_DNS_PATHS.has(path);
+    if (keepPath && !u.search && !u.username && !u.password) return raw;
+    return `${scheme}//${host}${keepPath ? path : `/${REDACTED}`}${u.search ? `?${REDACTED}` : ''}`;
+  } catch {
+    const q = raw.indexOf('?');
+    return q >= 0 ? `${raw.slice(0, q)}?${REDACTED}` : raw;
+  }
+}
+
+/** 键名是否 DNS 上游类（domesticDns / foreignDns / nodeDns… 归一后含 dns）。 */
+const isDnsKey = (normalizedKey: string): boolean => normalizedKey.includes('dns');
 
 /** 归一键名：小写 + 去 _/-，使 privateKey / private_key / private-key 等价比较。导出供调用方构造叠加密钥集。 */
 export function normalizeKey(key: string): string {
@@ -86,15 +138,36 @@ export function redactDeep(value: unknown, extraSecretKeys?: ReadonlySet<string>
       childExtra = merged;
     }
 
+    // sing-box DoH/DoH3 DNS server 对象（{type:'https'|'h3', server, path}）：path 可能是账号 ID（NextDNS）。
+    const srcType = typeof src.type === 'string' ? src.type.toLowerCase() : '';
+    const isDohServerObject = srcType === 'https' || srcType === 'h3';
+
     for (const [k, v] of Object.entries(src)) {
       const nk = normalizeKey(k);
       if (v == null) {
         out[k] = v;
-      } else if (SECRET_KEYS.has(nk) || extraSecretKeys?.has(nk)) {
+      } else if (
+        SECRET_KEYS.has(nk) ||
+        extraSecretKeys?.has(nk) ||
+        (STRING_SECRET_KEYS.has(nk) && typeof v === 'string')
+      ) {
         // 命中密钥：标量打码；对象/数组整体打码（不向下递归，杜绝嵌套泄漏）。
         out[k] = REDACTED;
-      } else if (URL_KEYS.has(nk) && typeof v === 'string') {
+      } else if (isUrlKey(nk) && typeof v === 'string') {
         out[k] = redactUrlValue(v);
+      } else if (isUrlKey(nk) && Array.isArray(v)) {
+        out[k] = v.map((x) =>
+          typeof x === 'string' ? redactUrlValue(x) : redactDeep(x, extraSecretKeys)
+        );
+      } else if ((isDnsKey(nk) || nk === 'address') && typeof v === 'string') {
+        // DNS 上游地址（UserConfig.domesticDns/foreignDns、旧式 dns server address）：DoH 路径可能是账号 ID。
+        out[k] = redactDnsValue(v);
+      } else if (isDnsKey(nk) && Array.isArray(v)) {
+        out[k] = v.map((x) =>
+          typeof x === 'string' ? redactDnsValue(x) : redactDeep(x, childExtra)
+        );
+      } else if (isDohServerObject && nk === 'path' && typeof v === 'string') {
+        out[k] = PUBLIC_DNS_PATHS.has(v) ? v : `/${REDACTED}`;
       } else if (typeof v === 'object') {
         out[k] = redactDeep(v, childExtra);
       } else {

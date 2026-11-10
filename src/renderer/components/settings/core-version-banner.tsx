@@ -101,7 +101,7 @@ export function CoreVersionBanner() {
         toast.info(t('settings.coreManagement.baselineOverrideConfirmTitle'), {
           description: t('settings.coreVersion.baselineOverrideGoManage'),
         });
-      } else if (result.needConfirm && result.sameVersion && result.filePath) {
+      } else if (result.needConfirm && result.sameVersion && result.token) {
         // 同版本需确认：本横幅不承载确认框，引导用户去内核管理卡处理
         toast.info(t('settings.coreManagement.sameVersionConfirmTitle'), {
           description: t('settings.coreVersion.sameVersionGoManage'),

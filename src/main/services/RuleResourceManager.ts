@@ -18,6 +18,7 @@ import {
 } from '../../shared/rule-resource-catalog';
 import { APP_USER_AGENT } from '../../shared/constants';
 import type { ConfigManager } from './ConfigManager';
+import { isSafeRuleResourceId } from './ConfigManager';
 import type {
   UserConfig,
   RuleResourceRef,
@@ -93,6 +94,10 @@ export class RuleResourceManager {
   private dir(): string {
     return getRuleResourcesPath();
   }
+  /** 用户资源文件路径：只取 basename，杜绝 config 里的 fileName（备份恢复 / 手改可控）带目录段越界。 */
+  private resourceFilePath(fileName: string): string {
+    return path.join(this.dir(), path.basename(String(fileName ?? '')));
+  }
   private catalogCachePath(): string {
     return path.join(this.dir(), 'catalog.json');
   }
@@ -103,7 +108,7 @@ export class RuleResourceManager {
     const resources = config.ruleResources || [];
     const userItems: RuleResourceListItem[] = resources.map((r) => ({
       ...r,
-      fileExists: fssync.existsSync(path.join(this.dir(), r.fileName)),
+      fileExists: fssync.existsSync(this.resourceFilePath(r.fileName)),
       referencedBy: this.referencingRules(config, r.id).length,
     }));
     // 用户资源按名称排序（中文拼音 / 英文字母 / 数字自然序，忽略大小写）；仅排展示副本，
@@ -271,7 +276,7 @@ export class RuleResourceManager {
     const config = await this.configManager.loadConfig();
     const dir = this.dir();
     const missing = (config.ruleResources || []).filter(
-      (r) => !fssync.existsSync(path.join(dir, r.fileName))
+      (r) => !fssync.existsSync(path.join(dir, path.basename(r.fileName)))
     );
     if (missing.length === 0) return { missing: 0, ok: 0, failed: 0 };
     const items = await Promise.all(missing.map((r) => this.buildRedownloadItem(r)));
@@ -316,7 +321,7 @@ export class RuleResourceManager {
       await this.configManager.saveConfig(config);
       this.broadcastConfigChanged(config);
       if (res) {
-        await fs.unlink(path.join(this.dir(), res.fileName)).catch(() => {});
+        await fs.unlink(this.resourceFilePath(res.fileName)).catch(() => {});
         if (isResourceReferenced(id, config)) this.notifyCoreReload(config);
       }
       return { ok: true };
@@ -354,6 +359,10 @@ export class RuleResourceManager {
       return { ok: false, errorCode: 'http', error: 'no catalogId or url' };
     }
 
+    // id 决定落盘文件名 `<id>.srs`：IPC 旁路 / 备份恢复可传入 `../x` → 越界写。与 ConfigManager 同一校验。
+    if (!isSafeRuleResourceId(id)) {
+      return { ok: false, name, errorCode: 'http', error: 'invalid resource id' };
+    }
     if (this.inflight.has(id)) {
       return { ok: false, id, name, errorCode: 'in_progress', error: 'already downloading' };
     }

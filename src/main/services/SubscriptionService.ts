@@ -19,6 +19,7 @@ import {
 } from './ClashSubscriptionParser';
 import { isXrayConfigArray, parseXrayConfigArray, parseXrayOutbounds } from './xray-import';
 import { isServerComplete } from '../../shared/server-completeness';
+import { customOutboundRejectReason } from '../../shared/config-portability';
 import { normalizeDuration } from '../../shared/duration';
 import {
   classifySubscriptionError,
@@ -149,6 +150,15 @@ const SINGBOX_SUPPORTED_TYPES = new Set([
 const SINGBOX_SUPPORTED_TRANSPORTS = new Set(['ws', 'grpc', 'http', 'httpupgrade']);
 /** sing-box 非代理内部 outbound type（本地导入忽略，不作节点、不透传 custom）。 */
 const SINGBOX_INTERNAL_TYPES = new Set(['direct', 'block', 'dns', 'selector', 'urltest']);
+
+/**
+ * 订阅是否「导入而来」（用户从未亲手键入其地址）：Clash proxy-providers 本地导入、备份恢复。这类地址来自文件
+ * 内容（可被构造），拉取时首跳不享受 trustInitialUrl 豁免，照常过内网/本机 SSRF 判定。
+ * 字段 `imported` 由导入方写入；用户在编辑框重新保存地址后应清除（见 subscription-handlers）。
+ */
+export function isImportedSubscription(sub: SubscriptionConfig): boolean {
+  return sub.imported === true;
+}
 
 export class SubscriptionService {
   // 响应体积上限：超大响应直接 OOM（兼缓解 YAML 锚点炸弹的输入面）。content-length 预检 + 读取后字节校验双闸。
@@ -340,29 +350,42 @@ export class SubscriptionService {
     let missingFields = 0;
     const skipByTransport = new Map<string, number>();
 
+    let malformed = 0;
     for (const ob of outbounds) {
-      if (!SUPPORTED.has(ob.type)) {
-        // direct/block/selector 等内部 outbound 是配置结构而非节点，不计入「丢弃」噪声。
-        if (!SINGBOX_INTERNAL_TYPES.has(ob.type)) {
-          skipByType.set(ob.type, (skipByType.get(ob.type) ?? 0) + 1);
-        }
+      // 单条畸形 outbound（null / 数组 / 原始值）不得中断整份订阅：跳过计数。
+      if (!ob || typeof ob !== 'object' || Array.isArray(ob)) {
+        malformed++;
         continue;
       }
-      // 支持仅含 server_ports（端口跳跃、无 server_port）的 Hy2 节点：从首个范围的低位端口推导 port
-      const effectivePort =
-        ob.server_port ??
-        (ob.server_ports?.[0] ? parseInt(ob.server_ports[0].split(':')[0], 10) : undefined);
-      if (!ob.server || !effectivePort) {
-        missingFields++;
-        continue;
-      }
-      // 不支持的 transport（quic 等）：入库会静默降级裸 TCP 产假节点，整节点跳过（与分享链/Clash 路径统一口径）。
-      if (ob.transport?.type && !SINGBOX_SUPPORTED_TRANSPORTS.has(ob.transport.type)) {
-        skipByTransport.set(ob.transport.type, (skipByTransport.get(ob.transport.type) ?? 0) + 1);
-        continue;
-      }
-
+      // 字段级解析（server_ports 为数字、transport 非对象等）同样放进逐节点 try：单节点异常只丢该节点。
       try {
+        if (typeof ob.type !== 'string' || !SUPPORTED.has(ob.type)) {
+          // direct/block/selector 等内部 outbound 是配置结构而非节点，不计入「丢弃」噪声。
+          const t = typeof ob.type === 'string' ? ob.type : '(invalid)';
+          if (!SINGBOX_INTERNAL_TYPES.has(t)) {
+            skipByType.set(t, (skipByType.get(t) ?? 0) + 1);
+          }
+          continue;
+        }
+        // 支持仅含 server_ports（端口跳跃、无 server_port）的 Hy2 节点：从首个范围的低位端口推导 port
+        const firstRange: unknown = Array.isArray(ob.server_ports) ? ob.server_ports[0] : undefined;
+        const effectivePort =
+          ob.server_port ??
+          (typeof firstRange === 'string'
+            ? parseInt(firstRange.split(':')[0], 10)
+            : typeof firstRange === 'number'
+              ? firstRange
+              : undefined);
+        if (!ob.server || !effectivePort) {
+          missingFields++;
+          continue;
+        }
+        // 不支持的 transport（quic 等）：入库会静默降级裸 TCP 产假节点，整节点跳过（与分享链/Clash 路径统一口径）。
+        if (ob.transport?.type && !SINGBOX_SUPPORTED_TRANSPORTS.has(ob.transport.type)) {
+          skipByTransport.set(ob.transport.type, (skipByTransport.get(ob.transport.type) ?? 0) + 1);
+          continue;
+        }
+
         const base: Partial<ServerConfig> = {
           id: randomUUID(),
           name: ob.tag || `${ob.server}:${effectivePort}`,
@@ -640,6 +663,13 @@ export class SubscriptionService {
         'Subscription'
       );
     }
+    if (malformed > 0) {
+      this.logManager.addLog(
+        'warn',
+        `Skipped ${malformed} malformed outbound entr${malformed === 1 ? 'y' : 'ies'} (not an object)`,
+        'Subscription'
+      );
+    }
     return servers;
   }
 
@@ -656,6 +686,15 @@ export class SubscriptionService {
       const q = url.indexOf('?');
       return q >= 0 ? `${url.slice(0, q)}?<redacted>` : url;
     }
+  }
+
+  /**
+   * 正文是否含 Clash proxy-providers（YAML 行首键 或 JSON 键）。两条正则都必须对 10 MB 正文线性：
+   * YAML 用 m 标志 + 行内空白 [ \t]*（不跨行，每个起点只扫本行前缀）；JSON 以字面量 `"proxy-providers"` 开头，
+   * 其后的 \s* 只在字面量命中后才跑、且各命中互不重叠。
+   */
+  static detectProviders(text: string): boolean {
+    return /^[ \t]*proxy-providers[ \t]*:/m.test(text) || /"proxy-providers"\s*:/.test(text);
   }
 
   /** 同指纹去重（Map 首见保留）：内联在前、provider 按声明序在后 → 同节点多源留内联那份。
@@ -1182,7 +1221,12 @@ export class SubscriptionService {
     viaProxy: boolean = false,
     userAgent?: string,
     conditional?: { etag?: string; lastModified?: string },
-    sendHwid: boolean = true
+    sendHwid: boolean = true,
+    /**
+     * 订阅地址是否由用户亲手填写（→ 首跳免内网判定）。导入而来的订阅（Clash proxy-providers 导入、备份恢复，
+     * 见 isImportedSubscription）传 false，首跳照常过 SSRF guard。缺省 true 保持旧调用方行为。
+     */
+    trustUrl: boolean = true
   ): Promise<{
     servers: ServerConfig[];
     userInfo?: SubscriptionConfig['userInfo'];
@@ -1213,7 +1257,7 @@ export class SubscriptionService {
         AbortSignal.timeout(SubscriptionService.MAIN_FETCH_TIMEOUT_MS),
         conditional,
         await this.deviceHeadersOrNone(sendHwid),
-        true
+        trustUrl
       );
       // §16.3.4：304 → 内容无变化，短路 parse/reconcile（零节点扰动）。
       if (notModified) {
@@ -1233,8 +1277,9 @@ export class SubscriptionService {
       // 兼容 YAML（行首 `proxy-providers:`）与 JSON 形态（`"proxy-providers":`，同支持路径 handleClashDoc）两种键形，
       // 避免 JSON 型 provider 订阅漏检 → 误发条件头 → 主正文恒 304 掩盖 provider 变化 → 节点无限期陈旧。宁可误判 true
       //（多一次全量拉取，零回归）不可漏判。
-      const hasProviders =
-        /(^|\n)\s*proxy-providers\s*:/.test(trimmed) || /"proxy-providers"\s*:/.test(trimmed);
+      // ReDoS：旧式 `(^|\n)\s*proxy-providers\s*:` 的 \s* 会吞换行 → 对每个换行重新起跑，正文 10 MB 时二次方级
+      // （启动补更卡死主进程）。改为 m 标志 + 行内空白 [ \t]*：每个起点只扫本行前缀，线性。JSON 键形同样只用 [ \t]*。
+      const hasProviders = SubscriptionService.detectProviders(trimmed);
       const { servers, partial, failedProviders } = await this.parseSubscriptionContent(
         trimmed,
         subscriptionId,
@@ -1382,6 +1427,14 @@ export class SubscriptionService {
               const t = ob.type;
               if (typeof t !== 'string' || !t.trim()) continue;
               if (SINGBOX_SUPPORTED_TYPES.has(t) || SINGBOX_INTERNAL_TYPES.has(t)) continue;
+              // 安全闸（与 outbound 构造同一真值）：tor / 可执行程序 / 文件系统路径键 → 不导入。
+              const reject = customOutboundRejectReason(ob);
+              if (reject) {
+                skipped++;
+                const label = typeof ob.tag === 'string' && ob.tag.trim() ? ob.tag.trim() : t;
+                warnings.push(`Skipped custom outbound "${label}": ${reject}`);
+                continue;
+              }
               candidates.push(this.makeCustomNode(ob, now));
               customWrapped++;
             }

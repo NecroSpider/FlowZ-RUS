@@ -127,6 +127,7 @@ import { coreVersionAtLeast, compareSemver } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
 import { safeHttpUrl } from '../../shared/url';
 import { tailscaleStateExists, tailscaleStateDir } from './tailscale-state';
+import { customOutboundRejectReason } from '../../shared/config-portability';
 import { buildTailscaleLoginConfig, tailscaleEndpointInRunningCore } from './tailscale-login-core';
 import {
   SingBoxApiClient,
@@ -4526,6 +4527,9 @@ done
     ) {
       return { ok: false, error: 'invalid outbound: must be an object with a string "type"' };
     }
+    // 与构建器同一道闸：tor / 文件路径类字段不进 `sing-box check`（check 也会解析并可能触达这些路径）。
+    const rejectReason = customOutboundRejectReason(outbound);
+    if (rejectReason) return { ok: false, error: rejectReason };
     const crypto = require('crypto');
     const version = await this.getCoreVersion().catch(() => 'unknown');
     // 内核身份含二进制 size+mtime：fork 版本号撞官方（同 version）但换了二进制时，键变、缓存自动失效。
@@ -8571,9 +8575,15 @@ rm -f "$STOPFLAG"
         });
       }
     }
-    await require('fs')
-      .promises.rm(tailscaleStateDir(serverId), { recursive: true, force: true })
-      .catch(() => {});
+    // tailscaleStateDir 对非法 id 同步抛（防路径穿越）→ 包住，登出不因此失败（非法 id 本就无合法 state 目录）。
+    try {
+      await require('fs').promises.rm(tailscaleStateDir(serverId), {
+        recursive: true,
+        force: true,
+      });
+    } catch {
+      /* best-effort */
+    }
     this.logToManager('info', `Tailscale node logged out`, 'sing-box');
     return { runningNeedsRestart: inRunningCore };
   }

@@ -58,6 +58,28 @@ import {
 import { dedupe } from '../../shared/collections';
 import { normalizeTunExcludeCidr } from '../../shared/tun-route-exclude';
 import { normalizeWorkDomain } from '../../shared/work-vpn';
+import { isSafeNodeId } from './tailscale-state';
+
+/**
+ * 规则资源 id 可否作为文件名（`<id>.srs` 落盘 / 删除）。不用 `^[\w-]+$`：资源库 id 取自 MetaCubeX 文件名，
+ * 合法 id 含 `!` / `@`（geosite-geolocation-!cn、geosite-apple@cn），收紧会丢用户已下载资源。只拒能逃出资源目录
+ * 或在 Windows 上非法的字符：路径分隔符、驱动器/ADS 冒号、通配与保留字符、控制字符、以点开头（`.`/`..`）。
+ */
+export function isSafeRuleResourceId(id: unknown): id is string {
+  return (
+    typeof id === 'string' &&
+    id.length > 0 &&
+    id.length <= 200 &&
+    !id.startsWith('.') &&
+    // eslint-disable-next-line no-control-regex
+    !/[/\\:*?"<>|\x00-\x1f]/.test(id)
+  );
+}
+
+/** 规则资源 fileName 是否安全：纯文件名（无目录段）、`.srs` 结尾、字符集同 id。 */
+export function isSafeRuleResourceFileName(name: unknown): name is string {
+  return isSafeRuleResourceId(name) && /\.srs$/i.test(name);
+}
 
 export interface IConfigManager {
   loadConfig(): Promise<UserConfig>;
@@ -481,6 +503,10 @@ export class ConfigManager implements IConfigManager {
           droppedSubs++;
           return false;
         }
+        // imported（导入而来、首跳不免 SSRF 判定，见 SubscriptionService.isImportedSubscription）：仅 true 有意义，
+        // 其余脏值删字段（sanitize 不 throw）。
+        const rec = sub as unknown as Record<string, unknown>;
+        if (rec.imported !== undefined && rec.imported !== true) delete rec.imported;
         return true;
       });
       if (droppedSubs > 0) {
@@ -507,6 +533,12 @@ export class ConfigManager implements IConfigManager {
     let droppedCidrs = 0; // endpoint 节点的非法 CIDR（allowedIPs/routes）一律丢弃而非 throw（见循环内说明）
     config.servers = config.servers.filter((server) => {
       if (!server || !server.id || typeof server.id !== 'string') {
+        droppedServers++;
+        return false;
+      }
+      // id 会成为路径段（Tailscale state 目录 <userData>/tailscale/<id>，删节点/登出时 rm -rf）：备份恢复 / 手改
+      // 配置可塞入 `../..`。现网 id 均为 randomUUID（主进程 randomUUID / 渲染端 crypto.randomUUID），恒过此校验。
+      if (!isSafeNodeId(server.id)) {
         droppedServers++;
         return false;
       }
@@ -592,6 +624,35 @@ export class ConfigManager implements IConfigManager {
         'warn',
         `[ConfigManager] Dropped ${droppedCidrs} invalid CIDR(s) (endpoint allowedIPs/routes)`
       );
+    }
+
+    // 规则资源（.srs 元数据）：id → `<id>.srs` 落盘、fileName → 删除/存在性检查，二者都拼进资源目录路径。
+    // 备份恢复 / 手改配置可塞入 `../` → 越界写/删。非法 id 剔除该条；fileName 非纯 `.srs` 文件名 → 归一为 `<id>.srs`。
+    if (config.ruleResources !== undefined) {
+      if (!Array.isArray(config.ruleResources)) {
+        delete config.ruleResources;
+        this.log('warn', '[ConfigManager] Dropped ruleResources (not an array)');
+      } else {
+        let droppedRes = 0;
+        let fixedRes = 0;
+        config.ruleResources = config.ruleResources.filter((r) => {
+          if (!r || typeof r !== 'object' || !isSafeRuleResourceId(r.id)) {
+            droppedRes++;
+            return false;
+          }
+          if (!isSafeRuleResourceFileName(r.fileName)) {
+            r.fileName = `${r.id}.srs`;
+            fixedRes++;
+          }
+          return true;
+        });
+        if (droppedRes > 0 || fixedRes > 0) {
+          this.log(
+            'warn',
+            `[ConfigManager] Rule resources: dropped ${droppedRes} with an unsafe id, reset ${fixedRes} unsafe file name(s)`
+          );
+        }
+      }
     }
 
     // Tailscale 单节点硬限兜底归一：同设备所有 TS 账号共用同一段 tailnet 地址，多个会互相顶掉，全局只许一个。

@@ -12,8 +12,21 @@
 import * as path from 'path';
 import { getUserDataPath } from '../utils/paths';
 
-/** Tailscale state 目录：`<userData>/tailscale/<serverId>`，跨重启免重认证、删节点时清理。 */
+/**
+ * 可安全作为路径段的节点 id（现网 id 全部由 randomUUID 生成）。id 可来自备份恢复 / 手改配置，且本模块的目录
+ * 会被 `fs.rm(..., {recursive, force})` 清理——`../..` 之类的 id 会把删除指向 userData 之外。
+ */
+export const SAFE_NODE_ID_RE = /^[A-Za-z0-9_-]+$/;
+
+export function isSafeNodeId(id: unknown): id is string {
+  return typeof id === 'string' && id.length <= 128 && SAFE_NODE_ID_RE.test(id);
+}
+
+/** Tailscale state 目录：`<userData>/tailscale/<serverId>`，跨重启免重认证、删节点时清理。非法 id → throw。 */
 export function tailscaleStateDir(serverId: string): string {
+  if (!isSafeNodeId(serverId)) {
+    throw new Error('Invalid Tailscale node id (refusing to build a state directory path)');
+  }
   return path.join(getUserDataPath(), 'tailscale', serverId);
 }
 

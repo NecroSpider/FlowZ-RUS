@@ -517,7 +517,7 @@ describe('parseLocalContent — 本地导入（不联网）', () => {
     const text = JSON.stringify({
       outbounds: [
         { type: 'vless', tag: 'v1', server: '1.2.3.4', server_port: 443, uuid: 'abc' },
-        { type: 'tor', tag: 't1' }, // 不支持 → 透传 custom
+        { type: 'hysteria', tag: 'h1', server: '5.6.7.8', server_port: 443 }, // 不支持 → 透传 custom
         { type: 'direct', tag: 'd' }, // 内部 → 忽略
       ],
     });
@@ -526,7 +526,7 @@ describe('parseLocalContent — 本地导入（不联网）', () => {
     expect(r.nodes).toHaveLength(2);
     expect(r.stats.unsupported).toBe(1);
     const custom = r.nodes.find((n) => n.protocol === 'custom')!;
-    expect((custom.customSettings?.outbound as { type?: string })?.type).toBe('tor');
+    expect((custom.customSettings?.outbound as { type?: string })?.type).toBe('hysteria');
     expect(r.nodes.every((n) => n.subscriptionId === undefined)).toBe(true);
   });
 

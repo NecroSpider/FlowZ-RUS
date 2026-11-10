@@ -20,6 +20,77 @@ import { dedupeTrim } from '../../shared/collections';
 import { isSupportedShareUrl } from '../../shared/protocol-url-schemes';
 import type { LogManager } from './LogManager';
 
+/**
+ * 分享链接 #fragment → 节点名。名字含字面 `%`（如 `#DE 100% speed`）时 decodeURIComponent 抛 URIError，原实现
+ * 会让整节点被丢弃。回退：只解码其中合法的 %XX 连续段（保留多字节 UTF-8 / emoji），非法 `%` 原样保留。
+ */
+export function decodeNodeName(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw.replace(/(?:%[0-9a-fA-F]{2})+/g, (seq) => {
+      try {
+        return decodeURIComponent(seq);
+      } catch {
+        return seq;
+      }
+    });
+  }
+}
+
+/**
+ * JSON.parse 错误 → 不回显输入的描述。V8 的 SyntaxError 文案会引用输入片段（如 `"{"add":..,"id":"<uuid>"... is
+ * not valid JSON`），vmess/shadow-tls 的解码 JSON 含 uuid/密码，落 app.log 与诊断报告即泄密。只保留位置信息。
+ */
+export function describeJsonError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  const pos = /position (\d+)/.exec(msg)?.[1];
+  const lc = /line (\d+) column (\d+)/.exec(msg);
+  if (lc) return `invalid JSON at line ${lc[1]} column ${lc[2]}`;
+  if (pos) return `invalid JSON at position ${pos}`;
+  if (/unexpected end/i.test(msg)) return 'invalid JSON (unexpected end of input)';
+  return 'invalid JSON';
+}
+
+/** JSON.parse，失败时抛出不含输入内容的错误（见 describeJsonError）。 */
+function parseJsonNoEcho(text: string): any {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(describeJsonError(e));
+  }
+}
+
+/**
+ * VLESS Encryption（Xray 25.x 的 `mlkem768x25519plus.<mode>.<rtt>.<keys…>` 点分配置）：sing-box 内核不支持，
+ * 入库只会产出「静默连不上」的假节点。无点的旧值（none / auto / zero 等历史噪声）一直被内核忽略、节点照常
+ * 可用，保持放行。返回拒绝时的加密方法名（首段），否则 null。
+ */
+export function unsupportedVlessEncryption(enc: unknown): string | null {
+  if (typeof enc !== 'string') return null;
+  const v = enc.trim();
+  if (!v) return null;
+  if (v.includes('.') || /^mlkem/i.test(v)) return v.split('.')[0].slice(0, 40) || 'unknown';
+  return null;
+}
+
+/** VLESS Encryption 拒绝文案：沿用「Unsupported transport type: X」形态 → 订阅聚合计数 + 预检 errorKind:'transport'。 */
+export function vlessEncryptionError(method: string): Error {
+  return new Error(
+    `Unsupported transport type: vless-encryption:${method} (VLESS Encryption is not supported by the sing-box core)`
+  );
+}
+
+/**
+ * 证书钉扎无法执行的告警文案（hy2 分享链 pinSHA256 / Clash `fingerprint` 共用）。sing-box 只能校验 CA 链或整体
+ * 跳过校验，没有「整张证书指纹」钉扎。insecure 时连接即未经任何校验。
+ */
+export function certPinWarning(nodeName: string, field: string, insecure: boolean): string {
+  return insecure
+    ? `Node "${nodeName}": certificate pin (${field}) cannot be enforced by the sing-box core and certificate verification is disabled (skip-cert-verify/insecure) - the connection is NOT verified and can be intercepted`
+    : `Node "${nodeName}": certificate pin (${field}) cannot be enforced by the sing-box core; only standard CA verification is applied`;
+}
+
 export interface IProtocolParser {
   isSupported(url: string): boolean;
   parseUrl(url: string): ServerConfig;
@@ -186,7 +257,7 @@ export class ProtocolParser implements IProtocolParser {
     const address = this.stripIpv6Brackets(url.hostname);
     const port = parseInt(url.port) || defaultPort;
     const params = new URLSearchParams(url.search);
-    const name = decodeURIComponent(url.hash.slice(1)) || `${address}:${port}`;
+    const name = decodeNodeName(url.hash.slice(1)) || `${address}:${port}`;
     return { address, port, params, name };
   }
 
@@ -198,6 +269,8 @@ export class ProtocolParser implements IProtocolParser {
     if (!uuid) {
       throw new Error('VLESS URL missing UUID');
     }
+    const encMethod = unsupportedVlessEncryption(params.get('encryption'));
+    if (encMethod) throw vlessEncryptionError(encMethod);
 
     const config: ServerConfig = {
       id: randomUUID(),
@@ -345,6 +418,15 @@ export class ProtocolParser implements IProtocolParser {
     if (!config.tlsSettings.serverName) {
       config.tlsSettings.serverName = params.get('sni') || params.get('peer') || address;
     }
+    // pinSHA256（整证书 SHA-256 钉扎）：sing-box 无整证书钉扎能力 → 无法执行。不丢节点（用户依赖），但必须
+    // 留痕：配了 insecure=1 时钉扎原本是唯一校验，现在连接完全未校验（可被中间人）。
+    const pin = params.get('pinSHA256') || params.get('pinsha256') || params.get('pin-sha256');
+    if (pin) {
+      this.log(
+        'warn',
+        certPinWarning(name, 'pinSHA256', config.tlsSettings.allowInsecure === true)
+      );
+    }
 
     return config;
   }
@@ -352,7 +434,7 @@ export class ProtocolParser implements IProtocolParser {
   /** 格式: tuic://uuid:password@address:port?congestion_control=bbr&alpn=h3&sni=link.apple.com&udp_relay_mode=native&allow_insecure=1#name */
   private parseTuic(url: URL): ServerConfig {
     const params = url.searchParams;
-    const name = decodeURIComponent(url.hash ? url.hash.slice(1) : '');
+    const name = decodeNodeName(url.hash ? url.hash.slice(1) : '');
 
     // Credentials format: tuic://uuid:password@...
     const credentials = decodeURIComponent(url.username + (url.password ? ':' + url.password : ''));
@@ -486,9 +568,7 @@ export class ProtocolParser implements IProtocolParser {
    */
   private parseSnell(url: URL): ServerConfig {
     // psk 含未编码 ':' 时 URL 引擎会拆成 username:password——两段拼回，避免 psk 静默截断成假节点。
-    const psk = decodeURIComponent(
-      url.password ? `${url.username}:${url.password}` : url.username
-    );
+    const psk = decodeURIComponent(url.password ? `${url.username}:${url.password}` : url.username);
     const { address, port, params, name } = this.parseBase(url);
 
     if (!psk.trim()) {
@@ -539,7 +619,7 @@ export class ProtocolParser implements IProtocolParser {
     const config: ServerConfig = {
       id: randomUUID(),
       protocol: 'shadowsocks',
-      name: decodeURIComponent(urlObj.hash.slice(1)) || 'Shadowsocks',
+      name: decodeNodeName(urlObj.hash.slice(1)) || 'Shadowsocks',
       address: this.stripIpv6Brackets(urlObj.hostname),
       port: parseInt(urlObj.port, 10),
       shadowsocksSettings: {
@@ -672,7 +752,7 @@ export class ProtocolParser implements IProtocolParser {
     if (shadowTlsParam) {
       try {
         const decodedParam = Buffer.from(shadowTlsParam, 'base64').toString('utf-8');
-        const stlsConfig = JSON.parse(decodedParam);
+        const stlsConfig = parseJsonNoEcho(decodedParam);
         if (stlsConfig.password && stlsConfig.host) {
           config.shadowTlsSettings = {
             password: stlsConfig.password,
@@ -687,7 +767,10 @@ export class ProtocolParser implements IProtocolParser {
           }
         }
       } catch (e) {
-        this.log('error', `Failed to parse shadow-tls Base64 JSON parameter: ${e}`);
+        this.log(
+          'error',
+          `Failed to parse shadow-tls Base64 JSON parameter: ${e instanceof Error ? e.message : 'invalid value'}`
+        );
       }
     }
 
@@ -736,7 +819,7 @@ export class ProtocolParser implements IProtocolParser {
     try {
       const base64Data = url.slice(8); // Remove 'vmess://'
       const jsonStr = Buffer.from(base64Data, 'base64').toString('utf-8');
-      const vmessData = JSON.parse(jsonStr);
+      const vmessData = parseJsonNoEcho(jsonStr);
 
       const address = vmessData.add;
       const port = parseInt(vmessData.port);

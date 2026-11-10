@@ -4,7 +4,7 @@
  */
 
 import { app, dialog } from 'electron';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -1357,7 +1357,63 @@ export class CoreUpdateService {
   }
 
   /**
+   * 手动换核「确认」流程的文件凭据：系统文件框选中的路径只留在主进程，渲染端只拿不透明 token。旧实现让渲染端
+   * 回传 `{filePath, force}` 直接跳过文件框 → 任一能调 IPC 的渲染端代码可让主进程执行（version 探测）并把任意
+   * 本机文件装成核心。token 一次性、10 分钟过期。
+   */
+  private manualCoreTokens = new Map<string, { path: string; expiresAt: number }>();
+  private static readonly MANUAL_CORE_TOKEN_TTL_MS = 10 * 60_000;
+
+  private issueManualCoreToken(filePath: string): string {
+    const now = Date.now();
+    for (const [k, v] of this.manualCoreTokens)
+      if (v.expiresAt <= now) this.manualCoreTokens.delete(k);
+    const token = randomUUID();
+    this.manualCoreTokens.set(token, {
+      path: filePath,
+      expiresAt: now + CoreUpdateService.MANUAL_CORE_TOKEN_TTL_MS,
+    });
+    return token;
+  }
+
+  private takeManualCoreToken(token: string): string | null {
+    const entry = this.manualCoreTokens.get(token);
+    this.manualCoreTokens.delete(token);
+    if (!entry || entry.expiresAt <= Date.now()) return null;
+    return entry.path;
+  }
+
+  /**
+   * 渲染端（IPC core:replaceManual）入口：无 token → 弹系统文件框；带 token（确认框二次调用）→ 用主进程记下的
+   * 文件框路径。返回给渲染端的是 token，从不回传/接收路径。
+   */
+  async replaceManualCoreFromRenderer(opts?: { token?: string; force?: boolean }): Promise<
+    Omit<Awaited<ReturnType<CoreUpdateService['replaceManualCore']>>, 'filePath'> & {
+      token?: string;
+    }
+  > {
+    let filePath: string | undefined;
+    if (typeof opts?.token === 'string' && opts.token) {
+      const p = this.takeManualCoreToken(opts.token);
+      if (!p)
+        return {
+          ok: false,
+          error: 'The file selection has expired. Please choose the file again.',
+        };
+      filePath = p;
+    }
+    const { filePath: picked, ...rest } = await this.replaceManualCore({
+      filePath,
+      force: opts?.force === true,
+    });
+    return picked && rest.needConfirm
+      ? { ...rest, token: this.issueManualCoreToken(picked) }
+      : rest;
+  }
+
+  /**
    * 用户手动选择本地 sing-box 二进制并替换当前核心（也供 resetCoreToFactory 复用）。
+   * 主进程内部调用；渲染端须走 replaceManualCoreFromRenderer（token，不传路径）。
    * @param opts.filePath 源文件路径（省略则弹系统文件选择器）
    * @param opts.force 跳过同版本短路（reset 到出厂常与现役同版本，仍要覆盖）
    * @param opts.skipBackup reset 到出厂时=true：跳过备份/验证闩/回退（现役核是用户要丢弃的，出厂核已知稳定）

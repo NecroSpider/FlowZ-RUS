@@ -656,13 +656,14 @@ export const coreUpdateApi = {
   /**
    * 手动替换核心。
    * - 无参：弹文件选择器 + 预检 + 同版本/基线检测。返回 needConfirm 的两种情形，均由 UI 弹确认框：
-   *   · 同版本：`{ ok:false, needConfirm:true, sameVersion, filePath }`；
-   *   · 基线预判（官方核旧于随包基线，B-2）：`{ ok:false, needConfirm:true, baselineOverride:true, uploadVersion, bundledVersion, filePath }`。
+   *   · 同版本：`{ ok:false, needConfirm:true, sameVersion, token }`；
+   *   · 基线预判（官方核旧于随包基线，B-2）：`{ ok:false, needConfirm:true, baselineOverride:true, uploadVersion, bundledVersion, token }`。
    *   否则直接换核返回 `{ ok:true, build }`（build 供 UI 对 fork/unknown 追加来源提示，B-3）。
-   * - 传 `{ filePath, force:true }`：跳过同版本/基线确认，直接换该文件。
+   * - 传 `{ token, force:true }`：跳过同版本/基线确认，直接换文件框选中的那个文件。token 是主进程发的不透明一次性
+   *   凭据（路径只留在主进程，渲染端不能指定任意路径）。
    * 用户取消文件选择器时主进程返回 `{ ok:false }`（无 needConfirm），UI 静默不提示。
    */
-  async replaceManual(opts?: { filePath?: string; force?: boolean }): Promise<
+  async replaceManual(opts?: { token?: string; force?: boolean }): Promise<
     | { ok: true; build?: CoreBuildKind }
     | {
         ok: false;
@@ -671,7 +672,7 @@ export const coreUpdateApi = {
         baselineOverride?: boolean;
         uploadVersion?: string;
         bundledVersion?: string;
-        filePath?: string;
+        token?: string;
         error?: string;
       }
   > {
@@ -785,7 +786,8 @@ export const backupApi = {
    */
   async importPick(): Promise<{
     canceled: boolean;
-    filePath?: string;
+    /** 主进程发的不透明一次性凭据（选中的备份文件路径只留在主进程），交给 importApply。 */
+    token?: string;
     available?: BackupCategory[];
     counts?: Partial<Record<BackupCategory, number>>;
     error?: string;
@@ -797,10 +799,10 @@ export const backupApi = {
    * 导入②：按所选类整类替换 + 空跳过 + 保存。skipped=选了但备份为空被跳过的类。
    */
   async importApply(
-    filePath: string,
+    token: string,
     categories: BackupCategory[]
   ): Promise<{ success: boolean; info?: BackupInfo; skipped?: BackupCategory[]; error?: string }> {
-    return ipcClient.invoke(IPC_CHANNELS.BACKUP_IMPORT_APPLY, { filePath, categories });
+    return ipcClient.invoke(IPC_CHANNELS.BACKUP_IMPORT_APPLY, { token, categories });
   },
 
   async getInfo(): Promise<BackupInfo> {

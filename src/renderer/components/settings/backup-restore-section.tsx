@@ -19,7 +19,7 @@ export function BackupRestoreSection() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importPick, setImportPick] = useState<{
-    filePath: string;
+    token: string;
     available: BackupCategory[];
     counts: Partial<Record<BackupCategory, number>>;
   } | null>(null);
@@ -91,7 +91,7 @@ export function BackupRestoreSection() {
         toast.warning(t('settings.advanced.backup.importEmpty'));
         return;
       }
-      setImportPick({ filePath: r.filePath!, available: r.available, counts: r.counts ?? {} });
+      setImportPick({ token: r.token!, available: r.available, counts: r.counts ?? {} });
       setShowImportDialog(true);
     } catch (err: any) {
       toast.error(t('settings.advanced.backup.importFail'), { description: err?.message });
@@ -105,7 +105,7 @@ export function BackupRestoreSection() {
     setShowImportDialog(false);
     setIsImporting(true);
     try {
-      const result = await api.backup.importApply(importPick.filePath, selected);
+      const result = await api.backup.importApply(importPick.token, selected);
       if (result.success && result.info) {
         await loadInfo();
         toast.success(t('settings.advanced.backup.importSuccess'), {

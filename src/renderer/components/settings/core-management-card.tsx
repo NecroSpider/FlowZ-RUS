@@ -62,13 +62,13 @@ export function CoreManagementCard() {
   // 同版本换核确认（手动替换返回 needConfirm 时打开）
   const [sameVersionConfirm, setSameVersionConfirm] = useState<{
     sameVersion: string;
-    filePath: string;
+    token: string;
   } | null>(null);
   // B-2 基线预判确认（上传官方核旧于随包基线，替换后下次连接将被 reseed 打回，弹框诚实告知）
   const [baselineConfirm, setBaselineConfirm] = useState<{
     uploadVersion: string;
     bundledVersion: string;
-    filePath: string;
+    token: string;
   } | null>(null);
   // B6 两个确认框
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -251,16 +251,16 @@ export function CoreManagementCard() {
       if (result.ok) {
         showReplaceSuccess(result.build);
         await loadVersionInfo();
-      } else if (result.needConfirm && result.baselineOverride && result.filePath) {
+      } else if (result.needConfirm && result.baselineOverride && result.token) {
         // 官方核旧于随包基线：替换后下次连接会被 reseed 打回，弹框诚实告知（B-2）
         setBaselineConfirm({
           uploadVersion: result.uploadVersion ?? '',
           bundledVersion: result.bundledVersion ?? '',
-          filePath: result.filePath,
+          token: result.token,
         });
-      } else if (result.needConfirm && result.sameVersion && result.filePath) {
+      } else if (result.needConfirm && result.sameVersion && result.token) {
         // 目标内核与当前同版本：交给用户确认后再换
-        setSameVersionConfirm({ sameVersion: result.sameVersion, filePath: result.filePath });
+        setSameVersionConfirm({ sameVersion: result.sameVersion, token: result.token });
       } else if (result.error) {
         toast.error(t('settings.about.coreUpdateFail'), { description: result.error });
       }
@@ -280,7 +280,7 @@ export function CoreManagementCard() {
     if (!target) return;
     try {
       setReplacingManual(true);
-      const result = await api.coreUpdate.replaceManual({ filePath: target.filePath, force: true });
+      const result = await api.coreUpdate.replaceManual({ token: target.token, force: true });
       if (result.ok) {
         showReplaceSuccess(result.build);
         await loadVersionInfo();
@@ -303,7 +303,7 @@ export function CoreManagementCard() {
     if (!target) return;
     try {
       setReplacingManual(true);
-      const result = await api.coreUpdate.replaceManual({ filePath: target.filePath, force: true });
+      const result = await api.coreUpdate.replaceManual({ token: target.token, force: true });
       if (result.ok) {
         showReplaceSuccess(result.build);
         await loadVersionInfo();

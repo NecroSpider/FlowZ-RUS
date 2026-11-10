@@ -143,6 +143,8 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
             url: s.url,
             autoUpdate: false,
             updateViaProxy: false,
+            // 来自导入文件而非用户手输 → 首跳不信任内网地址（SSRF guard）。
+            imported: true,
           });
           addedSubs++;
         } catch {
