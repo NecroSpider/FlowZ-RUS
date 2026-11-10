@@ -194,10 +194,10 @@ describe('buildInbounds — TUN', () => {
       );
     expect(build({ mtu: 9000 }).mtu).toBe(9000); // 哨兵已删：9000 是普通显式值
     expect(build({ mtu: 1280 }).mtu).toBe(1280);
-    expect(build({ mtu: 'auto' }).mtu).toBe(65535); // win32 + Auto 栈(gvisor)
-    expect(build({}).mtu).toBe(65535); // 缺 mtu 键等同 auto
+    expect(build({ mtu: 'auto' })).toMatchObject({ stack: 'system', mtu: 4064 });
+    expect(build({})).toMatchObject({ stack: 'system', mtu: 4064 });
     // 显式栈参与查表：同平台改栈，Auto MTU 随之换档（证明传的是【已解析】栈而非用户原始值）
-    expect(build({ stack: 'system', mtu: 'auto' }).mtu).toBe(4064);
+    expect(build({ stack: 'gvisor', mtu: 'auto' })).toMatchObject({ stack: 'gvisor', mtu: 65535 });
   });
 
   it('显式 stack=mixed 全平台原样下发（honor 用户选择）', () => {
@@ -219,7 +219,6 @@ describe('buildInbounds — TUN', () => {
       buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
     );
     const tun = byTag(ibs, 'tun-in');
-    expect(tun.stack).toBe('gvisor'); // Windows Auto 档现为 gvisor（实测最优；栈本身由 tun-defaults 单测覆盖）
     expect(tun.route_exclude_address).toContain('10.0.0.0/8'); // bypassLAN 默认 true
     expect(tun.route_exclude_address).toContain('223.5.5.5/32'); // 核心 DNS 防回流
   });

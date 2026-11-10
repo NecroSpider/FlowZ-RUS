@@ -429,6 +429,7 @@ export interface DiagnosticReportInput {
   rendererWatchdog?: { discardCount: number; warnCount: number; thresholdMb: number };
   appLogTail: string;
   singboxLogTail: string;
+  recentCoreErrors?: string;
   /**
    * 提权/看护路径下的核启动日志（singbox_startup.log）尾部。核在 logger 建起前失败、panic、被环境拦下，
    * 错误只走 stderr——singbox.log 里一个字都没有。issue #324 两轮诊断都定不了位正因该段缺失。
@@ -629,6 +630,13 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
   lines.push('');
   lines.push(fence('text', input.singboxLogTail));
   lines.push('');
+
+  if (input.recentCoreErrors) {
+    lines.push('## Recent sing-box errors (current app session)');
+    lines.push('');
+    lines.push(fence('text', input.recentCoreErrors));
+    lines.push('');
+  }
 
   // 核启动日志：与 singbox.log 互补（见 startupLogTail 字段注释）。放在其后，同样进 redactIdentifiers。
   // 标题带来源描述 + 文件元信息：Windows helper 侧 O_APPEND 永不截断，仅凭 64KB tail 无法判断内容属于哪次

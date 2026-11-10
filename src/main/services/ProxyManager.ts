@@ -8368,13 +8368,14 @@ rm -f "$STOPFLAG"
       return;
     }
 
-    // 过滤低价值日志（连接建立、DNS 查询等频繁日志）
-    if (this.isLowValueLog(line)) {
+    const logInfo = this.parseSingBoxLog(line);
+    // Routine handshake messages are noisy, but handshake failures explain broken nodes.
+    const isHandshakeFailure =
+      (logInfo?.level === 'error' || logInfo?.level === 'fatal') &&
+      /\btls handshake\b/i.test(logInfo.message);
+    if (!isHandshakeFailure && this.isLowValueLog(line)) {
       return;
     }
-
-    // 解析 sing-box 日志格式
-    const logInfo = this.parseSingBoxLog(line);
 
     if (logInfo) {
       // 先翻译消息中的代理标签

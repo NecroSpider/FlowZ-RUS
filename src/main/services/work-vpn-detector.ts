@@ -138,7 +138,8 @@ const WIN_NET_SNAPSHOT_PS = [
   '  routes = @(Get-NetRoute -AddressFamily IPv4 | ForEach-Object { @{ n = $_.InterfaceAlias; p = $_.DestinationPrefix; g = $_.NextHop } })',
   '  dns = @(Get-DnsClientServerAddress -AddressFamily IPv4 | ForEach-Object { @{ n = $_.InterfaceAlias; s = @($_.ServerAddresses) } })',
   '  suffix = @(Get-DnsClient | ForEach-Object { @{ n = $_.InterfaceAlias; d = $_.ConnectionSpecificSuffix } })',
-  '  nrpt = @(Get-DnsClientNrptPolicy -Effective | ForEach-Object { @{ ns = @($_.Namespace); s = @($_.NameServers) } })',
+  // Effective NRPT may return System.Net.IPAddress objects. Emit strings before JSON serialization.
+  '  nrpt = @(Get-DnsClientNrptPolicy -Effective | ForEach-Object { @{ ns = @($_.Namespace); s = @($_.NameServers | ForEach-Object { [string]$_ }) } })',
   '}',
   '$j = ConvertTo-Json -InputObject $o -Depth 4 -Compress',
   "'WORKVPN_JSON:' + [regex]::Replace($j, '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value })",

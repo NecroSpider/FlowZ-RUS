@@ -2,7 +2,7 @@
 .SYNOPSIS
   Guides a FlowZ and OpenVPN test and saves a local ZIP with network snapshots.
 .EXAMPLE
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\collect-flowz-windows.ps1 -WorkHost portal.example.org
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\collect-flowz-windows.ps1 -WorkHost portal.example.org -WorkDns 10.0.0.53
 .NOTES
   Compatible with Windows PowerShell 5.1. Run as your usual Windows user.
   Network state is read only. Use FlowZ's diagnostic export for its redacted logs.
@@ -11,6 +11,7 @@
 param(
   [ValidatePattern('^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$')]
   [string]$WorkHost,
+  [ipaddress]$WorkDns,
   [string]$OutputRoot = [Environment]::GetFolderPath('MyDocuments'),
   [switch]$SnapshotOnly
 )
@@ -32,11 +33,17 @@ function Read-Section([scriptblock]$Read) {
   }
 }
 
-function Test-Endpoint([string]$HostName, [int]$Port, [string]$Path) {
-  $dns = Read-Section {
-    Resolve-DnsName -Name $HostName -Type A -DnsOnly -QuickTimeout -ErrorAction Stop |
+function Read-DnsA([string]$HostName, [ipaddress]$Server) {
+  Read-Section {
+    $options = @{}
+    if ($Server) { $options.Server = $Server.IPAddressToString }
+    Resolve-DnsName -Name $HostName -Type A -DnsOnly -QuickTimeout -ErrorAction Stop @options |
       Where-Object { $_.IPAddress } | Select-Object -ExpandProperty IPAddress
   }
+}
+
+function Test-Endpoint([string]$HostName, [string]$Path) {
+  $dns = Read-DnsA $HostName
   $routes = Read-Section {
     foreach ($address in $dns.rows) {
       Find-NetRoute -RemoteIPAddress $address -ErrorAction Stop |
@@ -46,9 +53,14 @@ function Test-Endpoint([string]$HostName, [int]$Port, [string]$Path) {
   $http = @{ available = $false }
   $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($curl) {
-    $url = 'https://{0}:{1}{2}' -f $HostName, $Port, $Path
-    $status = & $curl.Source -q --noproxy '*' --silent --head --output NUL --write-out '%{http_code}' --connect-timeout 4 --max-time 8 $url
-    $http = @{ available = $true; status = $status; exitCode = $LASTEXITCODE }
+    $url = 'https://{0}{1}' -f $HostName, $Path
+    $output = & $curl.Source -q --noproxy '*' --silent --output NUL --write-out '%{http_code}|%{remote_ip}|%{time_connect}|%{time_appconnect}|%{ssl_verify_result}' --connect-timeout 4 --max-time 8 $url
+    $exitCode = $LASTEXITCODE
+    $status, $remoteIp, $tcpTime, $tlsTime, $certResult = ([string]$output) -split '\|', 5
+    $http = @{
+      available = $true; status = $status; exitCode = $exitCode; remoteIp = $remoteIp
+      tcpConnectSeconds = $tcpTime; tlsConnectSeconds = $tlsTime; certificateVerifyResult = $certResult
+    }
   }
   @{ host = $HostName; dns = $dns; routes = $routes; https = $http }
 }
@@ -101,12 +113,27 @@ function Save-Snapshot([string]$Stage, [switch]$Vpn) {
     routes = Read-Section { Get-NetRoute -PolicyStore ActiveStore | Select-Object InterfaceAlias, InterfaceIndex, AddressFamily, DestinationPrefix, NextHop, RouteMetric }
     dns = Read-Section { Get-DnsClientServerAddress | Select-Object InterfaceAlias, InterfaceIndex, AddressFamily, ServerAddresses }
     suffixes = Read-Section { Get-DnsClient | Select-Object InterfaceAlias, InterfaceIndex, ConnectionSpecificSuffix }
-    nrpt = Read-Section { Get-DnsClientNrptPolicy -Effective | Select-Object Namespace, NameServers, DirectAccessDnsServers }
-    publicProbe = Test-Endpoint 'www.gstatic.com' 443 '/generate_204'
+    nrpt = Read-Section {
+      Get-DnsClientNrptPolicy -Effective | ForEach-Object {
+        @{
+          Namespace = @($_.Namespace)
+          NameServers = @($_.NameServers | ForEach-Object { if ($_) { [string]$_ } })
+          DirectAccessDnsServers = @($_.DirectAccessDnsServers | ForEach-Object { if ($_) { [string]$_ } })
+        }
+      }
+    }
+    publicProbe = Test-Endpoint 'www.gstatic.com' '/generate_204'
   }
   if ($Vpn) {
     $snapshot.openvpn = Read-Section { Read-OpenVpnSummary }
-    if ($WorkHost) { $snapshot.workProbe = Test-Endpoint $WorkHost 443 '/' }
+    if ($WorkHost) {
+      $snapshot.workProbe = Test-Endpoint $WorkHost '/'
+      if ($WorkDns) {
+        $snapshot.workProbe.directDns = @{ server = $WorkDns.IPAddressToString; result = Read-DnsA $WorkHost $WorkDns }
+      }
+    } else {
+      $snapshot.workProbe = @{ skipped = 'work-host-not-provided' }
+    }
   }
   $snapshot.finishedUtc = [DateTime]::UtcNow.ToString('o')
   Save-Json "$Stage.json" $snapshot
@@ -118,26 +145,37 @@ function Wait-Step([string]$Message) {
   [void](Read-Host 'Press Enter when ready, even if the connection failed')
 }
 
+function Save-FlowZReport([string]$Name) {
+  $reportPath = Join-Path $directory.FullName $Name
+  Write-Host ('In FlowZ export the diagnostic report to {0} while capture is still running.' -f $reportPath)
+  [void](Read-Host 'Press Enter after exporting, or skip and send the report separately')
+  if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) {
+    Write-Warning ('The ZIP will omit {0}. Export it separately if possible.' -f $Name)
+  }
+}
+
 if ($SnapshotOnly) {
   Save-Snapshot 'snapshot' -Vpn
 } else {
+  if (-not $WorkHost) {
+    do {
+      $enteredHost = ([string](Read-Host 'Enter the work portal hostname without https://, or press Enter to skip')).Trim()
+    } while ($enteredHost -and $enteredHost -notmatch '^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$')
+    if ($enteredHost) { $WorkHost = $enteredHost }
+  }
   Wait-Step 'Disconnect FlowZ and OpenVPN. In FlowZ open Settings > Advanced > Diagnostics and start diagnostic capture.'
   Save-Snapshot '01-baseline'
   Wait-Step 'Connect the usual OpenVPN profile with FlowZ still disconnected. Check the work site.'
   Save-Snapshot '02-openvpn-only' -Vpn
-  Wait-Step 'Disconnect OpenVPN. Update Shadow, connect FlowZ in TUN mode, apply pending node changes if shown and run the Shadow group test. Wait for its result.'
+  Wait-Step 'Disconnect OpenVPN. In FlowZ Settings > Network set Test URL to https://www.gstatic.com/generate_204. Update Shadow, connect in TUN mode and apply pending node changes if shown. Run the Shadow group test and wait for the result.'
   Save-Snapshot '03-flowz-shadow'
+  Save-FlowZReport 'flowz-shadow-report.md'
   Wait-Step 'Keep FlowZ connected and connect OpenVPN again. Return here as soon as OpenVPN reports a result.'
   Save-Snapshot '04-combined'
   Write-Host 'Waiting 35 seconds for Windows and FlowZ to reconcile routes and DNS...'
   Start-Sleep -Seconds 35
   Save-Snapshot '05-combined-settled' -Vpn
-  $reportPath = Join-Path $directory.FullName 'flowz-report.md'
-  Write-Host ('In FlowZ export the diagnostic report to {0}' -f $reportPath)
-  [void](Read-Host 'Press Enter after exporting, or leave it out and send the report separately')
-  if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) {
-    Write-Warning 'The ZIP will contain network snapshots only. Export the FlowZ diagnostic report separately.'
-  }
+  Save-FlowZReport 'flowz-report.md'
   Write-Host 'You can now stop diagnostic capture in FlowZ.'
 }
 
