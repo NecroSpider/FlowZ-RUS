@@ -191,3 +191,60 @@ describe('reconcileDns 热插重灌', () => {
     expect(readMarkerFile()).toBeNull();
   });
 });
+
+describe('reconcileDns × restoreDns 互斥（链路变化重灌不得撤销一次还原）', () => {
+  /** readDns 可挂起：模拟 reconcile 在「读完 marker、还在逐服务读 DNS」时被 restore 插队。 */
+  class GatedDns extends TestDns {
+    gate: Promise<void> | null = null;
+    protected async readDns(target: string): Promise<string[]> {
+      if (this.gate) await this.gate;
+      return super.readDns(target);
+    }
+  }
+
+  it('reconcile 在飞时调 restoreDns → 两者结束后 DNS 是原始值、marker 已删（不被 reconcile 复活）', async () => {
+    writeMarkerFile({ 'Wi-Fi': ['192.168.5.1'], Ethernet: ['10.0.0.1'] });
+    // Wi-Fi 已受控；Ethernet 被外部改回了 LAN 值 → reconcile 会想把它重新接管。
+    const dns = new GatedDns({ 'Wi-Fi': [CONTROLLED], Ethernet: ['10.0.0.1'] });
+    let open!: () => void;
+    dns.gate = new Promise<void>((r) => (open = r));
+
+    const reconciling = dns.reconcileDns();
+    await Promise.resolve();
+    const restoring = dns.restoreDns(); // 用户停止：还原
+    open();
+    await Promise.all([reconciling, restoring]);
+
+    expect(readMarkerFile()).toBeNull();
+    expect(dns.dnsMap['Wi-Fi']).toEqual(['192.168.5.1']);
+    expect(dns.dnsMap['Ethernet']).toEqual(['10.0.0.1']);
+  });
+
+  it('restore 先完成、随后才轮到的 reconcile → marker 已不在，零 applyDns', async () => {
+    writeMarkerFile({ 'Wi-Fi': ['192.168.5.1'] });
+    const dns = new TestDns({ 'Wi-Fi': [CONTROLLED] });
+    const restoring = dns.restoreDns();
+    const reconciling = dns.reconcileDns();
+    await Promise.all([restoring, reconciling]);
+    const spy = jest.spyOn(dns, 'applyDnsImpl');
+    await dns.reconcileDns();
+    expect(spy).not.toHaveBeenCalled();
+    expect(dns.dnsMap['Wi-Fi']).toEqual(['192.168.5.1']);
+    expect(readMarkerFile()).toBeNull();
+  });
+
+  it('锁外删掉 marker（启动期 recovery 等）后，在飞 reconcile 不把 marker 写回来', async () => {
+    writeMarkerFile({ Ethernet: ['10.0.0.1'] });
+    const dns = new GatedDns({ Ethernet: ['10.0.0.1'] });
+    let open!: () => void;
+    dns.gate = new Promise<void>((r) => (open = r));
+    const spy = jest.spyOn(dns, 'applyDnsImpl');
+    const reconciling = dns.reconcileDns();
+    await Promise.resolve();
+    SystemDnsBase.clearMarkerFile();
+    open();
+    await reconciling;
+    expect(spy).not.toHaveBeenCalled();
+    expect(readMarkerFile()).toBeNull();
+  });
+});

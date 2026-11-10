@@ -35,19 +35,16 @@ describe('攻击面 H3：macOS setproxybypassdomains 用 execFile 参数数组�
   beforeEach(() => {
     execMock.mockReset();
     execFileMock.mockReset();
-    // getNetworkServices 内部用 execAsync（exec），返回单个服务让循环跑一轮
-    execMock.mockImplementation(
-      (cmd: string, cb: (e: null, r: { stdout: string; stderr: string }) => void) => {
-        if (/listallnetworkservices/.test(cmd)) {
-          cb(null, { stdout: 'An asterisk (*) denotes...\nWi-Fi\n', stderr: '' });
-          return;
-        }
-        cb(null, { stdout: '', stderr: '' });
+    // macOS 全部 networksetup 调用走 execFile(argv)（服务名防注入）；cb 恒为最后一个参数（带 { timeout } 选项）。
+    // getNetworkServices 返回单个服务让循环跑一轮。
+    execFileMock.mockImplementation((_cmd: string, args: string[], ...rest: unknown[]) => {
+      const cb = rest[rest.length - 1] as (e: null, r: { stdout: string; stderr: string }) => void;
+      if (args?.[0] === '-listallnetworkservices') {
+        cb(null, { stdout: 'An asterisk (*) denotes...\nWi-Fi\n', stderr: '' });
+        return;
       }
-    );
-    execFileMock.mockImplementation((_cmd: string, _args: string[], cb: (e: null) => void) =>
-      cb(null)
-    );
+      cb(null, { stdout: '', stderr: '' });
+    });
   });
 
   it('含 shell 元字符的 bypass 项作为独立 argv 传递（不经 shell 解析）', async () => {

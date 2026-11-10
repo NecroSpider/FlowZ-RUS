@@ -698,6 +698,22 @@ export function buildDnsConfig(
         query_type: ['A', 'AAAA'],
         server: fakeipFallthroughResolver,
       } as SingBoxDnsRule);
+      // 其余查询类型（HTTPS/SVCB=65/64、TXT、MX、SRV…）：上面每条 catch-all 都限定 A/AAAA，这些查询原本一路落到
+      // final=dns-domestic（境内 DoH、直连、隧道外）——Chrome/Safari 每次打开页面都会发 HTTPS-RR 查询，等于把
+      // 每个境外/被封域名的访问记录交给境内解析器。按与 A/AAAA 真实解析（S0/S1）**同一套二分**补两条不限类型的
+      // 规则：region-local → 境内解析器，其余 → 出口一致的 fakeipFallthroughResolver（经隧道）。
+      // 位置：规则链末尾。此前的一切规则（节点域名 / DoH bootstrap / 工作 VPN 内网域名（splice 在 bootstrap 之后）/
+      // .local·内网·反查 PTR(.arpa)·银行 / captive·NTP / bypassFakeIP / tailnet preferred_by·探测入站（unshift 到最前））
+      // 均不限类型或先于此处，首命中即停 → 不被遮蔽；A/AAAA 已被上面三条吃掉 → 这两条只接住「其余类型」。
+      if (fakeipSplitActive && fakeipLocalGeo.length > 0) {
+        dnsRules.push({
+          rule_set: fakeipLocalGeo.length === 1 ? fakeipLocalGeo[0] : fakeipLocalGeo,
+          server: fakeipLocalResolver,
+        } as SingBoxDnsRule);
+      }
+      dnsRules.push({
+        server: fakeipFallthroughResolver,
+      } as SingBoxDnsRule);
     } else {
       // 未开 FakeIP（如系统代理模式）：用 geosite 规则各自解析正确 IP（但容易被墙污染）
       if (proxyMode === 'smart') {
@@ -751,8 +767,9 @@ export function buildDnsConfig(
           dnsConfig.final = 'dns-remote';
         }
       } else {
+        // global（FakeIP 关）：出口恒是代理 → 全部查询类型都经隧道解析。原先限定 A/AAAA，HTTPS/TXT 等落到
+        // final=dns-domestic，把访问的域名泄给隧道外的境内解析器（与 FakeIP 分支同一类泄漏）。
         dnsRules.push({
-          query_type: ['A', 'AAAA'],
           server: 'dns-remote',
         } as SingBoxDnsRule);
       }

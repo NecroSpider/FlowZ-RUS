@@ -38,8 +38,10 @@ const execFileSyncMock = execFileSync as unknown as jest.Mock;
 
 /** 模拟真实 gsettings get 输出（按命令返回对应 stdout）。端口带 GVariant uint32 前缀。 */
 function mockGsettingsGet(handlers: Array<{ match: RegExp; stdout: string }>): void {
-  execMock.mockImplementation(
-    (cmd: string, cb: (e: null, r: { stdout: string; stderr: string }) => void) => {
+  execMock.mockImplementation((cmd: string, ...rest: unknown[]) => {
+    // exec(cmd[, options], cb)：生产代码带 { timeout } 选项，cb 恒为最后一个参数
+    const cb = rest[rest.length - 1] as (e: null, r: { stdout: string; stderr: string }) => void;
+    {
       for (const h of handlers) {
         if (h.match.test(cmd)) {
           cb(null, { stdout: h.stdout, stderr: '' });
@@ -48,7 +50,7 @@ function mockGsettingsGet(handlers: Array<{ match: RegExp; stdout: string }>): v
       }
       cb(null, { stdout: '', stderr: '' });
     }
-  );
+  });
 }
 
 /** 记录 async execFile 下发的 gsettings set 调用（argv 扁平为 [file, ...args]）。 */

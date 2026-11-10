@@ -23,6 +23,41 @@ const execAsync = promisify(exec);
 // 并保留脚本换行使 Add-Type here-string(@"..."@) 语法成立（原 exec 路径把换行压成空格会破坏 here-string）。
 const execFileAsync = promisify(execFile);
 
+/**
+ * 单条系统代理命令（reg/networksetup/gsettings）硬超时。原先这里的 exec 一律无超时：一条 hang 住的 networksetup
+ * （configd 卡死时真机可见）会让 enable/disable 永不返回 → start/stop 永挂、lifecycleDepth 恒 >0、之后的重启全部排队。
+ * 与 SystemDnsManager 的 DNS_CMD_TIMEOUT_MS 同值。命中即子进程被 kill、调用 reject。
+ */
+export const PROXY_CMD_TIMEOUT_MS = 8000;
+/** notifyProxyChange 的 PowerShell 要先 Add-Type 编译一段 C#（冷启动秒级），给宽一点；失败只告警。 */
+const PROXY_NOTIFY_TIMEOUT_MS = 15000;
+
+const run = (command: string) =>
+  execAsync(command, { timeout: PROXY_CMD_TIMEOUT_MS, windowsHide: true });
+const runFile = (file: string, args: string[]) =>
+  execFileAsync(file, args, { timeout: PROXY_CMD_TIMEOUT_MS, windowsHide: true });
+
+/**
+ * 命令「探测失败」（超时被杀 / 进程起不来）≠「命令跑完、返回非零」。前者结论**未知**，读状态时绝不能当成
+ * 「代理未开」——调用方会据此删掉 marker（崩溃后唯一的恢复把手）。exec/execFile 的约定：跑完非零 → code 为数字
+ * 退出码；超时 → killed/signal；spawn 失败 → code 为字符串（ENOENT 等）。
+ */
+export function isCommandProbeFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return true;
+  const e = error as { killed?: boolean; signal?: unknown; code?: unknown };
+  if (e.killed || e.signal) return true;
+  return typeof e.code !== 'number';
+}
+
+/** 超时被杀：重试同一条命令多半还是卡死，徒增数倍等待（retry 预算 × 服务数 × 8s）。 */
+function isCommandTimeout(error: unknown): boolean {
+  const e = error as { killed?: boolean; signal?: unknown } | null;
+  return !!e && typeof e === 'object' && (!!e.killed || !!e.signal);
+}
+
+const errText = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 export interface SystemProxyStatus {
   enabled: boolean;
   httpProxy?: string;
@@ -48,6 +83,10 @@ export interface ISystemProxyManager {
    */
   disableProxySync(): void;
 
+  /**
+   * 读当前系统代理。**读失败（超时 / 命令起不来）时 reject**，绝不返回 {enabled:false}——调用方会把
+   * 「未开」当成「不是我们的」而删掉 marker。「确实没有这个设置」（如 reg 值不存在）仍正常返回 enabled:false。
+   */
   getProxyStatus(): Promise<SystemProxyStatus>;
 
   /** 注入日志 sink（系统代理日志改走 LogManager 进 app.log）。 */
@@ -95,6 +134,46 @@ export abstract class SystemProxyBase implements ISystemProxyManager {
     } catch (error) {
       this.log('warn', `Failed to write system proxy marker: ${error}`);
     }
+    SystemProxyBase.rememberOwnHostPort(ourHostPort);
+  }
+
+  /** FlowZ 用过的本地代理地址历史（userData/system-proxy.own.json）。与 marker 不同：disable 时**不删**。 */
+  private static getOwnHistoryPath(): string {
+    return path.join(getUserDataPath(), 'system-proxy.own.json');
+  }
+
+  private static readonly OWN_HISTORY_MAX = 8;
+
+  /**
+   * 读历史。用途只有一个：认出「指向 FlowZ 以前用过的端口」的系统代理——改过混合端口后，旧版本会把
+   * 127.0.0.1:旧端口 当原始设置保存，此后每次断开都把它恢复回去（死端口、无 marker），且每次连接又重新
+   * 把它存成原始，永不自愈。marker 那时早已删除，只能靠这份历史认出来。读失败 → []（退回只认 marker）。
+   */
+  static readOwnHostPorts(): string[] {
+    try {
+      const data = JSON.parse(fs.readFileSync(SystemProxyBase.getOwnHistoryPath(), 'utf-8'));
+      const list = Array.isArray(data?.hostPorts) ? data.hostPorts : [];
+      return list.filter((p: unknown): p is string => typeof p === 'string' && !!p);
+    } catch {
+      return [];
+    }
+  }
+
+  private static rememberOwnHostPort(hostPort: string): void {
+    // 只记本机回环：历史只用于认出「指向我们自己的死端口」，非回环地址绝不可能是 FlowZ。
+    if (!SystemProxyBase.isLoopbackHostPort(hostPort)) return;
+    try {
+      const prev = SystemProxyBase.readOwnHostPorts().filter((p) => p !== hostPort);
+      const hostPorts = [hostPort, ...prev].slice(0, SystemProxyBase.OWN_HISTORY_MAX);
+      fs.writeFileSync(SystemProxyBase.getOwnHistoryPath(), JSON.stringify({ hostPorts }));
+    } catch {
+      /* best-effort：历史缺失只影响自愈，不影响本次设置 */
+    }
+  }
+
+  private static isLoopbackHostPort(hostPort: string): boolean {
+    const host = hostPort.slice(0, hostPort.lastIndexOf(':'));
+    return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
   }
 
   /**
@@ -139,13 +218,21 @@ export abstract class SystemProxyBase implements ISystemProxyManager {
   protected static stripSelf(
     status: SystemProxyStatus | null,
     address: string,
-    httpPort: number
+    httpPort: number,
+    // 额外认作「我们自己」的 host:port：enable 在写新 marker **之前**读到的旧 marker。改混合端口后旧代码先写
+    // 新 marker 再判，127.0.0.1:旧端口 认不出 → 被存成原始 → 每次断开恢复死端口（见 readOwnHostPorts）。
+    extraOwn: Array<string | undefined> = []
   ): SystemProxyStatus | null {
     if (!status?.enabled) return status;
-    const ours = `${address}:${httpPort}`;
-    const markerHostPort = SystemProxyBase.readMarker()?.ourHostPort;
-    const pointsToUs = (p?: string): boolean =>
-      !!p && (p === ours || (!!markerHostPort && p === markerHostPort));
+    const own = new Set<string>(
+      [
+        `${address}:${httpPort}`,
+        SystemProxyBase.readMarker()?.ourHostPort,
+        ...extraOwn,
+        ...SystemProxyBase.readOwnHostPorts(),
+      ].filter((p): p is string => !!p)
+    );
+    const pointsToUs = (p?: string): boolean => !!p && own.has(p);
     if (
       pointsToUs(status.httpProxy) ||
       pointsToUs(status.httpsProxy) ||
@@ -154,6 +241,50 @@ export abstract class SystemProxyBase implements ISystemProxyManager {
       return null;
     }
     return status;
+  }
+
+  /**
+   * enable 时据「当前系统代理」更新原始快照（Win/macOS 共用）。
+   *  - 当前代理不是我们 → 它就是原始；
+   *  - 当前代理就是我们（重启 / 换端口时 stop 腿不清系统代理，直接再 enable）→ 当前值不是原始，沿用本进程
+   *    上次 enable 存下的快照（否则用户原本的企业代理在第一次重启后就丢了），并对它也做一次自指自愈；
+   *  - 读失败 → 同上沿用 + 自愈（不知道就别覆盖）。
+   */
+  protected adoptOriginalSettings(
+    status: SystemProxyStatus | null,
+    address: string,
+    httpPort: number,
+    prevMarkerHostPort: string | undefined
+  ): void {
+    const stripped = SystemProxyBase.stripSelf(status, address, httpPort, [prevMarkerHostPort]);
+    if (status && stripped !== null) {
+      this.originalSettings = stripped;
+      return;
+    }
+    this.originalSettings = SystemProxyBase.stripSelf(this.originalSettings, address, httpPort, [
+      prevMarkerHostPort,
+    ]);
+  }
+
+  /** disable 前的最后一道自愈：原始快照指向 FlowZ 自己（marker / 历史端口）→ 当作无原始（简单关掉）。 */
+  protected healedOriginalSettings(): SystemProxyStatus | null {
+    const original = this.originalSettings;
+    if (!original?.enabled) return original;
+    const marker = SystemProxyBase.readMarker()?.ourHostPort;
+    const own = new Set(
+      [marker, ...SystemProxyBase.readOwnHostPorts()].filter((p): p is string => !!p)
+    );
+    const self = [original.httpProxy, original.httpsProxy, original.socksProxy].some(
+      (p) => !!p && own.has(p)
+    );
+    if (self) {
+      this.log(
+        'warn',
+        'Saved original proxy settings point to FlowZ itself; turning the system proxy off instead of restoring them'
+      );
+      return null;
+    }
+    return original;
   }
 
   abstract enableProxy(
@@ -190,20 +321,24 @@ export class WindowsSystemProxy extends SystemProxyBase {
   ): Promise<void> {
     this.log('info', 'Setting Windows system proxy');
 
+    // 旧 marker 必须在写新 marker **之前**读：改过混合端口时它记着 127.0.0.1:旧端口，stripSelf 靠它认出「这是我们」。
+    const prevMarkerHostPort = SystemProxyBase.readMarker()?.ourHostPort;
     // marker 提前写（intent）：enable 期间崩溃也留 marker，供下次启动恢复。
     this.writeMarker(`${address}:${httpPort}`);
 
     // 保存原始设置（防自指：已指向我们自己的代理 → 视为无原始，杜绝 disable restore 死端口致断网）
     try {
-      this.originalSettings = SystemProxyBase.stripSelf(
+      this.adoptOriginalSettings(
         await this.getProxyStatus(),
         address,
-        httpPort
+        httpPort,
+        prevMarkerHostPort
       );
       this.log('info', 'Saved original proxy settings');
     } catch (error) {
       this.log('warn', `Could not read original proxy settings: ${error}`);
-      // 继续执行，即使无法获取原始设置
+      // 继续执行，即使无法获取原始设置（沿用已有快照并自愈）
+      this.adoptOriginalSettings(null, address, httpPort, prevMarkerHostPort);
     }
 
     try {
@@ -217,13 +352,11 @@ export class WindowsSystemProxy extends SystemProxyBase {
           // NekoBox 等工具也不在系统代理中设置 socks=。
           // mixed-only：SOCKS5 与 HTTP 同口（mixed inbound），需 SOCKS 的应用主动指向同一端口即可。
           const proxyServer = `http=${address}:${httpPort};https=${address}:${httpPort}`;
-          await execAsync(
+          await run(
             `"${this.regExe}" add "${this.regPath}" /v ProxyServer /t REG_SZ /d "${proxyServer}" /f`
           );
 
-          await execAsync(
-            `"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 1 /f`
-          );
+          await run(`"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 1 /f`);
 
           // 代理覆盖（忽略代理列表）= 用户配置的 bypass 清单（缺省业内聚合清单，含私网/保留段 + Apple 连通性 +
           // 国内会被代理打断的 App/网银）。Windows ProxyOverride 不支持 CIDR → CIDR 转通配（v6 CIDR 跳过）、域名原样、补 <local>。
@@ -234,7 +367,7 @@ export class WindowsSystemProxy extends SystemProxyBase {
               `Windows proxy bypass entry contains characters unsafe for cmd; skipped it (hostname not silently rewritten): ${e}`
             )
           );
-          await execAsync(
+          await run(
             `"${this.regExe}" add "${this.regPath}" /v ProxyOverride /t REG_SZ /d "${proxyOverride}" /f`
           );
 
@@ -243,7 +376,7 @@ export class WindowsSystemProxy extends SystemProxyBase {
           // 会误杀国内 QUIC（与「只拦海外代理域名 QUIC」的 route 设计不符）→ 已移除。选择性 QUIC 阻断（仅海外代理域名、
           // CN 豁免）由 sing-box route 规则在 TUN 模式实现（系统代理下 QUIC 不进核、route 够不着，靠上述 app 自禁）。
           // 仅保留 delete：清理历史版本残留的 FlowZ_Block_QUIC 规则（升级迁移），不再 add。
-          await execAsync(
+          await run(
             `"${this.netshExe}" advfirewall firewall delete rule name="FlowZ_Block_QUIC"`
           ).catch(() => {});
 
@@ -259,6 +392,10 @@ export class WindowsSystemProxy extends SystemProxyBase {
             }
             // 命令未找到（PATH 缺 System32 等）重试无意义——绝对路径化后本不应出现，纵深防御
             if (isCommandNotFoundError(error)) {
+              return false;
+            }
+            // 超时被杀：重试多半还是卡死，只会把 start 拖得更久
+            if (isCommandTimeout(error)) {
               return false;
             }
             return true;
@@ -305,20 +442,20 @@ export class WindowsSystemProxy extends SystemProxyBase {
     this.log('info', 'Disabling Windows system proxy');
 
     // 禁用代理时务必清除 QUIC 阻断规则
-    await execAsync(
-      `"${this.netshExe}" advfirewall firewall delete rule name="FlowZ_Block_QUIC"`
-    ).catch(() => {});
+    await run(`"${this.netshExe}" advfirewall firewall delete rule name="FlowZ_Block_QUIC"`).catch(
+      () => {}
+    );
 
     try {
-      if (this.originalSettings) {
+      const original = this.healedOriginalSettings();
+      if (original) {
         this.log('info', 'Restoring original proxy settings');
-        await this.restoreProxySettings(this.originalSettings);
+        await this.restoreProxySettings(original);
         this.originalSettings = null;
         this.log('info', 'Restored original proxy settings');
       } else {
-        await execAsync(
-          `"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`
-        );
+        this.originalSettings = null;
+        await run(`"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`);
         await this.notifyProxyChange();
         this.log('info', 'System proxy disabled');
       }
@@ -342,6 +479,8 @@ export class WindowsSystemProxy extends SystemProxyBase {
       // 禁用代理时务必清除 QUIC 阻断规则
       execSync(`"${this.netshExe}" advfirewall firewall delete rule name="FlowZ_Block_QUIC"`, {
         stdio: 'ignore',
+        timeout: PROXY_CMD_TIMEOUT_MS,
+        windowsHide: true,
       });
     } catch {
       /* ignore */
@@ -350,54 +489,66 @@ export class WindowsSystemProxy extends SystemProxyBase {
     try {
       execSync(`"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`, {
         stdio: 'ignore',
+        timeout: PROXY_CMD_TIMEOUT_MS,
+        windowsHide: true,
       });
       // 禁用成功 → 删除持久化 marker（clearMarker 内部为同步 fs API 且不抛）
       this.clearMarker();
-      execSync(`"${this.ipconfigExe}" /flushdns`, { stdio: 'ignore' });
+      execSync(`"${this.ipconfigExe}" /flushdns`, {
+        stdio: 'ignore',
+        timeout: PROXY_CMD_TIMEOUT_MS,
+        windowsHide: true,
+      });
     } catch (error) {
       this.log('error', `Failed to disable Windows system proxy synchronously: ${error}`);
     }
   }
 
   async getProxyStatus(): Promise<SystemProxyStatus> {
+    // reg query 对「值不存在」（从未设过代理的干净系统）跑完返回退出码 1 → 那是确定的「未启用」；
+    // 超时 / reg 起不来 = 结论未知 → reject（见 ISystemProxyManager.getProxyStatus）。
+    let enableStdout: string;
     try {
-      const enableResult = await execAsync(
-        `"${this.regExe}" query "${this.regPath}" /v ProxyEnable`
-      );
-      const enabled = enableResult.stdout.includes('0x1');
+      enableStdout = (await run(`"${this.regExe}" query "${this.regPath}" /v ProxyEnable`)).stdout;
+    } catch (error) {
+      if (!isCommandProbeFailure(error)) return { enabled: false };
+      throw new Error(`Could not read the Windows system proxy state: ${errText(error)}`);
+    }
+    const enabled = enableStdout.includes('0x1');
 
-      if (!enabled) {
-        return { enabled: false };
-      }
-
-      const serverResult = await execAsync(
-        `"${this.regExe}" query "${this.regPath}" /v ProxyServer`
-      );
-      const proxyServerMatch = serverResult.stdout.match(/ProxyServer\s+REG_SZ\s+(.+)/);
-
-      if (!proxyServerMatch) {
-        return { enabled: true };
-      }
-
-      const proxyServer = proxyServerMatch[1].trim();
-      const status: SystemProxyStatus = { enabled: true };
-
-      // 格式: http=127.0.0.1:8080;https=127.0.0.1:8080;socks=127.0.0.1:1080
-      const parts = proxyServer.split(';');
-      for (const part of parts) {
-        const [protocol, address] = part.split('=');
-        if (protocol && address) {
-          const key = `${protocol.toLowerCase()}Proxy` as keyof SystemProxyStatus;
-          if (key === 'httpProxy' || key === 'httpsProxy' || key === 'socksProxy') {
-            status[key] = address;
-          }
-        }
-      }
-
-      return status;
-    } catch {
+    if (!enabled) {
       return { enabled: false };
     }
+
+    let serverStdout: string;
+    try {
+      serverStdout = (await run(`"${this.regExe}" query "${this.regPath}" /v ProxyServer`)).stdout;
+    } catch (error) {
+      if (!isCommandProbeFailure(error)) return { enabled: true };
+      throw new Error(`Could not read the Windows system proxy server: ${errText(error)}`);
+    }
+    const proxyServerMatch = serverStdout.match(/ProxyServer\s+REG_SZ\s+(.+)/);
+
+    if (!proxyServerMatch) {
+      return { enabled: true };
+    }
+
+    const proxyServer = proxyServerMatch[1].trim();
+    const status: SystemProxyStatus = { enabled: true };
+
+    // 格式: http=127.0.0.1:8080;https=127.0.0.1:8080;socks=127.0.0.1:1080
+    const parts = proxyServer.split(';');
+    for (const part of parts) {
+      const [protocol, address] = part.split('=');
+      if (protocol && address) {
+        const key = `${protocol.toLowerCase()}Proxy` as keyof SystemProxyStatus;
+        if (key === 'httpProxy' || key === 'httpsProxy' || key === 'socksProxy') {
+          status[key] = address;
+        }
+      }
+    }
+
+    return status;
   }
 
   private async restoreProxySettings(settings: SystemProxyStatus): Promise<void> {
@@ -409,15 +560,15 @@ export class WindowsSystemProxy extends SystemProxyBase {
 
       if (parts.length > 0) {
         const proxyServer = parts.join(';');
-        await execAsync(
+        await run(
           `"${this.regExe}" add "${this.regPath}" /v ProxyServer /t REG_SZ /d "${proxyServer}" /f`
         );
       }
 
-      await execAsync(`"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 1 /f`);
+      await run(`"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 1 /f`);
     } else {
-      await execAsync(`"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`);
-      await execAsync(
+      await run(`"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`);
+      await run(
         `"${this.netshExe}" advfirewall firewall delete rule name="FlowZ_Block_QUIC"`
       ).catch(() => {});
     }
@@ -445,7 +596,10 @@ export class WindowsSystemProxy extends SystemProxyBase {
     try {
       // 换行保留：here-string @"..."@ 要求 @" 行尾、"@ 行首，不可压成单行
       // windowsHide：与 ProcessEnumerator 的 powershell 调用对齐，避免闪 PowerShell 控制台窗
-      await execFileAsync(this.psExe, ['-NoProfile', '-Command', script], { windowsHide: true });
+      await execFileAsync(this.psExe, ['-NoProfile', '-Command', script], {
+        windowsHide: true,
+        timeout: PROXY_NOTIFY_TIMEOUT_MS,
+      });
     } catch (error) {
       // 通知失败不影响代理设置，只记录警告
       this.log('warn', `Failed to notify the system to refresh proxy settings: ${error}`);
@@ -466,6 +620,8 @@ export class MacOSSystemProxy extends SystemProxyBase {
   ): Promise<void> {
     this.log('info', 'Setting macOS system proxy');
 
+    // 旧 marker 必须在写新 marker **之前**读：改过混合端口时它记着 127.0.0.1:旧端口，stripSelf 靠它认出「这是我们」。
+    const prevMarkerHostPort = SystemProxyBase.readMarker()?.ourHostPort;
     // marker 提前写（intent）：enable 期间崩溃也留 marker，供下次启动恢复（disable 成功/失败回滚才会删）。
     this.writeMarker(`${address}:${httpPort}`);
 
@@ -475,13 +631,17 @@ export class MacOSSystemProxy extends SystemProxyBase {
     // Wi-Fi 等全部服务。注：单快照 blanket 回写对"各服务代理不同"仍有损(既有设计限制，罕见配置，见设计文档)。
     try {
       const primary = (await this.getNetworkServices())[0];
-      this.originalSettings = primary
-        ? SystemProxyBase.stripSelf(await this.readServiceProxy(primary), address, httpPort)
-        : null;
+      this.adoptOriginalSettings(
+        primary ? await this.readServiceProxy(primary) : { enabled: false },
+        address,
+        httpPort,
+        prevMarkerHostPort
+      );
       this.log('info', 'Saved original proxy settings');
     } catch (error) {
       this.log('warn', `Could not read original proxy settings: ${error}`);
-      // 继续执行，即使无法获取原始设置
+      // 继续执行，即使无法获取原始设置（沿用已有快照并自愈）
+      this.adoptOriginalSettings(null, address, httpPort, prevMarkerHostPort);
     }
 
     try {
@@ -493,16 +653,25 @@ export class MacOSSystemProxy extends SystemProxyBase {
           for (const service of services) {
             this.log('debug', `Setting proxy for network service "${service}"`);
 
-            await execAsync(`networksetup -setwebproxy "${service}" ${address} ${httpPort}`);
-            await execAsync(`networksetup -setwebproxystate "${service}" on`);
+            // 服务名来自系统（用户可改名，可含引号/$()/反引号）→ 一律 execFile argv，不经 /bin/sh 拼接。
+            await runFile('networksetup', ['-setwebproxy', service, address, String(httpPort)]);
+            await runFile('networksetup', ['-setwebproxystate', service, 'on']);
 
-            await execAsync(`networksetup -setsecurewebproxy "${service}" ${address} ${httpPort}`);
-            await execAsync(`networksetup -setsecurewebproxystate "${service}" on`);
+            await runFile('networksetup', [
+              '-setsecurewebproxy',
+              service,
+              address,
+              String(httpPort),
+            ]);
+            await runFile('networksetup', ['-setsecurewebproxystate', service, 'on']);
 
-            await execAsync(
-              `networksetup -setsocksfirewallproxy "${service}" ${address} ${socksPort}`
-            );
-            await execAsync(`networksetup -setsocksfirewallproxystate "${service}" on`);
+            await runFile('networksetup', [
+              '-setsocksfirewallproxy',
+              service,
+              address,
+              String(socksPort),
+            ]);
+            await runFile('networksetup', ['-setsocksfirewallproxystate', service, 'on']);
 
             // 代理绕过列表（忽略代理列表）= 用户配置的 bypass 清单（缺省业内聚合清单，对齐 Clash/Stash）。
             // networksetup 原样接受 CIDR(v4/v6) + 域名 + *.通配（空格分隔）。保存原列表→开启写入→关闭还原。
@@ -511,11 +680,7 @@ export class MacOSSystemProxy extends SystemProxyBase {
             // shell 字符串拼接（${bypassDomains.join(' ')}）→ 含 ;/`/$() 的项可命令注入。改 execFileAsync
             // 数组参数：每个 bypass 项作为独立 argv 元素，不经 /bin/sh -c 解析，从根本上消除注入面。
             // service/address/httpPort 同为 argv（程序内常量/系统输出，虽非外部可控但一并参数化更稳）。
-            await execFileAsync('networksetup', [
-              '-setproxybypassdomains',
-              service,
-              ...bypassDomains,
-            ]);
+            await runFile('networksetup', ['-setproxybypassdomains', service, ...bypassDomains]);
 
             this.log('debug', `Proxy set for network service "${service}"`);
           }
@@ -526,6 +691,10 @@ export class MacOSSystemProxy extends SystemProxyBase {
           shouldRetry: (error) => {
             const message = error.message.toLowerCase();
             if (message.includes('permission') || message.includes('not authorized')) {
+              return false;
+            }
+            // 超时被杀（configd 卡死等）：重试只会把 start 再拖 N×服务数×8s
+            if (isCommandTimeout(error)) {
               return false;
             }
             return true;
@@ -569,18 +738,20 @@ export class MacOSSystemProxy extends SystemProxyBase {
     this.log('info', 'Disabling macOS system proxy');
 
     try {
-      if (this.originalSettings) {
+      const original = this.healedOriginalSettings();
+      if (original) {
         this.log('info', 'Restoring original proxy settings');
-        await this.restoreProxySettings(this.originalSettings);
+        await this.restoreProxySettings(original);
         this.originalSettings = null;
         this.log('info', 'Restored original proxy settings');
       } else {
+        this.originalSettings = null;
         const services = await this.getNetworkServices();
         for (const service of services) {
           this.log('debug', `Disabling proxy for network service "${service}"`);
-          await execAsync(`networksetup -setwebproxystate "${service}" off`);
-          await execAsync(`networksetup -setsecurewebproxystate "${service}" off`);
-          await execAsync(`networksetup -setsocksfirewallproxystate "${service}" off`);
+          await runFile('networksetup', ['-setwebproxystate', service, 'off']);
+          await runFile('networksetup', ['-setsecurewebproxystate', service, 'off']);
+          await runFile('networksetup', ['-setsocksfirewallproxystate', service, 'off']);
         }
         this.log('info', 'System proxy disabled');
       }
@@ -596,9 +767,12 @@ export class MacOSSystemProxy extends SystemProxyBase {
   }
 
   disableProxySync(): void {
-    const { execSync } = require('child_process');
+    const { execFileSync } = require('child_process');
+    const opts = { stdio: 'ignore', timeout: PROXY_CMD_TIMEOUT_MS };
     try {
-      const activeInterfaces = execSync('networksetup -listallnetworkservices')
+      const activeInterfaces = execFileSync('networksetup', ['-listallnetworkservices'], {
+        timeout: PROXY_CMD_TIMEOUT_MS,
+      })
         .toString()
         .split('\n')
         .filter((s: string) => s && !s.includes('*') && !s.includes('Bluetooth'));
@@ -606,11 +780,9 @@ export class MacOSSystemProxy extends SystemProxyBase {
       let allOff = true;
       for (const service of activeInterfaces) {
         try {
-          execSync(`networksetup -setwebproxystate "${service}" off`, { stdio: 'ignore' });
-          execSync(`networksetup -setsecurewebproxystate "${service}" off`, { stdio: 'ignore' });
-          execSync(`networksetup -setsocksfirewallproxystate "${service}" off`, {
-            stdio: 'ignore',
-          });
+          execFileSync('networksetup', ['-setwebproxystate', service, 'off'], opts);
+          execFileSync('networksetup', ['-setsecurewebproxystate', service, 'off'], opts);
+          execFileSync('networksetup', ['-setsocksfirewallproxystate', service, 'off'], opts);
         } catch {
           allOff = false;
         }
@@ -627,19 +799,27 @@ export class MacOSSystemProxy extends SystemProxyBase {
       // 逐服务检查：代理可能设在非首个服务上（以太网优先 / VPN / 多网卡）。与 enable/disable 遍历全部服务同口径——
       // 任一服务有启用代理即返回它，避免只看 services[0] 漏检非首服务上的残留代理（macOS 误判"无残留"）。
       for (const service of await this.getNetworkServices()) {
-        const status = await this.readServiceProxy(service);
+        let status: SystemProxyStatus;
+        try {
+          status = await this.readServiceProxy(service);
+        } catch (error) {
+          // 单服务读到非零退出（服务刚被移除等）→ 跳过；超时 / 起不来 = 结论未知 → 整体 reject
+          if (isCommandProbeFailure(error)) throw error;
+          continue;
+        }
         if (status.enabled) return status;
       }
       return { enabled: false };
-    } catch {
-      return { enabled: false };
+    } catch (error) {
+      // 读不到 ≠ 没开：reject，调用方据此保留 marker（见 ISystemProxyManager.getProxyStatus）
+      throw new Error(`Could not read the macOS system proxy state: ${errText(error)}`);
     }
   }
 
   /** 读单个网络服务的 http/https/socks 代理（任一启用即 enabled）。DRY 化原三段重复块。 */
   private async readServiceProxy(service: string): Promise<SystemProxyStatus> {
     const read = async (sub: string): Promise<string | undefined> => {
-      const { stdout } = await execAsync(`networksetup ${sub} "${service}"`);
+      const { stdout } = await runFile('networksetup', [sub, service]);
       if (!stdout.includes('Enabled: Yes')) return undefined;
       const server = stdout.match(/Server: (.+)/);
       const port = stdout.match(/Port: (\d+)/);
@@ -655,7 +835,7 @@ export class MacOSSystemProxy extends SystemProxyBase {
 
   private async getNetworkServices(): Promise<string[]> {
     try {
-      const { stdout } = await execAsync('networksetup -listallnetworkservices');
+      const { stdout } = await runFile('networksetup', ['-listallnetworkservices']);
       const lines = stdout.split('\n');
 
       // 跳过首行提示 + 空行 + 以 * 开头的禁用服务 + Bluetooth PAN。
@@ -681,34 +861,34 @@ export class MacOSSystemProxy extends SystemProxyBase {
         // 经 shell 拼接有注入残面，与 enable 路径参数化口径统一）
         if (settings.httpProxy) {
           const [server, port] = settings.httpProxy.split(':');
-          await execFileAsync('networksetup', ['-setwebproxy', service, server, port]);
-          await execFileAsync('networksetup', ['-setwebproxystate', service, 'on']);
+          await runFile('networksetup', ['-setwebproxy', service, server, port]);
+          await runFile('networksetup', ['-setwebproxystate', service, 'on']);
         } else {
-          await execFileAsync('networksetup', ['-setwebproxystate', service, 'off']);
+          await runFile('networksetup', ['-setwebproxystate', service, 'off']);
         }
 
         // 恢复 HTTPS 代理
         if (settings.httpsProxy) {
           const [server, port] = settings.httpsProxy.split(':');
-          await execFileAsync('networksetup', ['-setsecurewebproxy', service, server, port]);
-          await execFileAsync('networksetup', ['-setsecurewebproxystate', service, 'on']);
+          await runFile('networksetup', ['-setsecurewebproxy', service, server, port]);
+          await runFile('networksetup', ['-setsecurewebproxystate', service, 'on']);
         } else {
-          await execFileAsync('networksetup', ['-setsecurewebproxystate', service, 'off']);
+          await runFile('networksetup', ['-setsecurewebproxystate', service, 'off']);
         }
 
         // 恢复 SOCKS 代理
         if (settings.socksProxy) {
           const [server, port] = settings.socksProxy.split(':');
-          await execFileAsync('networksetup', ['-setsocksfirewallproxy', service, server, port]);
-          await execFileAsync('networksetup', ['-setsocksfirewallproxystate', service, 'on']);
+          await runFile('networksetup', ['-setsocksfirewallproxy', service, server, port]);
+          await runFile('networksetup', ['-setsocksfirewallproxystate', service, 'on']);
         } else {
-          await execFileAsync('networksetup', ['-setsocksfirewallproxystate', service, 'off']);
+          await runFile('networksetup', ['-setsocksfirewallproxystate', service, 'off']);
         }
       } else {
         // 禁用所有代理（参数化对齐）
-        await execFileAsync('networksetup', ['-setwebproxystate', service, 'off']);
-        await execFileAsync('networksetup', ['-setsecurewebproxystate', service, 'off']);
-        await execFileAsync('networksetup', ['-setsocksfirewallproxystate', service, 'off']);
+        await runFile('networksetup', ['-setwebproxystate', service, 'off']);
+        await runFile('networksetup', ['-setsecurewebproxystate', service, 'off']);
+        await runFile('networksetup', ['-setsocksfirewallproxystate', service, 'off']);
       }
     }
   }
@@ -745,17 +925,17 @@ export class LinuxSystemProxy extends SystemProxyBase {
     try {
       await retry(
         async () => {
-          await execAsync('gsettings set org.gnome.system.proxy mode "manual"');
+          await run('gsettings set org.gnome.system.proxy mode "manual"');
 
-          await execAsync(`gsettings set org.gnome.system.proxy.http host "${address}"`);
-          await execAsync(`gsettings set org.gnome.system.proxy.http port ${httpPort}`);
-          await execAsync('gsettings set org.gnome.system.proxy.http enabled true');
+          await run(`gsettings set org.gnome.system.proxy.http host "${address}"`);
+          await run(`gsettings set org.gnome.system.proxy.http port ${httpPort}`);
+          await run('gsettings set org.gnome.system.proxy.http enabled true');
 
-          await execAsync(`gsettings set org.gnome.system.proxy.https host "${address}"`);
-          await execAsync(`gsettings set org.gnome.system.proxy.https port ${httpPort}`);
+          await run(`gsettings set org.gnome.system.proxy.https host "${address}"`);
+          await run(`gsettings set org.gnome.system.proxy.https port ${httpPort}`);
 
-          await execAsync(`gsettings set org.gnome.system.proxy.socks host "${address}"`);
-          await execAsync(`gsettings set org.gnome.system.proxy.socks port ${socksPort}`);
+          await run(`gsettings set org.gnome.system.proxy.socks host "${address}"`);
+          await run(`gsettings set org.gnome.system.proxy.socks port ${socksPort}`);
 
           // 设置忽略列表（用户配置的 bypass 清单，缺省业内聚合清单）。gsettings ignore-hosts 为 GVariant 字符串数组，
           // 接受 CIDR + 域名；单引号包裹、逗号分隔。
@@ -764,12 +944,7 @@ export class LinuxSystemProxy extends SystemProxyBase {
           // ignoreList 作为独立 argv 元素不经 /bin/sh -c 解析，从根本上消除注入面。
           const hosts = formatBypassForLinux(bypassList ?? []);
           const ignoreList = `[${hosts.map((h) => `'${h}'`).join(', ')}]`;
-          await execFileAsync('gsettings', [
-            'set',
-            'org.gnome.system.proxy',
-            'ignore-hosts',
-            ignoreList,
-          ]);
+          await runFile('gsettings', ['set', 'org.gnome.system.proxy', 'ignore-hosts', ignoreList]);
         },
         { maxRetries: 1, delay: 500 }
       );
@@ -821,7 +996,7 @@ export class LinuxSystemProxy extends SystemProxyBase {
       //（Win/macOS disableProxy 都 restoreProxySettings）。有原始快照（manual + host:port）→ 恢复；否则置 none。
       const restored = await this.restoreOriginalProxyAsync();
       if (!restored) {
-        await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy', 'mode', 'none']);
+        await runFile('gsettings', ['set', 'org.gnome.system.proxy', 'mode', 'none']);
         this.log('info', 'System proxy disabled');
       }
       // 拆除成功 → 删除持久化 marker
@@ -846,17 +1021,17 @@ export class LinuxSystemProxy extends SystemProxyBase {
     // capture-three + 对称撤销：set 用户原本设了的 schema、clear 原本未设的（见 restorePlan）。
     // 攻击面收口（与 #213 enable 路径硬化口径统一）：host 来自系统既有 gsettings（可被 dconf 投毒含
     // $()/反引号/分号等），改 execFileAsync argv——host 作独立参数下发、不经 /bin/sh -c 插值，杜绝命令注入。
-    await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy', 'mode', 'manual']);
+    await runFile('gsettings', ['set', 'org.gnome.system.proxy', 'mode', 'manual']);
     for (const { schema, hp } of plan) {
       const base = `org.gnome.system.proxy.${schema}`;
       if (hp) {
-        await execFileAsync('gsettings', ['set', base, 'host', hp.host]);
-        await execFileAsync('gsettings', ['set', base, 'port', String(hp.port)]);
-        if (schema === 'http') await execFileAsync('gsettings', ['set', base, 'enabled', 'true']);
+        await runFile('gsettings', ['set', base, 'host', hp.host]);
+        await runFile('gsettings', ['set', base, 'port', String(hp.port)]);
+        if (schema === 'http') await runFile('gsettings', ['set', base, 'enabled', 'true']);
       } else {
         // 撤销 enable 期对未设 schema 的写入：清空 host（GNOME 仅 http 有 enabled 键，一并置 false）
-        await execFileAsync('gsettings', ['set', base, 'host', '']);
-        if (schema === 'http') await execFileAsync('gsettings', ['set', base, 'enabled', 'false']);
+        await runFile('gsettings', ['set', base, 'host', '']);
+        if (schema === 'http') await runFile('gsettings', ['set', base, 'enabled', 'false']);
       }
     }
     this.originalSettings = null;
@@ -866,19 +1041,19 @@ export class LinuxSystemProxy extends SystemProxyBase {
 
   async getProxyStatus(): Promise<SystemProxyStatus> {
     try {
-      const modeResult = await execAsync('gsettings get org.gnome.system.proxy mode');
+      const modeResult = await run('gsettings get org.gnome.system.proxy mode');
       if (!modeResult.stdout.includes("'manual'")) return { enabled: false };
 
       // capture-three：分别采集 http/https/socks 三 schema 的 host:port（GNOME manual 三者独立存储）。
       // 只回写用户原本设了的（host 非空），避免恢复时把 http 扇出到未设的 https/socks 制造假 socks。
       const collect = async (schema: string): Promise<string | undefined> => {
-        const host = (await execAsync(`gsettings get org.gnome.system.proxy.${schema} host`)).stdout
+        const host = (await run(`gsettings get org.gnome.system.proxy.${schema} host`)).stdout
           .replace(/'/g, '')
           .trim();
         if (!host) return undefined;
         // gsettings guint 端口带 GVariant 前缀（如 "uint32 8080"）→ 剥前缀取纯数字（否则
         // splitHostPort 的 parseInt 恒 NaN → 恢复分支永不触发，假绿测试绕过）。
-        const port = (await execAsync(`gsettings get org.gnome.system.proxy.${schema} port`)).stdout
+        const port = (await run(`gsettings get org.gnome.system.proxy.${schema} port`)).stdout
           .replace(/^uint\d+\s+/i, '')
           .trim();
         return `${host}:${port}`;
@@ -890,8 +1065,13 @@ export class LinuxSystemProxy extends SystemProxyBase {
       if (!httpProxy && !httpsProxy && !socksProxy) return { enabled: false };
 
       return { enabled: true, httpProxy, httpsProxy, socksProxy };
-    } catch {
-      return { enabled: false };
+    } catch (error) {
+      // gsettings 不存在（非 GNOME 桌面）/ 跑完非零（schema 缺失）→ 确定没有 GNOME 代理；
+      // 超时等探测失败 = 结论未知 → reject，调用方据此保留 marker。
+      if ((error as { code?: unknown })?.code === 'ENOENT' || !isCommandProbeFailure(error)) {
+        return { enabled: false };
+      }
+      throw new Error(`Could not read the Linux system proxy state: ${errText(error)}`);
     }
   }
 
@@ -906,7 +1086,7 @@ export class LinuxSystemProxy extends SystemProxyBase {
     let gsettingsOk = false;
     const gset = (args: string[]): void => {
       try {
-        execFileSync('gsettings', args, { stdio: 'ignore' });
+        execFileSync('gsettings', args, { stdio: 'ignore', timeout: PROXY_CMD_TIMEOUT_MS });
         gsettingsOk = true;
       } catch {
         /* best-effort，关机语境不抛 */
@@ -944,6 +1124,7 @@ export class LinuxSystemProxy extends SystemProxyBase {
       // KDE（best-effort，无原始快照恢复——KDE 路径未在 enableProxy 采集 originalSettings）
       execSync('kwriteconfig5 --file kioslaverc --group "Proxy Settings" --key "ProxyType" 0', {
         stdio: 'ignore',
+        timeout: PROXY_CMD_TIMEOUT_MS,
       });
     } catch {
       /* ignore */

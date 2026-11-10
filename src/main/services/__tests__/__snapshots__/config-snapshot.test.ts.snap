@@ -129,6 +129,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -844,6 +851,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -1524,6 +1538,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -2196,6 +2217,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -2896,6 +2924,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -3545,6 +3580,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -6005,6 +6047,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -6694,6 +6743,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -7380,6 +7436,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -8087,6 +8150,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -8760,6 +8830,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -9481,6 +9558,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -10114,6 +10198,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -10767,6 +10858,9 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -11402,6 +11496,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -12069,6 +12170,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -12747,6 +12855,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -13442,6 +13557,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -14121,6 +14243,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -14811,6 +14940,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -15482,6 +15618,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -16150,6 +16293,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -16807,6 +16957,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -17925,6 +18082,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -18595,6 +18759,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -19301,6 +19472,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -19984,6 +20162,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -20672,6 +20857,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-domestic",
         },
+        {
+          "rule_set": "geosite-cn",
+          "server": "dns-remote",
+        },
+        {
+          "server": "dns-domestic",
+        },
       ],
       "servers": [
         {
@@ -21322,6 +21514,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ir",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -21983,6 +22182,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -22634,6 +22840,9 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -23257,6 +23466,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],
@@ -24055,6 +24271,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "dns-remote",
         },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -24726,6 +24949,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "A",
             "AAAA",
           ],
+          "server": "dns-remote",
+        },
+        {
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
           "server": "dns-remote",
         },
       ],

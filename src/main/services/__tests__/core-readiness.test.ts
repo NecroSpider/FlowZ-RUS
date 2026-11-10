@@ -9,6 +9,7 @@ import {
   startMessageIsNonRetryable,
   CoreStartRetryError,
   CoreStartTunPersistentError,
+  classifyProcessProbeError,
 } from '../core-readiness';
 
 const noSleep = async (): Promise<void> => {};
@@ -341,5 +342,27 @@ describe('waitForCoreReady — timeoutMs 是时间预算而非轮数（B4）', (
     );
     expect(r).toBe('timeout');
     expect(polls).toBe(5); // 4 轮 + 末轮补探
+  });
+});
+
+describe('classifyProcessProbeError（2026-11 审计 #5：探测失败 ≠ 进程已死）', () => {
+  it('POSIX ps 找不到进程（跑完退出码 1；execSync 在 status、execFile 在 code）→ dead', () => {
+    expect(classifyProcessProbeError({ status: 1 }, 'darwin')).toBe('dead');
+    expect(classifyProcessProbeError({ code: 1 }, 'linux')).toBe('dead');
+  });
+  it('超时被杀 / spawn 失败 / 其它退出码 → unknown', () => {
+    expect(
+      classifyProcessProbeError({ killed: true, signal: 'SIGTERM', code: null }, 'darwin')
+    ).toBe('unknown');
+    expect(classifyProcessProbeError({ code: 'ETIMEDOUT', signal: 'SIGTERM' }, 'linux')).toBe(
+      'unknown'
+    );
+    expect(classifyProcessProbeError({ code: 'ENOENT' }, 'darwin')).toBe('unknown');
+    expect(classifyProcessProbeError({ status: 2 }, 'darwin')).toBe('unknown');
+    expect(classifyProcessProbeError(undefined, 'darwin')).toBe('unknown');
+  });
+  it('Windows tasklist 出错一律 unknown（找不到进程时 tasklist 返回 0 + INFO 行，不走这里）', () => {
+    expect(classifyProcessProbeError({ status: 1 }, 'win32')).toBe('unknown');
+    expect(classifyProcessProbeError({ code: 1 }, 'win32')).toBe('unknown');
   });
 });

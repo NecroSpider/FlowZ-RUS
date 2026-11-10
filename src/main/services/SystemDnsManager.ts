@@ -90,6 +90,24 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
   protected originalDns: Record<string, string[]> | null = null;
   protected readonly controlledIp = CONTROLLED_TUN_DNS_IP;
 
+  /**
+   * setDns / reconcileDns / restoreDns 的单一互斥（串行队列）。三者都是「读系统 DNS → await 若干命令 → 写 marker
+   * → apply」，无互斥时链路变化触发的 reconcile 可以夹在一次 restore 前后：restore 还原并删 marker 之后，在飞的
+   * reconcile 用它更早读到的 marker 重新写 marker 并把系统 DNS 设回 8.8.8.8——停止后 DNS 仍被接管、marker 复活。
+   * 单命令有 DNS_CMD_TIMEOUT_MS 硬超时，队列不会被一条卡死的命令永久堵住。
+   * 实现约定：*Locked 方法只在持锁时调用、内部绝不再取锁（不可重入，嵌套取锁会自锁）。
+   */
+  private dnsOpTail: Promise<void> = Promise.resolve();
+
+  protected withDnsLock<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.dnsOpTail.then(fn, fn);
+    this.dnsOpTail = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
   private logManager?: LogManager;
   setLogManager(lm: LogManager): void {
     this.logManager = lm;
@@ -210,7 +228,12 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
   /**
    * TUN 启动接管系统 DNS。best-effort：失败仅告警 + 回滚还原，绝不抛（DNS 治理降级不应阻断 TUN 启动）。
    */
-  async setDns(_opts?: SetDnsOptions): Promise<void> {
+  async setDns(opts?: SetDnsOptions): Promise<void> {
+    return this.withDnsLock(() => this.setDnsLocked(opts));
+  }
+
+  /** setDns 本体（须持 DNS 锁）。 */
+  protected async setDnsLocked(_opts?: SetDnsOptions): Promise<void> {
     // 守卫：受控 IP 绝不能在 bootstrap-direct 列表（否则 :53 被直连规则放行、逃逸 hijack → 接管失效）。
     // 命中=配置漂移，fail-closed 不接管（单测护栏断言 CONTROLLED_TUN_DNS_IP 不命中，运行期再纵深防御一次）。
     if (!isControlledDnsIpValid(this.controlledIp)) {
@@ -270,8 +293,9 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
     } catch (error) {
       this.log('error', `Failed to take over system DNS: ${error}`);
       // 失败兜底：还原（best-effort）以免半接管残留；还原失败则补清 marker。不抛——不阻断 TUN 启动。
+      // 已持锁 → 调 Locked 版本（再取锁会自锁）。
       try {
-        await this.restoreDns();
+        await this.restoreDnsLocked();
       } catch (rollbackError) {
         this.log(
           'error',
@@ -289,6 +313,11 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
    * ⑤ 防自指 + 不覆盖已消失服务的 original（mergedOriginal 以既有 marker.original 为底，仅并入新捕获的真实原始）。
    */
   async reconcileDns(): Promise<void> {
+    return this.withDnsLock(() => this.reconcileDnsLocked());
+  }
+
+  /** reconcileDns 本体（须持 DNS 锁）。 */
+  protected async reconcileDnsLocked(): Promise<void> {
     // 守卫：受控 IP 在 bootstrap-direct → fail-closed 不接管（与 setDns 同口径，纵深防御一次）。
     if (!isControlledDnsIpValid(this.controlledIp)) return;
     // marker 不在 = 接管未激活（或 Win/Linux 永不写 marker）→ 绝不擅自接管，直接返回。
@@ -320,6 +349,10 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
     const toApply = targets.filter((t) => !isControlled(current[t]));
     if (toApply.length === 0) return; // 全部已受控 → 幂等 no-op（不写 marker、不动系统）。
 
+    // 写之前再确认一次接管仍激活：上面的读命令是多次 await，marker 可能已被锁外的路径删掉
+    // （启动期 recovery 的 clearMarkerFile 等）。已不在 → 绝不把它写回来、更不 apply。
+    if (!SystemDnsBase.readMarker()) return;
+
     // 先写 marker（含合并后的真实原始）再 apply：apply 期间崩溃也留 intent，下次启动据此精确还原。
     this.originalDns = mergedOriginal;
     this.writeMarker(mergedOriginal);
@@ -341,6 +374,11 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
    * 还原系统 DNS 为接管前原始值。无 marker/原始 → 仅清 marker。还原成功 → 清 marker + 清内存。
    */
   async restoreDns(): Promise<void> {
+    return this.withDnsLock(() => this.restoreDnsLocked());
+  }
+
+  /** restoreDns 本体（须持 DNS 锁；平台子类覆盖此方法而非 restoreDns）。 */
+  protected async restoreDnsLocked(): Promise<void> {
     const marker = SystemDnsBase.readMarker();
     const original = this.originalDns ?? marker?.original ?? null;
     if (!original) {
@@ -561,7 +599,7 @@ export class WindowsSystemDns extends SystemDnsBase {
       'Windows: not taking over system DNS (sing-box TUN strict_route/WFP already hijacks :53 at the routing layer; netsh set needs admin and always fails from the non-elevated GUI)'
     );
   }
-  async restoreDns(): Promise<void> {
+  protected async restoreDnsLocked(): Promise<void> {
     // 清历史（旧版 netsh 失败）残留的 stuck marker，否则 hasMarker 恒 true 致每个终态点/启动 recovery 反复空跑还原。
     this.clearMarker();
   }
@@ -813,6 +851,11 @@ export class LinuxSystemDns extends SystemDnsBase {
   }
 
   async setDns(opts?: SetDnsOptions): Promise<void> {
+    // 整段持锁（含 probeWritable 这次写操作），与 restore/reconcile 串行。
+    return this.withDnsLock(() => this.setDnsLinuxLocked(opts));
+  }
+
+  private async setDnsLinuxLocked(opts?: SetDnsOptions): Promise<void> {
     // 与基类同一守卫，但必须前置：probeWritable 是**写操作**，不能跑在「受控 IP 非法就不接管」的判定之前。
     // 日志与基类同文，否则前置之后基类那条 error 不再触发，配置漂移就静默了。
     if (!isControlledDnsIpValid(this.controlledIp)) {
@@ -846,7 +889,7 @@ export class LinuxSystemDns extends SystemDnsBase {
       return;
     }
     this.log('info', `Linux system DNS takeover target link: ${this.tunInterface}`);
-    await super.setDns(opts);
+    await this.setDnsLocked(opts);
   }
 
   /** marker 记下本次的 TUN 地址——跨会话还原靠它核验身份，没有它就只能按名字猜。 */
@@ -883,7 +926,7 @@ export class LinuxSystemDns extends SystemDnsBase {
     }
   }
 
-  async restoreDns(): Promise<void> {
+  protected async restoreDnsLocked(): Promise<void> {
     const marker = SystemDnsBase.readMarker();
     // marker 写入失败（磁盘满，writeMarker 只警不抛）时内存里仍有地址 → 仍按地址尝试还原，
     // 否则自家链路会残留受控 DNS 直到核死。marker 与内存都没有 → 无从核验身份，只清 marker。

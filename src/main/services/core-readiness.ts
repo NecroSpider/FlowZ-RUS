@@ -165,3 +165,27 @@ export async function waitForCoreReady(
   if (!(await deps.isAlive())) return 'dead';
   return 'timeout';
 }
+
+/**
+ * 进程存活探测（tasklist / ps）**命令自身出错**时的分类：'dead' 只给确定结论，其余一律 'unknown'。
+ *
+ * 为什么不能像旧实现那样「出错即判死」：Windows 的 tasklist 有 3 s 超时、会被杀软拦截、系统繁忙时起不来——
+ * 这些都只说明「没探到」，判死会触发自动重启，其孤儿清扫随即杀掉**健康**的核（5–15 s 断网）；停止路径上则会
+ * 跳过 kill、把一个仍在跑的核当成已停止收尾。
+ *
+ * 唯一的确定结论：POSIX `ps -p <pid>` 找不到进程时**跑完返回退出码 1**（Windows tasklist 找不到时返回 0 + INFO 行，
+ * 由调用方解析 stdout 判定，不会走到这里）。超时（killed/signal）、spawn 失败（字符串 code）、其它退出码 → unknown。
+ * execSync 的退出码在 `status`，execFile 的在 `code`（数字），两者都认。
+ */
+export function classifyProcessProbeError(
+  error: unknown,
+  platform: NodeJS.Platform
+): 'dead' | 'unknown' {
+  if (!error || typeof error !== 'object') return 'unknown';
+  const e = error as { killed?: boolean; signal?: unknown; status?: unknown; code?: unknown };
+  if (e.killed || e.signal) return 'unknown';
+  const exitCode =
+    typeof e.status === 'number' ? e.status : typeof e.code === 'number' ? e.code : null;
+  if (platform !== 'win32' && exitCode === 1) return 'dead';
+  return 'unknown';
+}

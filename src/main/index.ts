@@ -1322,8 +1322,12 @@ async function runCleanup(): Promise<void> {
     // 2. 清理系统代理设置（marker 门控：仅关 FlowZ 自己设置的系统代理；TUN 模式 / 用户自配的企业/第三方
     //    代理无 marker → 不动，符合通用-E「仅 FlowZ 自己设置的才被强关」不变量。跨会话残留由 marker 兜）。
     try {
-      const proxyStatus = await systemProxyManager.getProxyStatus();
-      if (proxyStatus.enabled && SystemProxyBase.readMarker()) {
+      // 读状态失败（探测超时/命令起不来）≠ 未启用：有 FlowZ marker 时仍按「是我们的」关掉，避免退出后留下死端口代理。
+      const proxyEnabled = await systemProxyManager
+        .getProxyStatus()
+        .then((st) => st.enabled)
+        .catch(() => null);
+      if (proxyEnabled !== false && SystemProxyBase.readMarker()) {
         logManager.addLog('info', 'Disabling system proxy...', 'Main');
         await systemProxyManager.disableProxy();
         logManager.addLog('info', 'System proxy disabled', 'Main');

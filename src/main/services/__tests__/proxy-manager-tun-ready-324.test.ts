@@ -52,7 +52,9 @@ function makeSvc(): any {
   svc.helperManager = { stopCore: jest.fn().mockResolvedValue(undefined) };
   // B4：就绪门的探活腿已从 isProcessAlive（execSync，阻塞 event loop）换成异步版。默认委托到同一个同步桩，
   //   使各用例既有的 `svc.isProcessAlive = …` 意图逐字保留；个别用例直接改 isProcessAliveAsync 的照旧覆盖本默认。
-  svc.isProcessAliveAsync = async () => svc.isProcessAlive();
+  // 健康检查探活现为三态（alive/dead/unknown），且判死需复核一次——单测把复核间隔置 0。
+  svc.isProcessAliveAsync = async () => (svc.isProcessAlive() ? 'alive' : 'dead');
+  svc.healthDeadConfirmDelayMs = 0;
   // B8：就绪门的探活腿再换一次——零 spawn 的 processExistsNoSpawn（`process.kill(pid, 0)`）。同样委托到
   //   `svc.isProcessAlive` 桩，逐字保留各用例意图；不桩的话真实实现会对着假 pid 1234 判 ESRCH → 全线 'dead'。
   svc.processExistsNoSpawn = () => svc.isProcessAlive();
@@ -875,7 +877,7 @@ describe('issue #324 H2 — performHealthCheck 才是 wrapper 核死的真实检
     svc.singboxPid = 4321;
     svc.pid = 4321;
     svc.logToManager = () => {};
-    svc.isProcessAliveAsync = async () => false; // 核已死
+    svc.isProcessAliveAsync = async () => 'dead'; // 核已死
     svc.getProcessExitInfo = () => '';
     svc.stopLogFileWatcher = () => {};
     svc.ensureSystemProxyCleared = async () => {};
@@ -994,7 +996,7 @@ describe('issue #324 M-2 — performHealthCheck 的世代守卫', () => {
     const gen = svc.lifecycleGeneration;
     svc.isProcessAliveAsync = async () => {
       svc.lifecycleGeneration = gen + 1; // 探活期间新 start 接管
-      return false;
+      return 'dead';
     };
     const autoRestart = jest.fn();
     svc.attemptAutoRestart = autoRestart;
@@ -1360,7 +1362,9 @@ describe('B6：核日志清空前移到 spawn 之前', () => {
     });
 
     await withPlatformAsync('win32', async () => {
-      await expect(svc.startSingBoxProcess(svc.lifecycleGeneration)).rejects.toThrow('停在这里即可');
+      await expect(svc.startSingBoxProcess(svc.lifecycleGeneration)).rejects.toThrow(
+        '停在这里即可'
+      );
     });
 
     // 变异守卫：把 truncateCoreLogFile() 挪回就绪之后（或删掉）→ order 不再是 ['truncate','launch']
@@ -1525,7 +1529,9 @@ describe('B6：零 spawn 探活 + pidFile 单独一格', () => {
       throw e;
     });
 
-    await expect(svc.startViaHelper(svc.lifecycleGeneration)).rejects.toThrow('process does not exist');
+    await expect(svc.startViaHelper(svc.lifecycleGeneration)).rejects.toThrow(
+      'process does not exist'
+    );
     expect(svc.cleanup).toHaveBeenCalled();
   });
 });

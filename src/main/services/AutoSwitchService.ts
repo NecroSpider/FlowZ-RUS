@@ -238,8 +238,29 @@ export class AutoSwitchService extends EventEmitter {
         'AutoSwitch'
       );
 
-      // 切换配置（先落盘，保证 UI/重启都用新选中节点）
-      const newConfig = { ...config, selectedServerId: best.server.id };
+      // 切换配置（先落盘，保证 UI/重启都用新选中节点）。
+      // 必须在测速**之后**重新读盘：上面的 config 是数秒前（并行 TCP 测速前）的快照，期间的订阅刷新 / 用户编辑
+      // 会被整份旧快照写回而静默丢失。只改 auto-switch 本职的 selectedServerId，其余字段一律取最新。
+      const fresh = await this.configManager.loadConfig();
+      if (fresh.selectedServerId !== currentId) {
+        // 测速期间用户（或别的路径）已经换过节点：用户意图优先，本次不再覆盖。
+        this.logManager.addLog(
+          'info',
+          'Selected node changed while testing candidates; skipping this auto switch',
+          'AutoSwitch'
+        );
+        return;
+      }
+      if (!fresh.servers.some((s) => s.id === best.server.id)) {
+        // 测速期间订阅刷新把该节点移除了：不能选一个已不存在的节点。
+        this.logManager.addLog(
+          'warn',
+          `Node ${best.server.name} was removed while testing candidates; skipping this auto switch`,
+          'AutoSwitch'
+        );
+        return;
+      }
+      const newConfig = { ...fresh, selectedServerId: best.server.id };
       await this.configManager.saveConfig(newConfig);
 
       // 优先经 clash_api 热切换（switchMode 内部 canHotSwitch，失败/不适用自动退回重启）

@@ -183,6 +183,7 @@ import {
   CoreStartRetryError,
   CoreStartSupersededError,
   CoreStartTunPersistentError,
+  classifyProcessProbeError,
 } from './core-readiness';
 import {
   classifySingBoxFatal,
@@ -469,6 +470,16 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // ensureSystemDnsRestored 单飞：与系统代理同终态多路并发，防重复 restore。
   private clearingSystemDns = false;
   /**
+   * 系统网络写操作（系统代理 enable/clear、系统 DNS set/restore）的单一串行队列。
+   * 无它时：start 尾部的 enableProxy（macOS 2–4 s）与用户点「停止」前置的 ensureSystemProxyCleared 并发——
+   * 清理读到「代理还没开」就删 marker、stop 杀核，随后 enableProxy 才把代理写成开 → 系统代理指向死端口、无 marker。
+   * 入队的操作自身都有命令级超时；另有 NET_OP_QUEUE_GUARD_MS 兜底，任何一条卡住都不会永久堵死后续 start/stop。
+   */
+  private netOpTail: Promise<void> = Promise.resolve();
+  private static readonly NET_OP_QUEUE_GUARD_MS = 60_000;
+  /** 最近一次真正写过系统代理 / 系统 DNS 的 start 世代（-1=无）。被接管的旧 start 只在它仍是属主时才撤销自己的写入。 */
+  private netStateOwnerGen = -1;
+  /**
    * 链路变化 watcher（issue #368 后语义）：**核起即起、三平台、与 DNS 接管解耦**。
    * macOS 侧仍负责接管重灌（门控 shouldReconcileDns 未变）；三平台共同负责链路变化后补刷 OS DNS 缓存。
    */
@@ -680,6 +691,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private lastTimelineFrameAt = 0;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly HEALTH_CHECK_INTERVAL = 10000; // 10秒检查一次
+  /** tasklist / ps 单次探活超时（同步版无超时时一条卡死的 tasklist 会冻住主进程）。 */
+  private static readonly PROCESS_PROBE_TIMEOUT_MS = 3000;
+  /** 健康检查判死的复核间隔：首次 'dead' 后隔这么久再探一次，两次都 'dead' 才认定核已死。实例字段便于单测置 0。 */
+  private healthDeadConfirmDelayMs = 1500;
 
   // issue #159：Windows TUN 重启前等自家 wintun 适配器释放的门控参数。8s 上限覆盖硬杀后驱动回收滞后，
   // 250ms 轮询；探测到消失即早退（常见 1-3s），超时 fail-open 放行交启动 retry（绝不卡死代理）。
@@ -1122,9 +1137,18 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
             ]);
             if (result?.address) {
               resolvedServerIps[serverId] = result.address;
+            } else {
+              this.logToManager(
+                'warn',
+                `Pre-resolving node domain ${server.address} timed out after ${ProxyManager.NODE_PRERESOLVE_TIMEOUT_MS}ms; its IP is not excluded from the TUN routes this session`
+              );
             }
-          } catch {
-            /* ignore */
+          } catch (e) {
+            // 不能静默：节点 IP 缺席 route_exclude 时，节点流量可能回流进自家 TUN（Windows）/ VPN 路由跟踪失准（macOS）。
+            this.logToManager(
+              'warn',
+              `Failed to pre-resolve node domain ${server.address}; its IP is not excluded from the TUN routes this session: ${(e as Error)?.message ?? e}`
+            );
           } finally {
             if (timer) clearTimeout(timer);
           }
@@ -1271,73 +1295,87 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //   真机释放时序为准（Task #6 校准）。
     const startRetryBudget = resolveStartRetryBudget(isTunMode, config.servers, process.platform);
     const runStartWithRetry = (): Promise<void> =>
-      retry(() => this.startSingBoxProcess(startGen), {
-        maxRetries: startRetryBudget.maxRetries,
-        delay: startRetryBudget.delay,
-        exponentialBackoff: startRetryBudget.exponentialBackoff,
-        shouldRetry: (error) => this.shouldRetryStartError(error),
-        onRetry: (error, attempt) => {
-          readyRetries = attempt; // issue #176 诊断：累计就绪重试次数
-          // issue #176：软化文案——多数是「起核较慢/争用」而非真失败，避免「启动失败」吓到用户（#176 即因此报 bug）。
-          this.logToManager(
-            'warn',
-            `sing-box is slow to start, retrying automatically (attempt ${attempt}): ${error.message}`
-          );
-          // 端口被占（含探针端口在 osascript 授权窗口内被抢占）→ 重分配探针端口并重写配置。
-          // retry 在 onRetry 后有 2s+ 退避，足够这段 ms 级异步完成。
-          if (/address already in use|in use|bind|eaddrinuse/i.test(error.message)) {
-            void (async () => {
-              try {
-                await this.allocateProbePorts(config);
-                // T9：用已 prune 的 singboxConfig（捕获 startInternal :746 外层变量），不重新 generateSingBoxConfig
-                //     ——否则会丢掉 :754 checkAndPruneConfig 已就地剔除的坏节点，导致坏节点回流重撞 FATAL。
-                //     仅把新探针端口回填到对应 inbound.listen_port（allocateProbePorts 只改 this.probe*Port 字段，
-                //     不改 singboxConfig 对象；不回填则 sing-box 仍 bind 旧冲突端口）。
-                for (const ib of singboxConfig.inbounds) {
-                  if (ib.tag === 'probe-direct-in' && this.probeDirectPort) {
-                    ib.listen_port = this.probeDirectPort;
-                  } else if (ib.tag === 'probe-proxy-in' && this.probeProxyPort) {
-                    ib.listen_port = this.probeProxyPort;
-                  } else if (ib.tag === 'update-in' && this.updateInPort) {
-                    ib.listen_port = this.updateInPort;
-                  } else if (ib.tag?.startsWith('probe-in-')) {
-                    // §15 探测池：把重分配后的池端口回填到对应 probe-in-k 入站（allocateProbePorts 已刷新
-                    // this.probePoolPorts；不回填则 sing-box 仍 bind 旧冲突端口）。索引越界（池置空）时跳过。
-                    const k = Number(ib.tag.slice('probe-in-'.length));
-                    if (Number.isInteger(k) && this.probePoolPorts[k]) {
-                      ib.listen_port = this.probePoolPorts[k];
+      retry(
+        async () => {
+          // 退避醒来时用户可能已点停止 / 新 start 已接管：绝不再起一条核（否则「停了又自己连上」）。
+          this.throwIfStartSuperseded(startGen);
+          return this.startSingBoxProcess(startGen);
+        },
+        {
+          maxRetries: startRetryBudget.maxRetries,
+          delay: startRetryBudget.delay,
+          exponentialBackoff: startRetryBudget.exponentialBackoff,
+          // 被接管（停止/新 start）后的任何失败都不重试：systemProxy 直起路径上，1 s 起核窗口内点停止会让核以
+          // SIGTERM「启动期退出」，旧判据把它当可重试 → 退避后又把核拉起来。
+          shouldRetry: (error) =>
+            this.lifecycleGeneration === startGen && this.shouldRetryStartError(error),
+          onRetry: (error, attempt) => {
+            readyRetries = attempt; // issue #176 诊断：累计就绪重试次数
+            // issue #176：软化文案——多数是「起核较慢/争用」而非真失败，避免「启动失败」吓到用户（#176 即因此报 bug）。
+            this.logToManager(
+              'warn',
+              `sing-box is slow to start, retrying automatically (attempt ${attempt}): ${error.message}`
+            );
+            // 端口被占（含探针端口在 osascript 授权窗口内被抢占）→ 重分配探针端口并重写配置。
+            // retry 在 onRetry 后有 2s+ 退避，足够这段 ms 级异步完成。
+            if (/address already in use|in use|bind|eaddrinuse/i.test(error.message)) {
+              void (async () => {
+                try {
+                  await this.allocateProbePorts(config);
+                  // T9：用已 prune 的 singboxConfig（捕获 startInternal :746 外层变量），不重新 generateSingBoxConfig
+                  //     ——否则会丢掉 :754 checkAndPruneConfig 已就地剔除的坏节点，导致坏节点回流重撞 FATAL。
+                  //     仅把新探针端口回填到对应 inbound.listen_port（allocateProbePorts 只改 this.probe*Port 字段，
+                  //     不改 singboxConfig 对象；不回填则 sing-box 仍 bind 旧冲突端口）。
+                  for (const ib of singboxConfig.inbounds) {
+                    if (ib.tag === 'probe-direct-in' && this.probeDirectPort) {
+                      ib.listen_port = this.probeDirectPort;
+                    } else if (ib.tag === 'probe-proxy-in' && this.probeProxyPort) {
+                      ib.listen_port = this.probeProxyPort;
+                    } else if (ib.tag === 'update-in' && this.updateInPort) {
+                      ib.listen_port = this.updateInPort;
+                    } else if (ib.tag?.startsWith('probe-in-')) {
+                      // §15 探测池：把重分配后的池端口回填到对应 probe-in-k 入站（allocateProbePorts 已刷新
+                      // this.probePoolPorts；不回填则 sing-box 仍 bind 旧冲突端口）。索引越界（池置空）时跳过。
+                      const k = Number(ib.tag.slice('probe-in-'.length));
+                      if (Number.isInteger(k) && this.probePoolPorts[k]) {
+                        ib.listen_port = this.probePoolPorts[k];
+                      }
                     }
                   }
+                  await this.writeSingBoxConfig(singboxConfig);
+                } catch (e) {
+                  // 不能静默：重分配失败时下一腿仍 bind 同一个被占端口，必然再撞同一条错误。记下原因便于定位。
+                  this.logToManager(
+                    'warn',
+                    `Failed to re-allocate probe ports after a port conflict; the next attempt reuses the current ports: ${(e as Error)?.message ?? e}`
+                  );
                 }
-                await this.writeSingBoxConfig(singboxConfig);
-              } catch {
-                /* 忽略：下次尝试用现有配置 */
-              }
-            })();
-          }
-          // 启动 gate 备用腿：run 阶段 `dependency[X] not found` → 解析幽灵 tag、pruneTagsClosure 修正重写盘，
-          // 只修一次（refFixAttempted 闸）。tag 经 idToTagMap 进 gateInvalidNodes，下次 generateSingBoxConfig 跳过。
-          const depMatch = /dependency\[(.+?)\] not found/i.exec(error.message);
-          if (depMatch && !this.refFixAttempted) {
-            this.refFixAttempted = true;
-            void (async () => {
-              try {
-                const cfg = this.generateSingBoxConfig(config, resolvedServerIps);
-                this.pruneTagsClosure(cfg, config, new Set([depMatch[1]]), 'detour');
-                await this.writeSingBoxConfig(cfg);
-                this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_INVALID_NODES, [
-                  ...this.gateInvalidNodes.values(),
-                ]);
-              } catch (e) {
-                this.logToManager(
-                  'warn',
-                  `Start gate reference fix failed (retrying with the current config): ${(e as Error)?.message ?? e}`
-                );
-              }
-            })();
-          }
-        },
-      });
+              })();
+            }
+            // 启动 gate 备用腿：run 阶段 `dependency[X] not found` → 解析幽灵 tag、pruneTagsClosure 修正重写盘，
+            // 只修一次（refFixAttempted 闸）。tag 经 idToTagMap 进 gateInvalidNodes，下次 generateSingBoxConfig 跳过。
+            const depMatch = /dependency\[(.+?)\] not found/i.exec(error.message);
+            if (depMatch && !this.refFixAttempted) {
+              this.refFixAttempted = true;
+              void (async () => {
+                try {
+                  const cfg = this.generateSingBoxConfig(config, resolvedServerIps);
+                  this.pruneTagsClosure(cfg, config, new Set([depMatch[1]]), 'detour');
+                  await this.writeSingBoxConfig(cfg);
+                  this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_INVALID_NODES, [
+                    ...this.gateInvalidNodes.values(),
+                  ]);
+                } catch (e) {
+                  this.logToManager(
+                    'warn',
+                    `Start gate reference fix failed (retrying with the current config): ${(e as Error)?.message ?? e}`
+                  );
+                }
+              })();
+            }
+          },
+        }
+      );
 
     // 出口路由托管（macOS）：起核前快照 utun 基线 → 起核后用时序 diff 精确定位 sing-box 的 TS 内核接口
     // （比纯地址反推稳，不误命中 Tailscale.app utun，用户实证建议）。非 macOS no-op。
@@ -1353,6 +1391,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     try {
       await runStartWithRetry();
     } catch (err) {
+      // 被接管期间的失败（含停止 SIGTERM 造成的「启动期退出」）不是本次 start 的失败：转让位，交 start() 静默收口，
+      // 不 cleanup（接管方拥有进程引用与系统代理状态）、不给用户报一条莫名的启动错误。
+      if (this.lifecycleGeneration !== startGen) throw new CoreStartSupersededError();
       const msg = err instanceof Error ? err.message : String(err);
       if (!this.cronetHealAttempted && this.isCronetLibError(msg)) {
         this.cronetHealAttempted = true;
@@ -1395,6 +1436,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 检查 / 发 started 事件），以及 cronet 自愈冷路径若触发的整轮重起。
     this.markStart('startTail');
 
+    // 核已就绪（'started' 已发、托盘已翻成「停止」）。从这里到 API 客户端建好之间，用户点停止 / 新 start 接管都会
+    // 令世代变化：此后每一次系统网络写入之前与之后都要复核，被接管就撤销本次已写的内容并让位（见 netOpTail 注释）。
+    this.throwIfStartSuperseded(startGen);
+
     this.lastStartReadyRetries = readyRetries;
     if (readyRetries > 0) {
       this.logToManager('info', `sing-box started after ${readyRetries} readiness retries`);
@@ -1408,66 +1453,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       void this.meshExitRoute.reconcile(config, !!config.enableIPv6);
     }
 
-    // 系统代理单一写者收口（拆双轨）：systemProxy 模式 → 置系统代理（marker + 防自指在 SystemProxyManager 内，
-    // 杜绝把自己当原始保存致 disable restore 死端口）；TUN/manual 模式 → 反向清掉可能残留的系统代理
-    // （覆盖「切接管方式 systemProxy→TUN 经 switchMode 去抖重启」这条不经 IPC handler 的路径）。
-    // best-effort：networksetup/reg 失败仅告警不阻断启动（enableProxy 内含重试 + 失败回滚 + 清 marker）。
-    try {
-      if (config.proxyModeType === 'systemProxy') {
-        await this.systemProxyManager?.enableProxy(
-          '127.0.0.1',
-          localProxyPort(config), // mixed-only：HTTP 与 SOCKS 同口（mac 三代理同口、win 仅 http）
-          localProxyPort(config),
-          // 系统代理「忽略列表」= 绕过局域网完整清单（CIDR+域名），受 bypassLAN 开关管理（单一真值 effectiveBypassLan）。
-          effectiveBypassLan(config)
-        );
-      } else {
-        await this.ensureSystemProxyCleared();
-        // 仅 TUN：清掉 FlowZ 自己的(marker)系统代理后，若仍有系统代理开着 = 无 marker 残留(外部/他软件/丢 marker)。
-        // TUN 下它会截走代理感知 app 的流量致连接异常；direct/manual 模式不接管路由，残留是用户自己的事，不提示。
-        // 不自动清(7890 等业内共用端口、无法证明归属，自动清会误伤别的代理软件)→ 一次性提示，交用户决定。
-        if (config.proxyModeType === 'tun') await this.adviseIfResidualSystemProxy();
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      this.logToManager('warn', `System proxy state sync failed: ${msg}`);
-      // 非致命：核心已起但系统代理没设上 → UI 会显示「已连接」而流量实未走代理。发一条非终态提示告知用户
-      // （enableProxy 内部已 fail-closed 关掉半残留，不会留死端口），避免「显示连上、实际没代理」的静默不一致（L-4）。
-      if (config.proxyModeType === 'systemProxy') {
-        this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
-          message: `Failed to set the system proxy: ${msg}. The core is running but traffic may not go through the proxy; check the system network permissions and retry.`,
-          errorCode: ProxyErrorCode.SYSTEM_PROXY_FAILED,
-          code: -3,
-        });
-      }
-    }
-
-    this.markStart('systemProxySync'); // systemProxy 模式=置代理（mac 上的 networksetup 风暴在这一格）；TUN=反向清
-
-    // 系统 DNS 接管收口（治本 DNS，与系统代理 reconcile 正交）：仅 TUN 模式接管——on-link 的 LAN/ISP DNS 不进
-    // TUN → hijack-dns 看不到 → 需代理的域名被系统解析器解析成真实/错族 IP。故 TUN 启动把系统 DNS 改为受控、
-    // 可路由、不在 bootstrap-direct 的 8.8.8.8，使其经 TUN 被 hijack（真进 sing-box → FakeIP/远程解析）。
-    // systemProxy/manual 模式不接管 DNS（系统代理走远程解析）→ 反向还原可能残留（覆盖 TUN→其它模式切换）。
-    // best-effort：setDns 内部失败仅告警 + 回滚，绝不抛、不阻断 TUN 启动。
-    try {
-      if (config.proxyModeType === 'tun' && config.dnsConfig?.takeoverSystemDns !== false) {
-        // 地址取真值三元组的前两项（与下发给核的 builder 同源）：用户显式配置最高优先，其次冲突预检选出的
-        // 地址。只传 effective 的话，用户显式配置时 preflight 早退 → effective 恒 null → Linux 永不接管。
-        await this.systemDnsManager?.setDns({
-          tunInet4Address: config.tunConfig?.inet4Address ?? this.effectiveTunInet4Address,
-        });
-      } else {
-        // 非 TUN / 用户关掉接管开关 → 还原可能残留的受控 DNS（覆盖 TUN→其它模式切换、开→关切换）。
-        await this.ensureSystemDnsRestored();
-      }
-    } catch (e) {
-      this.logToManager(
-        'warn',
-        `System DNS takeover state sync failed: ${e instanceof Error ? e.message : String(e)}`
-      );
-    }
-
-    this.markStart('dnsTakeover'); // Windows 不接管系统 DNS（见 SystemDnsManager）→ 该平台应恒 ≈0
+    // 系统代理 / 系统 DNS 收口（串行队列 + 世代复核，见 syncSystemNetworkStateAfterStart）。
+    const applied = await this.syncSystemNetworkStateAfterStart(config, startGen);
+    // 最后一道世代复核。从这里到 API 客户端 start() 全是同步代码，而 stopInner 的「世代+1 / 停 watcher / 停 API
+    // 客户端」也在同一个同步段里——两者不可能交错：要么停止已发生（此处让位，不起 watcher/客户端），要么停止在后
+    // （它会停掉本次起的 watcher 与客户端）。杜绝停止后残留 route monitor 子进程与 API 重连循环。
+    if (this.lifecycleGeneration !== startGen) await this.yieldSupersededStart(startGen, applied);
 
     // 核已成功起动、DNS 接管状态已收口 → best-effort 刷 OS DNS 缓存（fire-and-forget，不阻塞启动；让位
     // CoreStartSupersededError 与失败路径在更早处已抛、到不了这里）。清掉接管边界前系统解析器缓存的陈旧记录
@@ -1533,6 +1524,97 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       this.markSelectorSettled('no management API');
       this.scheduleConnectionFlush(config);
     }
+  }
+
+  /**
+   * 起核成功后同步系统代理 / 系统 DNS（startInternal 尾部）。每次写都入 netOpTail 队列、在队内复核世代：
+   * 排在用户停止的清理之后则不再写；写完后发现已被接管则撤销本次写入并让位（抛 CoreStartSupersededError）。
+   * 返回本次实际写入了什么，供调用方在最后一道（同步）世代复核时撤销。
+   */
+  private async syncSystemNetworkStateAfterStart(
+    config: UserConfig,
+    startGen: number
+  ): Promise<{ proxy: boolean; dns: boolean }> {
+    const applied = { proxy: false, dns: false };
+    // 系统代理单一写者收口（拆双轨）：systemProxy 模式 → 置系统代理（marker + 防自指在 SystemProxyManager 内，
+    // 杜绝把自己当原始保存致 disable restore 死端口）；TUN/manual 模式 → 反向清掉可能残留的系统代理
+    // （覆盖「切接管方式 systemProxy→TUN 经 switchMode 去抖重启」这条不经 IPC handler 的路径）。
+    // best-effort：networksetup/reg 失败仅告警不阻断启动（enableProxy 内含重试 + 失败回滚 + 清 marker）。
+    try {
+      if (config.proxyModeType === 'systemProxy') {
+        const mgr = this.systemProxyManager;
+        if (mgr) {
+          // 入队 + 队内复核世代：排在用户停止的清理之后的话，此刻世代已变 → 不写（否则清理之后才开代理 = 死端口）。
+          applied.proxy = await this.runNetOp(async () => {
+            if (this.lifecycleGeneration !== startGen) return false;
+            this.netStateOwnerGen = startGen;
+            await mgr.enableProxy(
+              '127.0.0.1',
+              localProxyPort(config), // mixed-only：HTTP 与 SOCKS 同口（mac 三代理同口、win 仅 http）
+              localProxyPort(config),
+              // 系统代理「忽略列表」= 绕过局域网完整清单（CIDR+域名），受 bypassLAN 开关管理（单一真值 effectiveBypassLan）。
+              effectiveBypassLan(config)
+            );
+            return true;
+          });
+        }
+      } else {
+        await this.ensureSystemProxyCleared();
+        // 仅 TUN：清掉 FlowZ 自己的(marker)系统代理后，若仍有系统代理开着 = 无 marker 残留(外部/他软件/丢 marker)。
+        // TUN 下它会截走代理感知 app 的流量致连接异常；direct/manual 模式不接管路由，残留是用户自己的事，不提示。
+        // 不自动清(7890 等业内共用端口、无法证明归属，自动清会误伤别的代理软件)→ 一次性提示，交用户决定。
+        if (config.proxyModeType === 'tun') await this.adviseIfResidualSystemProxy();
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logToManager('warn', `System proxy state sync failed: ${msg}`);
+      // 非致命：核心已起但系统代理没设上 → UI 会显示「已连接」而流量实未走代理。发一条非终态提示告知用户
+      // （enableProxy 内部已 fail-closed 关掉半残留，不会留死端口），避免「显示连上、实际没代理」的静默不一致（L-4）。
+      if (config.proxyModeType === 'systemProxy') {
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
+          message: `Failed to set the system proxy: ${msg}. The core is running but traffic may not go through the proxy; check the system network permissions and retry.`,
+          errorCode: ProxyErrorCode.SYSTEM_PROXY_FAILED,
+          code: -3,
+        });
+      }
+    }
+
+    this.markStart('systemProxySync'); // systemProxy 模式=置代理（mac 上的 networksetup 风暴在这一格）；TUN=反向清
+    if (this.lifecycleGeneration !== startGen) await this.yieldSupersededStart(startGen, applied);
+
+    // 系统 DNS 接管收口（治本 DNS，与系统代理 reconcile 正交）：仅 TUN 模式接管——on-link 的 LAN/ISP DNS 不进
+    // TUN → hijack-dns 看不到 → 需代理的域名被系统解析器解析成真实/错族 IP。故 TUN 启动把系统 DNS 改为受控、
+    // 可路由、不在 bootstrap-direct 的 8.8.8.8，使其经 TUN 被 hijack（真进 sing-box → FakeIP/远程解析）。
+    // systemProxy/manual 模式不接管 DNS（系统代理走远程解析）→ 反向还原可能残留（覆盖 TUN→其它模式切换）。
+    // best-effort：setDns 内部失败仅告警 + 回滚，绝不抛、不阻断 TUN 启动。
+    try {
+      if (config.proxyModeType === 'tun' && config.dnsConfig?.takeoverSystemDns !== false) {
+        const dnsMgr = this.systemDnsManager;
+        if (dnsMgr) {
+          applied.dns = await this.runNetOp(async () => {
+            if (this.lifecycleGeneration !== startGen) return false;
+            this.netStateOwnerGen = startGen;
+            // 地址取真值三元组的前两项（与下发给核的 builder 同源）：用户显式配置最高优先，其次冲突预检选出的
+            // 地址。只传 effective 的话，用户显式配置时 preflight 早退 → effective 恒 null → Linux 永不接管。
+            await dnsMgr.setDns({
+              tunInet4Address: config.tunConfig?.inet4Address ?? this.effectiveTunInet4Address,
+            });
+            return true;
+          });
+        }
+      } else {
+        // 非 TUN / 用户关掉接管开关 → 还原可能残留的受控 DNS（覆盖 TUN→其它模式切换、开→关切换）。
+        await this.ensureSystemDnsRestored();
+      }
+    } catch (e) {
+      this.logToManager(
+        'warn',
+        `System DNS takeover state sync failed: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
+
+    this.markStart('dnsTakeover'); // Windows 不接管系统 DNS（见 SystemDnsManager）→ 该平台应恒 ≈0
+    return applied;
   }
 
   /**
@@ -6010,6 +6092,8 @@ rm -f "$STOPFLAG"
 
         this.pid = this.singboxProcess.pid || null;
         this.startTime = new Date();
+        // 本腿 spawn 出的进程句柄：exit 回调据此认出「旧进程迟到的退出」（见 exit 回调末尾）。
+        const proc = this.singboxProcess;
 
         // macOS/Windows TUN 模式下，这个 PID 是 osascript/PowerShell 的 PID，不是 sing-box 的
         // 实际的 sing-box PID 会在 waitForPidFile 中从 PID 文件读取
@@ -6108,12 +6192,28 @@ rm -f "$STOPFLAG"
             // 发幻影 'started'（污染核心更新基线 + UI 撒谎）+ 泄漏健康检查（10s 后见死 PID 触发 attemptAutoRestart，
             // 与外层 retry 并发——T1 要杀的双启动流换入口复活，H1）。
             startupResolved = true;
+            // 起核窗口内被停止 / 新 start 接管（停止腿 SIGTERM 了它）：不是启动失败，让位——否则 runStartWithRetry
+            // 会把它当「启动期退出」重试，退避后再把用户刚停掉的核拉起来。
+            if (this.lifecycleGeneration !== startGen) {
+              reject(new CoreStartSupersededError());
+              return;
+            }
             const errorMessage =
               code !== null && code !== 0
                 ? this.parseStartupError(code, this.lastErrorOutput)
                 : `sing-box exited during startup (code=${code}, signal=${signal})`;
             this.logToManager('error', errorMessage);
             reject(new Error(errorMessage));
+            return;
+          }
+
+          // 旧进程迟到的退出（stop 的 8s 硬上限已 cleanup、新会话已 spawn 了新进程）：不是当前会话崩溃，
+          // 绝不能走 handleProcessExit——那会对新会话发 stopped、清系统代理、触发自动重启。
+          if (proc !== this.singboxProcess) {
+            this.logToManager(
+              'info',
+              `Ignoring the exit of an earlier sing-box process (PID: ${proc.pid ?? 'unknown'}); it no longer belongs to the current session`
+            );
             return;
           }
 
@@ -6158,6 +6258,12 @@ rm -f "$STOPFLAG"
               reject(failure);
             }
           } else {
+            // 起核窗口内被停止 / 新 start 接管、停止腿还在等它退出：不发幻影 'started'、不起健康检查，让位。
+            if (this.lifecycleGeneration !== startGen) {
+              startupResolved = true;
+              reject(new CoreStartSupersededError());
+              return;
+            }
             // 系统代理模式或 Linux
             if (this.singboxProcess && this.pid) {
               // Linux TUN 的 logFileWatcher 已在 spawn 后立即启动（见上方 stderr 监听后），此处不重复。
@@ -6935,9 +7041,20 @@ rm -f "$STOPFLAG"
   }
 
   isProcessAlive(pid: number): boolean {
-    try {
-      const { execSync } = require('child_process');
+    const verdict = this.probeProcessAliveSync(pid);
+    if (verdict !== 'unknown') return verdict === 'alive';
+    // 探测本身失败（tasklist/ps 超时、起不来）≠ 进程已死。旧实现在这里一律判死 → 停止路径跳过 kill、
+    // finishStop 一个仍在跑的核。退回零 spawn 判据：只有 ESRCH 才是「确证不存在」，其余按存活处理。
+    return this.processExistsNoSpawn(pid);
+  }
 
+  /**
+   * 进程存在性三态（同步）。'unknown' = 探测命令自身失败（超时 / spawn 失败），结论不可用。
+   * POSIX：`ps -p` 找不到进程时**跑完返回退出码 1**——那是确定的「不存在」，不是探测失败。
+   */
+  private probeProcessAliveSync(pid: number): 'alive' | 'dead' | 'unknown' {
+    const { execSync } = require('child_process');
+    try {
       if (process.platform === 'win32') {
         // Windows: 使用 tasklist 检测进程
         // /FI "PID eq xxx" 过滤指定 PID，/NH 不显示表头
@@ -6945,20 +7062,20 @@ rm -f "$STOPFLAG"
           encoding: 'utf-8',
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: ProxyManager.PROCESS_PROBE_TIMEOUT_MS,
         });
-        // 如果进程存在，输出会包含进程信息；不存在则输出 "INFO: No tasks..."
-        return !result.includes('No tasks') && result.includes(String(pid));
-      } else {
-        // macOS/Linux: 使用 ps 检测进程
-        const result = execSync(`ps -p ${pid} -o pid=`, {
-          encoding: 'utf-8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-        });
-        return result.trim() === String(pid);
+        // 如果进程存在，输出会包含进程信息；不存在则输出 "INFO: No tasks..."（本地化系统上文案不同，但都不含 PID）
+        return !result.includes('No tasks') && result.includes(String(pid)) ? 'alive' : 'dead';
       }
-    } catch {
-      // 命令执行失败，进程不存在
-      return false;
+      // macOS/Linux: 使用 ps 检测进程
+      const result = execSync(`ps -p ${pid} -o pid=`, {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: ProxyManager.PROCESS_PROBE_TIMEOUT_MS,
+      });
+      return result.trim() === String(pid) ? 'alive' : 'dead';
+    } catch (e) {
+      return classifyProcessProbeError(e, process.platform);
     }
   }
 
@@ -6968,7 +7085,7 @@ rm -f "$STOPFLAG"
    * 本方法用 execFileAsync 不阻塞，仅供 performHealthCheck（周期热路径）用；同步清理/kill 链仍用 isProcessAlive
    * （那些是进程已死/停止路径，同步语义 + 短暂阻塞可接受）。判定逻辑与 isProcessAlive 严格一致。
    */
-  private async isProcessAliveAsync(pid: number): Promise<boolean> {
+  private async isProcessAliveAsync(pid: number): Promise<'alive' | 'dead' | 'unknown'> {
     try {
       if (process.platform === 'win32') {
         // `windowsHide` 与 `timeout` 缺一不可（复审实测：Node 的 execFile 是 `windowsHide: !!options.windowsHide`
@@ -6981,14 +7098,48 @@ rm -f "$STOPFLAG"
           { windowsHide: true, timeout: 3000 }
         );
         const result = String(stdout);
-        return !result.includes('No tasks') && result.includes(String(pid));
+        return !result.includes('No tasks') && result.includes(String(pid)) ? 'alive' : 'dead';
       } else {
-        const { stdout } = await healthProbeExecFile('ps', ['-p', String(pid), '-o', 'pid=']);
-        return String(stdout).trim() === String(pid);
+        const { stdout } = await healthProbeExecFile('ps', ['-p', String(pid), '-o', 'pid='], {
+          timeout: ProxyManager.PROCESS_PROBE_TIMEOUT_MS,
+        });
+        return String(stdout).trim() === String(pid) ? 'alive' : 'dead';
       }
-    } catch {
+    } catch (e) {
+      // 旧实现 catch 一律 false：tasklist 3s 超时 / 起不来（杀软拦截、系统繁忙）被当成「核已死」→ 自动重启 →
+      // 孤儿清扫杀掉健康的核（5–15 s 断网）。探测失败只能给出「不知道」。
+      return classifyProcessProbeError(e, process.platform);
+    }
+  }
+
+  /** 健康检查用的存活判定：tasklist/ps 探测失败（unknown）时退回零 spawn 判据（只有 ESRCH 判死）。 */
+  private async probeAliveForHealth(pid: number): Promise<'alive' | 'dead' | 'unknown'> {
+    const verdict = await this.isProcessAliveAsync(pid);
+    if (verdict !== 'unknown') return verdict;
+    return this.processExistsNoSpawn(pid) ? 'unknown' : 'dead';
+  }
+
+  /**
+   * 健康检查判死：连续两次 'dead'（间隔 healthDeadConfirmDelayMs）才返回 true。一次误判的代价是自动重启 +
+   * 孤儿清扫杀掉健康的核；多等 1.5 s 对真死的核几乎无代价。期间世代变化 → 返回 true 交调用方的世代守卫让位。
+   */
+  private async confirmProcessDead(pid: number, healthGen: number): Promise<boolean> {
+    const first = await this.probeAliveForHealth(pid);
+    if (first !== 'dead') {
+      if (first === 'unknown') {
+        this.logToManager(
+          'debug',
+          `Health check could not probe sing-box (PID: ${pid}); treating it as alive this round`
+        );
+      }
       return false;
     }
+    if (this.lifecycleGeneration !== healthGen) return true;
+    if (this.healthDeadConfirmDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, this.healthDeadConfirmDelayMs));
+    }
+    if (this.lifecycleGeneration !== healthGen) return true;
+    return (await this.probeAliveForHealth(pid)) === 'dead';
   }
 
   private startHealthCheck(): void {
@@ -7101,8 +7252,8 @@ rm -f "$STOPFLAG"
     //   tick 的分支体会对着新 start 执行：清它刚设的 pid、写它的 lastStartupFatal，而地址冲突短路更会直接
     //   emit 'error'+'stopped'+cleanup()，把一次本可能成功的启动打掉并给渲染端发终态卡。
     const healthGen = this.lifecycleGeneration;
-    // 改异步探活（原 execSync 每 10s 阻塞主进程 50-100ms on Windows）。
-    if (!(await this.isProcessAliveAsync(activePid))) {
+    // 改异步探活（原 execSync 每 10s 阻塞主进程 50-100ms on Windows）。判死需**连续两次**确证（见 confirmProcessDead）。
+    if (await this.confirmProcessDead(activePid, healthGen)) {
       // 新 start 已接管 → pid/状态归它管，本 tick 静默让位（同时保护既有自动重启分支与新增的终态短路）。
       if (this.lifecycleGeneration !== healthGen) return;
       // 尝试获取更多退出信息
@@ -7464,13 +7615,39 @@ rm -f "$STOPFLAG"
     if (this.clearingSystemProxy) return; // 单飞：多路终态并发只清一次
     const mgr = this.systemProxyManager;
     if (!mgr) return;
-    // 仅当系统代理确由 FlowZ 设置（marker 在）才动手 → 杜绝误清用户自配代理
-    const marker = SystemProxyBase.readMarker();
-    if (!marker) return;
+    // marker 门控（仅清 FlowZ 自己设的）在队内判：在飞的 enable 可能还没写 marker（Linux 成功后才写），
+    // 队外先判会让这次清理直接返回、错过它。
 
     this.clearingSystemProxy = true;
     try {
-      const status = await mgr.getProxyStatus().catch(() => null);
+      // 与 start 尾部的 enableProxy 同队串行：在飞的 enable 写完后才轮到这里读状态，读到的才是真值。
+      await this.runNetOp(() => this.clearOwnSystemProxyLocked());
+    } finally {
+      this.clearingSystemProxy = false;
+    }
+  }
+
+  /**
+   * 清 FlowZ 自己设的系统代理（须在 netOpTail 队内调用）：marker 在 + 实查仍指向我们 → disable；
+   * 已不指向我们 → 只删失真 marker；**读不到状态 → 什么都不删**（marker 是崩溃/外部死亡后唯一的恢复把手，
+   * 旧实现把读失败当「未开」直接删掉它）。
+   */
+  private async clearOwnSystemProxyLocked(): Promise<void> {
+    const mgr = this.systemProxyManager;
+    if (!mgr) return;
+    const marker = SystemProxyBase.readMarker();
+    if (!marker) return;
+    try {
+      let status: Awaited<ReturnType<ISystemProxyManager['getProxyStatus']>>;
+      try {
+        status = await mgr.getProxyStatus();
+      } catch (e) {
+        this.logToManager(
+          'warn',
+          `Could not read the system proxy state (${e instanceof Error ? e.message : String(e)}); keeping the FlowZ marker so cleanup is retried at the next stop/start/launch`
+        );
+        return;
+      }
       // 与启动期 marker 恢复同口径：精确 host:port 或 host 匹配（兜 mac socks 端口与 http 端口不同的情形）
       const markerHost = marker.ourHostPort.split(':')[0];
       const pointsToUs = (p?: string): boolean =>
@@ -7499,9 +7676,75 @@ rm -f "$STOPFLAG"
         'warn',
         `Failed to clear the system proxy at the terminal state: ${e instanceof Error ? e.message : String(e)}`
       );
-    } finally {
-      this.clearingSystemProxy = false;
     }
+  }
+
+  /**
+   * 系统网络写操作串行队列（见 netOpTail 字段注释）。fn 内**绝不能**再调 runNetOp（不可重入，会自锁）。
+   * 兜底：前一条操作超过 NET_OP_QUEUE_GUARD_MS 未结束则放行后续（它仍在后台跑完），宁可失去一次串行也不永久挂死生命周期。
+   */
+  private runNetOp<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.netOpTail.then(fn, fn);
+    let guard: ReturnType<typeof setTimeout> | undefined;
+    const settled = run.then(
+      () => undefined,
+      () => undefined
+    );
+    const guarded = new Promise<void>((resolve) => {
+      guard = setTimeout(() => {
+        this.logToManager(
+          'warn',
+          `A system network settings operation has been running for over ${ProxyManager.NET_OP_QUEUE_GUARD_MS / 1000}s; letting later operations proceed`
+        );
+        resolve();
+      }, ProxyManager.NET_OP_QUEUE_GUARD_MS);
+      guard.unref?.();
+    });
+    this.netOpTail = Promise.race([settled, guarded]).finally(() => {
+      if (guard) clearTimeout(guard);
+    });
+    return run;
+  }
+
+  /** 本次 start 已被更新的 start/stop 接管 → 抛让位错误（start() 包装静默吞掉，不 cleanup）。 */
+  private throwIfStartSuperseded(startGen: number): void {
+    if (this.lifecycleGeneration !== startGen) throw new CoreStartSupersededError();
+  }
+
+  /**
+   * 核就绪后被接管：撤销本次 start 已写入的系统代理 / 系统 DNS，然后让位（恒抛 CoreStartSupersededError）。
+   * 只在本 start 仍是系统网络状态的属主时撤销——更新的 start 若已写过（属主变了），它的设置不能被旧腿拆掉。
+   * 不受 stopping 守卫影响：停止腿正在杀核，此刻恰恰必须把指向它的代理/DNS 拆掉。
+   */
+  private async yieldSupersededStart(
+    startGen: number,
+    applied: { proxy: boolean; dns: boolean }
+  ): Promise<never> {
+    if (applied.proxy || applied.dns) {
+      await this.runNetOp(async () => {
+        if (this.netStateOwnerGen !== startGen) return;
+        this.logToManager(
+          'info',
+          'Start was stopped or replaced right after it changed system network settings; undoing them'
+        );
+        if (applied.dns) {
+          const dnsMgr = this.systemDnsManager;
+          if (dnsMgr?.hasMarker()) {
+            await dnsMgr
+              .restoreDns()
+              .catch((e) =>
+                this.logToManager(
+                  'warn',
+                  `Failed to restore the system DNS after a superseded start: ${e instanceof Error ? e.message : String(e)}`
+                )
+              );
+          }
+        }
+        if (applied.proxy) await this.clearOwnSystemProxyLocked();
+        this.netStateOwnerGen = -1;
+      }).catch(() => undefined);
+    }
+    throw new CoreStartSupersededError();
   }
 
   /**
@@ -7542,7 +7785,8 @@ rm -f "$STOPFLAG"
    * (ProxyEnable=0 / restore 原始)，不 marker 门控(残留本就无我们的 marker)。供 IPC SYSTEM_PROXY_DISABLE 调。
    */
   async clearSystemProxyManually(): Promise<void> {
-    await this.systemProxyManager?.disableProxy();
+    const mgr = this.systemProxyManager;
+    if (mgr) await this.runNetOp(() => mgr.disableProxy());
     this.logToManager('info', 'System proxy turned off at user request (TUN leftover prompt)');
   }
 
@@ -7564,12 +7808,14 @@ rm -f "$STOPFLAG"
     this.stopDnsInterfaceWatcher();
     const mgr = this.systemDnsManager;
     if (!mgr) return;
-    // 仅当 DNS 确由 FlowZ 接管（marker 在）才动手 → 不误改用户自配/系统默认 DNS
-    if (!mgr.hasMarker()) return;
-
     this.clearingSystemDns = true;
     try {
-      await mgr.restoreDns();
+      // 与 setDns / enableProxy 同队：在飞的 start 接管写完后才还原，不会被它反超。
+      // 仅当 DNS 确由 FlowZ 接管（marker 在）才动手 → 不误改用户自配/系统默认 DNS；在队内判（在飞的 setDns 可能尚未写 marker）。
+      await this.runNetOp(async () => {
+        if (!mgr.hasMarker()) return;
+        await mgr.restoreDns();
+      });
     } catch (e) {
       this.logToManager(
         'warn',
@@ -7726,6 +7972,10 @@ rm -f "$STOPFLAG"
           // 先于重灌 DNS：VPN 写进主服务的 DNS 只在被 FlowZ 覆盖前读得到。
           await this.checkWorkVpnChange();
           const mgr = this.systemDnsManager;
+          // 本代 watcher 已停（核死 / DNS 已还原，ensureSystemDnsRestored 先停 watcher 再还原）→ 绝不再重灌：
+          // 否则在飞的这次触发会在还原之后把系统 DNS 重新设成受控 IP。reconcileDns 自身与 restoreDns 同锁、
+          // 锁内重读 marker，这里再挡一道不必要的系统调用。
+          if (this.linkChangeHandler !== handler) return;
           if (mgr && shouldReconcileDns(this.currentConfig, mgr.hasMarker())) {
             await mgr.reconcileDns();
           }

@@ -34,12 +34,18 @@ describe('攻击面 H1：Linux ignore-hosts 用 execFile 参数数组（防命�
     execMock.mockReset();
     execFileMock.mockReset();
     // getProxyStatus（enableProxy 保存原始设置时调）+ 各 gsettings get 用 exec 返回空
-    execMock.mockImplementation(
-      (_cmd: string, cb: (e: null, r: { stdout: string; stderr: string }) => void) =>
-        cb(null, { stdout: '', stderr: '' })
+    // exec/execFile 的 cb 恒为最后一个参数（生产代码带 { timeout } 选项）
+    execMock.mockImplementation((_cmd: string, ...rest: unknown[]) =>
+      (rest[rest.length - 1] as (e: null, r: { stdout: string; stderr: string }) => void)(null, {
+        stdout: '',
+        stderr: '',
+      })
     );
-    execFileMock.mockImplementation((_cmd: string, _args: string[], cb: (e: null) => void) =>
-      cb(null)
+    execFileMock.mockImplementation((_cmd: string, _args: string[], ...rest: unknown[]) =>
+      (rest[rest.length - 1] as (e: null, r: { stdout: string; stderr: string }) => void)(null, {
+        stdout: '',
+        stderr: '',
+      })
     );
   });
 

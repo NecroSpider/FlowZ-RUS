@@ -71,7 +71,8 @@ export function registerProxyHandlers(
       // 避免双写者污染 originalSettings（曾致 disable 把死端口代理设回 → 断网）。
       await proxyManager.start(config);
 
-      if (trayStateCallback) {
+      // start() 被并发 stop 取代时会静默让位（不抛）→ 只在真正运行时把托盘切到「已连接」。
+      if (trayStateCallback && proxyManager.getStatus().running) {
         trayStateCallback(true);
       }
     }
