@@ -149,13 +149,17 @@ import {
 } from '../utils/paths';
 import { ruleConditions } from '../../shared/rules';
 import { planCustomRule, buildCustomRuleFiles, condMatcherFields } from './custom-rule-files';
-import { resolveWinTunInterfaceName, WIN_TUN_ROTATION_SLOTS } from '../../shared/tun-interface';
+import {
+  isFlowzWinTunName,
+  resolveWinTunInterfaceName,
+  WIN_TUN_ROTATION_SLOTS,
+} from '../../shared/tun-interface';
 import { DEFAULT_DOMESTIC_DNS } from '../../shared/dns';
 import { ensureYandexDnsPlan, getYandexDnsPlan } from './dns-reachability';
 import {
   applyYandexDnsPlanToPool,
   isDefaultYandexDnsPlan,
-  yandexDohUrl,
+  ipDohUrl,
 } from '../../shared/dns-failover';
 import { findMemoryOffenders } from '../../shared/process-metrics';
 import {
@@ -349,9 +353,12 @@ export function connectionMatchesSwitchedPairs(
 }
 
 /** 网卡名 + IPv4 地址指纹（廉价，无子进程）：Windows 上判断「网卡变了、值得起 PowerShell 复查工作 VPN」。 */
-function winIfaceFingerprint(): string {
+function winIfaceFingerprint(ownTunName: string): string {
   try {
     return Object.entries(networkInterfaces())
+      .filter(
+        ([name]) => name.toLowerCase() !== ownTunName.toLowerCase() && !isFlowzWinTunName(name)
+      )
       .map(([name, addrs]) => {
         const v4 = (addrs ?? []).filter((a) => a.family === 'IPv4').map((a) => a.address);
         return `${name}=${v4.sort().join(',')}`;
@@ -412,9 +419,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private workVpnOwnTunAddrs = new Set<string>(['172.19.0.1']);
   // 当前 TUN 的 route_exclude_address（识别 sing-tun 拆出来的 /32 补集路由）。
   private workVpnTunExcludes: string[] = [];
-  // Windows：运行中的 TUN 是否开着 strict_route，及起核时的网卡地址指纹（VPN 后连上时据此决定是否重生成）。
-  private winRunningStrictRoute = false;
   private winIfaceFingerprint = '';
+  private winWorkVpnRecheck = false;
   // 本次生成是否发射了 evaluate 探测；内核拒绝时本会话关闭自动识别（回退为仅推送/手填域名）。
   private workVpnUsedEvaluate = false;
   private workVpnEvaluateRejected = false;
@@ -931,9 +937,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.rejectIfCoreSwapInProgress('proxy start');
     // Windows：本次起核换一个新的 TUN 接口名（须在下方释放门预热与配置生成**之前**定，后续各处都读 winTunNameFor）。
     this.rotateWinTunName(config);
-    // Which Yandex DoH addresses answer on this network (a blocked default makes every direct domain fail to resolve).
-    // Started now so it overlaps with the other preparation; awaited right before the race resolver is built.
-    const dnsPlanProbe = ensureYandexDnsPlan(0);
     // B1：清掉上一次 start 可能遗留的释放门预热（那次 start 若在首腿之前就抛错，promise 会没人消费）。
     //   必须在本方法**入口**清、且在下方重新 arm 之前——否则首腿会吃到一个早于本次 stop/killOrphans 的陈旧结论。
     this.pendingAdapterReleaseGate = null;
@@ -1016,6 +1019,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
     await this.killOrphanedSingBoxProcesses(isTunMode);
     this.markStart('killOrphans'); // win: helper 管道 cleanup + tasklist/taskkill（execSync，阻塞 event loop）
+    // Probe after removing the previous TUN so its routes cannot affect the result.
+    const dnsPlanProbe = ensureYandexDnsPlan(0);
 
     // 孤儿清理后仍占 9090 → 按端口清掉占用者（helper freePort / osascript），否则明确终态（L2，含外部/旧路径
     // sing-box）。把「裸 spawn 撞 9090 占用 → retry 风暴」收敛为一次明确、可定位的失败。
@@ -1209,7 +1214,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //     的本地 server 起停 + effective config 降级见下（startNodeDnsRaceServer）。
     {
       const plan = await dnsPlanProbe;
-      if (!isDefaultYandexDnsPlan(plan)) {
+      if (plan.unavailable) {
+        this.logToManager(
+          'warn',
+          'Built-in DoH: no Yandex, AliDNS or DNSPod endpoint returned a DNS answer'
+        );
+      } else if (plan.fallbackPool) {
+        this.logToManager(
+          'warn',
+          `Yandex DoH did not answer. Using built-in DoH fallback ${plan.primaryIp} for bootstrap and default DNS`
+        );
+      } else if (!isDefaultYandexDnsPlan(plan)) {
         this.logToManager(
           'warn',
           plan.useSafePool
@@ -4029,7 +4044,7 @@ done
   }
 
   /**
-   * The primary Yandex DoH addresses are unreachable here (probed at start): use the address that answers for the
+   * When the primary Yandex DoH address is unavailable, use the address that answers for the
    * default domestic DNS. Only the untouched default is replaced; a domestic DNS the user typed in stays as it is.
    */
   private withYandexDnsPlan(config: UserConfig): UserConfig {
@@ -4037,7 +4052,7 @@ done
     const dns = config.dnsConfig;
     if (!ip || !dns) return config;
     if (dns.domesticDns && dns.domesticDns !== DEFAULT_DOMESTIC_DNS) return config;
-    return { ...config, dnsConfig: { ...dns, domesticDns: yandexDohUrl(ip) } };
+    return { ...config, dnsConfig: { ...dns, domesticDns: ipDohUrl(ip) } };
   }
 
   /** 与工作 VPN 共存是否生效（macOS / Windows；缺省开）。 */
@@ -4098,6 +4113,14 @@ done
     this.workVpnFingerprint = workVpnFingerprint(snap);
     const summary = describeWorkVpn(snap);
     if (summary) this.logToManager('info', `Work VPN detected: ${summary}`);
+    else if (process.platform === 'win32' && config.proxyModeType === 'tun') {
+      this.logToManager(
+        snap ? 'debug' : 'warn',
+        snap
+          ? 'Work VPN: no active VPN routes or DNS found'
+          : 'Work VPN: Windows network snapshot unavailable'
+      );
+    }
   }
 
   /** 把工作 VPN 的路由 / DNS / 服务器直连注入生成的配置，并记下 TUN 排除段供下次识别。 */
@@ -4133,29 +4156,28 @@ done
     const tun = singboxConfig.inbounds.find((ib) => ib.type === 'tun');
     this.workVpnTunExcludes = tun?.route_exclude_address ?? [];
     if (process.platform === 'win32') {
-      this.winRunningStrictRoute = !!tun && tun.strict_route !== false;
-      this.winIfaceFingerprint = winIfaceFingerprint();
+      this.winIfaceFingerprint = winIfaceFingerprint(this.winTunNameFor(config));
+      this.winWorkVpnRecheck = true;
     }
   }
 
-  /**
-   * Windows：起核时还没有带 DNS 的工作 VPN（strict_route 开着），之后 VPN 连上——VPN 客户端的 DNS 防泄漏与
-   * strict_route 互相封死、整机断网（见 shared/work-vpn 关 strict_route 处）。这时只能重生成配置，重启一次的十余秒
-   * 好过一直断网。watcher 是 30 s 指纹轮询、每轮都走到这里，而探测要起一次 PowerShell，故先比网卡地址指纹，
-   * 网卡没变就不探测。VPN 断开不重启：strict_route 关着无害，下次连接时恢复。
-   */
-  private async checkWinWorkVpnStrictRoute(): Promise<void> {
+  /** Windows can publish a VPN address before installing its routes and DNS policy. Recheck on the next poll. */
+  private async checkWinWorkVpnChange(): Promise<void> {
     const config = this.currentConfig;
     if (!config || config.proxyModeType !== 'tun' || !this.workVpnEnabled(config)) return;
-    if (!this.winRunningStrictRoute) return;
-    const fp = winIfaceFingerprint();
-    if (fp === this.winIfaceFingerprint) return;
+    const fp = winIfaceFingerprint(this.winTunNameFor(config));
+    const changed = fp !== this.winIfaceFingerprint;
+    if (!changed && !this.winWorkVpnRecheck) return;
     this.winIfaceFingerprint = fp;
+    this.winWorkVpnRecheck = changed;
+    const generation = this.lifecycleGeneration;
     const snap = await this.detectWorkVpnNow(config);
-    if (!snap?.interfaces.some((it) => it.dnsServers.length > 0)) return;
+    if (generation !== this.lifecycleGeneration || this.currentConfig !== config) return;
+    if (!snap?.interfaces.some((it) => it.cidrs.length > 0 || it.dnsServers.length > 0)) return;
+    if (workVpnFingerprint(snap) === this.workVpnFingerprint) return;
     this.logToManager(
       'warn',
-      `Work VPN connected (${describeWorkVpn(snap)}): regenerating the config with strict_route off to avoid deadlocking with the VPN's DNS leak protection`
+      `Work VPN changed (${describeWorkVpn(snap)}): regenerating the config to use its routes and DNS`
     );
     this.scheduleDebouncedRestart();
   }
@@ -4177,7 +4199,7 @@ done
    */
   private async checkWorkVpnChange(): Promise<void> {
     if (process.platform === 'win32') {
-      await this.checkWinWorkVpnStrictRoute();
+      await this.checkWinWorkVpnChange();
       return;
     }
     if (process.platform !== 'darwin') return;

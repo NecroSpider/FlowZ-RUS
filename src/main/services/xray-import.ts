@@ -12,7 +12,7 @@ import type { ServerConfig, Network, Security } from '../../shared/types';
 import { unsupportedVlessEncryption } from './ProtocolParser';
 
 /** 本模块可映射的 xray outbound.protocol。 */
-const XRAY_SUPPORTED = new Set(['vmess', 'vless', 'trojan', 'shadowsocks']);
+const XRAY_SUPPORTED = new Set(['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria']);
 /** xray 内部/非节点 outbound（忽略，不计入 skipped）。 */
 const XRAY_INTERNAL = new Set(['freedom', 'blackhole', 'dns', 'loopback']);
 /**
@@ -42,12 +42,16 @@ function num(v: unknown): number | undefined {
   return undefined;
 }
 
+function xrayNetwork(stream: Record<string, unknown> | undefined): string {
+  return (str(stream?.method) || str(stream?.network) || 'tcp').toLowerCase();
+}
+
 /** xray streamSettings → ServerConfig 传输/安全层字段。 */
 function applyStreamSettings(server: ServerConfig, ss: Record<string, unknown> | undefined): void {
   if (!ss || typeof ss !== 'object') return;
 
   // 传输层
-  const network = (str(ss.network) || 'tcp').toLowerCase();
+  const network = xrayNetwork(ss);
   if (network === 'ws') {
     server.network = 'ws';
     const ws = (ss.wsSettings as Record<string, unknown>) || {};
@@ -75,7 +79,7 @@ function applyStreamSettings(server: ServerConfig, ss: Record<string, unknown> |
     const hu = (ss.httpupgradeSettings as Record<string, unknown>) || {};
     const host = str(hu.host);
     server.wsSettings = { path: str(hu.path) || '/', headers: host ? { Host: host } : undefined };
-  } else {
+  } else if (network !== 'hysteria') {
     server.network = 'tcp' as Network;
   }
 
@@ -173,6 +177,43 @@ function mapXrayOutbound(
     return server;
   }
 
+  if (proto === 'hysteria') {
+    const stream = o.streamSettings as Record<string, unknown> | undefined;
+    const hysteria = stream?.hysteriaSettings as Record<string, unknown> | undefined;
+    const tls = stream?.tlsSettings as Record<string, unknown> | undefined;
+    const address = str(settings.address);
+    const port = num(settings.port);
+    const password = str(hysteria?.auth);
+    if (
+      !address ||
+      !port ||
+      !Number.isInteger(port) ||
+      port < 1 ||
+      port > 65535 ||
+      !password ||
+      num(settings.version) !== 2 ||
+      num(hysteria?.version) !== 2 ||
+      str(stream?.security)?.toLowerCase() !== 'tls'
+    )
+      return null;
+    // Do not turn a pinned connection into ordinary CA validation.
+    if (tls && Object.keys(tls).some((key) => /^(?:pin|verifyPeerCert|certificate)/i.test(key))) {
+      return null;
+    }
+    const mask = stream?.finalmask as { udp?: unknown } | undefined;
+    const udpMasks = mask?.udp ?? [];
+    if (!Array.isArray(udpMasks) || udpMasks.length > 1) return null;
+    const server: ServerConfig = { ...base(address, port), protocol: 'hysteria2', password };
+    applyStreamSettings(server, stream);
+    if (udpMasks.length === 1) {
+      const obfs = udpMasks[0];
+      const obfsPassword = str(obfs?.settings?.password);
+      if (obfs?.type !== 'salamander' || !obfsPassword) return null;
+      server.hysteria2Settings = { obfs: { type: 'salamander', password: obfsPassword } };
+    }
+    return server;
+  }
+
   return null;
 }
 
@@ -217,10 +258,8 @@ function collectXrayOutbounds(
       }
     }
     const ss = o.streamSettings as Record<string, unknown> | undefined;
-    const network = (
-      str(ss && typeof ss === 'object' ? ss.network : undefined) || 'tcp'
-    ).toLowerCase();
-    if (!XRAY_SUPPORTED_NETWORKS.has(network)) {
+    const network = xrayNetwork(ss);
+    if (proto === 'hysteria' ? network !== 'hysteria' : !XRAY_SUPPORTED_NETWORKS.has(network)) {
       skip(`${proto}+${network}`);
       continue;
     }

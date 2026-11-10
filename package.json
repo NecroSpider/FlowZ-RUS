@@ -1,6 +1,6 @@
 {
   "name": "flowz",
-  "version": "4.3.19",
+  "version": "4.3.20-beta.1",
   "description": "FlowZ-RUS - a clean, modern cross-platform proxy client (fork of FlowZ)",
   "desktopName": "flowz",
   "main": "dist/main/main/index.js",

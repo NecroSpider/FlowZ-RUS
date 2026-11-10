@@ -1,13 +1,20 @@
-import * as net from 'net';
+import * as http2 from 'http2';
 import {
   ensureYandexDnsPlan,
   getYandexDnsPlan,
-  probeTcpReachable,
   resetYandexDnsPlanForTest,
 } from '../dns-reachability';
 import { DEFAULT_YANDEX_DNS_PLAN } from '../../../shared/dns-failover';
+import { buildAnswerResponse, buildServfail } from '../../../shared/dns-wire';
+import { h2DohQuery } from '../node-dns-race-server';
 
-afterEach(() => resetYandexDnsPlanForTest());
+jest.mock('http2', () => ({ connect: jest.fn() }));
+jest.mock('../node-dns-race-server', () => ({ h2DohQuery: jest.fn() }));
+
+afterEach(() => {
+  jest.resetAllMocks();
+  resetYandexDnsPlanForTest();
+});
 
 const blocked = async (): Promise<Record<string, boolean>> => ({
   '77.88.8.8': false,
@@ -54,6 +61,16 @@ describe('ensureYandexDnsPlan', () => {
     expect(a).toEqual(b);
   });
 
+  it('tries the built-in alternatives only when both Yandex pairs fail', async () => {
+    const probe = jest
+      .fn(async () => ({}) as Record<string, boolean>)
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ '1.12.12.12': true });
+    const plan = await ensureYandexDnsPlan(0, { probe });
+    expect(probe).toHaveBeenNthCalledWith(2, ['223.5.5.5', '1.12.12.12']);
+    expect(plan).toEqual({ primaryIp: '1.12.12.12', useSafePool: false, fallbackPool: ['dnspod'] });
+  });
+
   it('falls back to the defaults when the probe throws, and never rejects', async () => {
     await ensureYandexDnsPlan(0, { probe: blocked });
     const plan = await ensureYandexDnsPlan(0, {
@@ -65,16 +82,27 @@ describe('ensureYandexDnsPlan', () => {
   });
 });
 
-describe('probeTcpReachable', () => {
-  it('is true for a listening port and false for a closed one', async () => {
-    const server = net.createServer((s) => s.destroy());
-    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-    const open = (server.address() as net.AddressInfo).port;
-    try {
-      await expect(probeTcpReachable('127.0.0.1', open, 1000)).resolves.toBe(true);
-    } finally {
-      await new Promise<void>((r) => server.close(() => r()));
-    }
-    await expect(probeTcpReachable('127.0.0.1', open, 1000)).resolves.toBe(false);
+describe('DoH reachability', () => {
+  it('uses Safe when the primary addresses connect but return SERVFAIL', async () => {
+    const destroy = jest.fn();
+    jest
+      .mocked(http2.connect)
+      .mockImplementation(
+        (authority) =>
+          ({ authority, on: jest.fn(), destroy }) as unknown as http2.ClientHttp2Session
+      );
+    jest.mocked(h2DohQuery).mockImplementation(async (session, _path, query) => {
+      const origin = (session as unknown as { authority: string }).authority;
+      if (origin === 'https://77.88.8.88') {
+        return buildAnswerResponse(query, [{ type: 1, rdata: Uint8Array.of(192, 0, 2, 1) }]);
+      }
+      return buildServfail(query);
+    });
+
+    await expect(ensureYandexDnsPlan(0)).resolves.toEqual({
+      primaryIp: '77.88.8.88',
+      useSafePool: true,
+    });
+    expect(destroy).toHaveBeenCalledTimes(4);
   });
 });

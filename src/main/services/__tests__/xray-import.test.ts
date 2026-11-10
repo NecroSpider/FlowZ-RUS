@@ -122,6 +122,38 @@ describe('parseXrayOutbounds', () => {
     expect(r.skipped).toBe(1); // 仅 socks，freedom/blackhole 不计
   });
 
+  it('imports an Xray Hysteria 2 outbound with Salamander without dropping TLS or auth', () => {
+    const outbound = {
+      protocol: 'hysteria',
+      settings: { address: 'proxy.example.com', port: 443, version: 2 },
+      streamSettings: {
+        method: 'hysteria',
+        security: 'tls',
+        tlsSettings: { serverName: 'proxy.example.com', alpn: ['h3'] },
+        hysteriaSettings: { version: 2, auth: 'proxy-password' },
+        finalmask: { udp: [{ type: 'salamander', settings: { password: 'mask-password' } }] },
+      },
+    };
+    const result = parseXrayOutbounds([outbound], NOW);
+    expect(result.servers).toHaveLength(1);
+    expect(result.servers[0]).toMatchObject({
+      protocol: 'hysteria2',
+      password: 'proxy-password',
+      security: 'tls',
+      tlsSettings: { serverName: 'proxy.example.com', allowInsecure: false, alpn: ['h3'] },
+      hysteria2Settings: { obfs: { type: 'salamander', password: 'mask-password' } },
+    });
+    expect(result.servers[0].network).toBeUndefined();
+    const invalid = {
+      ...outbound,
+      streamSettings: {
+        ...outbound.streamSettings,
+        finalmask: { udp: [{ type: 'salamander', settings: {} }] },
+      },
+    };
+    expect(parseXrayOutbounds([invalid], NOW)).toMatchObject({ servers: [], failed: 1 });
+  });
+
   it('缺必填字段 → failed，不产出节点', () => {
     const r = parseXrayOutbounds(
       [
