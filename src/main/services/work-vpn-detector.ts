@@ -34,6 +34,13 @@ export interface WorkVpnHostContext {
   ownTunExcludes: string[];
   /** Windows：FlowZ 自家 TUN 网卡名（resolveWinTunInterfaceName）。 */
   ownTunName?: string;
+  onWindowsProbe?: (result: WinWorkVpnProbeResult) => void;
+}
+
+export interface WinWorkVpnProbeResult {
+  stage: 'routes' | 'dns' | 'complete' | 'none';
+  failure?: 'timeout' | 'command-failed' | 'no-snapshot';
+  durationMs: number;
 }
 
 /** scutil 交互模式：命令经 stdin 喂入（list/show 不能走 argv）。 */
@@ -132,46 +139,67 @@ async function detectMacWorkVpn(ctx: WorkVpnHostContext): Promise<WorkVpnSnapsho
  */
 const WIN_NET_SNAPSHOT_PS = [
   "$ErrorActionPreference = 'SilentlyContinue'",
-  '$o = [ordered]@{',
-  '  adapters = @(Get-NetAdapter -IncludeHidden | ForEach-Object { @{ n = $_.Name; d = $_.InterfaceDescription; status = [string]$_.Status } })',
-  '  addrs = @(Get-NetIPAddress -AddressFamily IPv4 | ForEach-Object { @{ n = $_.InterfaceAlias; a = $_.IPAddress } })',
-  '  routes = @(Get-NetRoute -AddressFamily IPv4 | ForEach-Object { @{ n = $_.InterfaceAlias; p = $_.DestinationPrefix; g = $_.NextHop } })',
-  '  dns = @(Get-DnsClientServerAddress -AddressFamily IPv4 | ForEach-Object { @{ n = $_.InterfaceAlias; s = @($_.ServerAddresses) } })',
-  '  suffix = @(Get-DnsClient | ForEach-Object { @{ n = $_.InterfaceAlias; d = $_.ConnectionSpecificSuffix } })',
-  // Effective NRPT may return System.Net.IPAddress objects. Emit strings before JSON serialization.
-  '  nrpt = @(Get-DnsClientNrptPolicy -Effective | ForEach-Object { @{ ns = @($_.Namespace); s = @($_.NameServers | ForEach-Object { [string]$_ }) } })',
+  'function Write-Snapshot([string]$stage) {',
+  '  $j = ConvertTo-Json -InputObject $o -Depth 4 -Compress',
+  "  'WORKVPN_JSON:' + $stage + ':' + [regex]::Replace($j, '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value })",
   '}',
-  '$j = ConvertTo-Json -InputObject $o -Depth 4 -Compress',
-  "'WORKVPN_JSON:' + [regex]::Replace($j, '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value })",
+  '$o = [ordered]@{}',
+  '$o.adapters = @(Get-NetAdapter -IncludeHidden | ForEach-Object { @{ n = $_.Name; d = $_.InterfaceDescription; status = [string]$_.Status } })',
+  '$o.addrs = @(Get-NetIPAddress -AddressFamily IPv4 | ForEach-Object { @{ n = $_.InterfaceAlias; a = $_.IPAddress } })',
+  '$o.routes = @(Get-NetRoute -AddressFamily IPv4 | ForEach-Object { @{ n = $_.InterfaceAlias; p = $_.DestinationPrefix; g = $_.NextHop } })',
+  "Write-Snapshot 'routes'",
+  '$o.dns = @(Get-DnsClientServerAddress -AddressFamily IPv4 | ForEach-Object { @{ n = $_.InterfaceAlias; s = @($_.ServerAddresses) } })',
+  "Write-Snapshot 'dns'",
+  '$o.suffix = @(Get-DnsClient | ForEach-Object { @{ n = $_.InterfaceAlias; d = $_.ConnectionSpecificSuffix } })',
+  "Write-Snapshot 'dns'",
+  // Effective NRPT may return System.Net.IPAddress objects. Emit strings before JSON serialization.
+  '$o.nrpt = @(Get-DnsClientNrptPolicy -Effective | ForEach-Object { @{ ns = @($_.Namespace); s = @($_.NameServers | ForEach-Object { [string]$_ }) } })',
+  "Write-Snapshot 'complete'",
   // 被吞掉的非终止错误照样会让 powershell.exe 以 1 退出（见 win-tun-adapter），execFile 随之 reject。
   'exit 0',
 ].join('\n');
-const WIN_PS_TIMEOUT_MS = 8000;
+const WIN_PS_TIMEOUT_MS = 12_000;
 
 async function detectWinWorkVpn(ctx: WorkVpnHostContext): Promise<WorkVpnSnapshot | null> {
   if (process.platform !== 'win32') return null;
+  const start = Date.now();
+  let failure: WinWorkVpnProbeResult['failure'];
+  let stdout = '';
   try {
-    const stdout = await execFileAsync(
+    const result = await execFileAsync(
       powershellPath(),
       ['-NoProfile', '-NonInteractive', '-Command', WIN_NET_SNAPSHOT_PS],
       { timeout: WIN_PS_TIMEOUT_MS, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }
-    ).then(
-      (r) => String(r.stdout),
-      (err: { stdout?: unknown }) => String(err?.stdout ?? '')
     );
-    const line = stdout.split(/\r?\n/).find((l) => l.startsWith('WORKVPN_JSON:'));
-    if (!line) return null;
-    const parsed = parseWinNetSnapshot(line.slice('WORKVPN_JSON:'.length), ctx.ownTunName ?? '');
-    if (!parsed) return null;
+    stdout = String(result.stdout);
+  } catch (err) {
+    const error = err as { killed?: boolean; stdout?: unknown };
+    failure = error?.killed ? 'timeout' : 'command-failed';
+    stdout = String(error?.stdout ?? '');
+  }
+
+  // execFile keeps stdout on timeout. Read the last usable stage, including when
+  // PowerShell was killed halfway through writing the final JSON line.
+  for (const line of stdout.split(/\r?\n/).reverse()) {
+    const match = /^WORKVPN_JSON:(routes|dns|complete):/.exec(line);
+    if (!match) continue;
+    const parsed = parseWinNetSnapshot(line.slice(match[0].length), ctx.ownTunName ?? '');
+    if (!parsed) continue;
+    const stage = match[1] as Exclude<WinWorkVpnProbeResult['stage'], 'none'>;
+    ctx.onWindowsProbe?.({ stage, failure, durationMs: Date.now() - start });
     return detectWorkVpn({
       ...parsed,
       ownTunAddrs: ctx.ownTunAddrs,
       ownMeshCidrs: ctx.ownMeshCidrs,
       ownTunExcludes: ctx.ownTunExcludes,
     });
-  } catch {
-    return null;
   }
+  ctx.onWindowsProbe?.({
+    stage: 'none',
+    failure: failure ?? 'no-snapshot',
+    durationMs: Date.now() - start,
+  });
+  return null;
 }
 
 /** 本机物理网卡（非隧道、非回环）网段：VPN 网段与之相交时不排除出 TUN（见 shared/work-vpn）。 */

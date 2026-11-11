@@ -113,6 +113,7 @@ import {
   getPhysicalLanCidrs,
   readVpnProfileRemotes,
   resolveVpnServerHosts,
+  type WinWorkVpnProbeResult,
 } from './work-vpn-detector';
 import { FAKEIP_INET4_RANGE } from '../../shared/fakeip-filter';
 import { isIpv4 } from '../../shared/ip';
@@ -1275,7 +1276,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         const ready = xrayNodes.filter((node) => bridge.hasNode(node.id)).length;
         this.logToManager('info', `Xray VLESS bridge ready for ${ready}/${xrayNodes.length} nodes`);
         bridge.onExit(() => {
-          if (this.xrayBridge === bridge) this.logToManager('warn', 'Xray core exited unexpectedly');
+          if (this.xrayBridge === bridge)
+            this.logToManager('warn', 'Xray core exited unexpectedly');
         });
       }
       const selected = xrayNodes.find((node) => node.id === config.selectedServerId);
@@ -4105,7 +4107,10 @@ done
   }
 
   /** 探测外部 VPN（合并上次读到的 VPN DNS），顺带收集经 FlowZ TUN 的 VPN 服务器旁路路由。 */
-  private async detectWorkVpnNow(config: UserConfig): Promise<WorkVpnSnapshot | null> {
+  private async detectWorkVpnNow(
+    config: UserConfig,
+    onWindowsProbe?: (result: WinWorkVpnProbeResult) => void
+  ): Promise<WorkVpnSnapshot | null> {
     if (this.effectiveTunInet4Address) this.workVpnOwnTunAddrs.add(this.effectiveTunInet4Address);
     const userTunAddr = config.tunConfig?.inet4Address?.split('/')[0];
     if (userTunAddr) this.workVpnOwnTunAddrs.add(userTunAddr);
@@ -4114,6 +4119,7 @@ done
       ownMeshCidrs: this.workVpnOwnMeshCidrs(config),
       ownTunExcludes: this.workVpnTunExcludes,
       ownTunName: process.platform === 'win32' ? this.winTunNameFor(config) : undefined,
+      onWindowsProbe,
     });
     if (!snap) return null;
     const merged = mergeStickyWorkVpnDns(snap, this.workVpnLastSeen);
@@ -4131,7 +4137,12 @@ done
       return;
     }
     const [snap, remotes] = await Promise.all([
-      this.detectWorkVpnNow(config),
+      this.detectWorkVpnNow(config, ({ stage, failure, durationMs }) => {
+        if (stage === 'complete' || config.proxyModeType !== 'tun') return;
+        const status = stage === 'none' ? 'unavailable' : `partial (${stage})`;
+        const reason = failure ? `${failure} after ${durationMs}ms` : `${durationMs}ms`;
+        this.logToManager('warn', `Work VPN: Windows network snapshot ${status} (${reason})`);
+      }),
       readVpnProfileRemotes().then(async (hosts) => ({
         hosts,
         resolved: await resolveVpnServerHosts(hosts, [FAKEIP_INET4_RANGE]),
@@ -4145,13 +4156,8 @@ done
     this.workVpnFingerprint = workVpnFingerprint(snap);
     const summary = describeWorkVpn(snap);
     if (summary) this.logToManager('info', `Work VPN detected: ${summary}`);
-    else if (process.platform === 'win32' && config.proxyModeType === 'tun') {
-      this.logToManager(
-        snap ? 'debug' : 'warn',
-        snap
-          ? 'Work VPN: no active VPN routes or DNS found'
-          : 'Work VPN: Windows network snapshot unavailable'
-      );
+    else if (snap && process.platform === 'win32' && config.proxyModeType === 'tun') {
+      this.logToManager('debug', 'Work VPN: no active VPN routes or DNS found');
     }
   }
 
