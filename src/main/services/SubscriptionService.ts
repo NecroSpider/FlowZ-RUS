@@ -717,6 +717,22 @@ export class SubscriptionService {
     return /^[ \t]*proxy-providers[ \t]*:/m.test(text) || /"proxy-providers"\s*:/.test(text);
   }
 
+  private static assertUsableRemoteSubscription(url: string, servers: ServerConfig[]): void {
+    const isLocal = (address: string): boolean =>
+      /^(?:localhost\.?|127(?:\.\d{1,3}){3}|0\.0\.0\.0|::[01]?|\[::[01]?\])$/i.test(address);
+    // Some providers deliver notices as local addresses on port 1 with HTTP 200.
+    // Treat an all-notice response as failed so it cannot replace saved nodes.
+    if (
+      servers.length > 0 &&
+      !isLocal(new URL(url).hostname) &&
+      servers.every((server) => server.port === 1 && isLocal(server.address))
+    ) {
+      throw new Error(
+        'Subscription yielded 0 usable nodes (provider returned only placeholder entries)'
+      );
+    }
+  }
+
   /** 同指纹去重（Map 首见保留）：内联在前、provider 按声明序在后 → 同节点多源留内联那份。
    *  收口放 Service 侧（防 Parser→Service 反向 import 成环）。 */
   private dedupeByFingerprint(servers: ServerConfig[]): ServerConfig[] {
@@ -1309,6 +1325,7 @@ export class SubscriptionService {
           userAgent: ua,
         }
       );
+      SubscriptionService.assertUsableRemoteSubscription(url, servers);
 
       return { servers, userInfo, partial, failedProviders, etag, lastModified, hasProviders };
     } catch (error: any) {
@@ -1354,6 +1371,7 @@ export class SubscriptionService {
         userAgent,
         throwOnEmpty: true,
       });
+      SubscriptionService.assertUsableRemoteSubscription(url, servers);
       return { ok: true, nodeCount: servers.length };
     } catch (err: any) {
       // 摊平错误信号交纯分类器（不自己判分类）：message + code(err.code ?? cause.code) + 从

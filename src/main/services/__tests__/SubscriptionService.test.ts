@@ -138,6 +138,36 @@ describe('HIGH-1 + M5 — 0 节点必须 throw（不穿仓）', () => {
     );
   });
 
+  it('rejects a remote subscription containing only provider placeholders', async () => {
+    const svc = newService(new FakeLog());
+    const uuid = '00000000-0000-4000-8000-000000000001';
+    const body = Buffer.from(
+      `vless://${uuid}@0.0.0.0:1#Account\nvless://${uuid}@127.0.0.1:1#Support\nvless://${uuid}@[::1]:1#Notice`
+    ).toString('base64');
+    const url = 'https://sub.example.com/c';
+    mockFetch.mockImplementation(() => Promise.resolve(makeResponse({ body })));
+
+    await expect(svc.fetchSubscription(url, SUB_ID)).rejects.toThrow('only placeholder entries');
+    await expect(svc.previewSubscription(url, {})).resolves.toMatchObject({
+      ok: false,
+      errorKind: 'empty',
+    });
+  });
+
+  it.each([
+    ['https://sub.example.com/c', ['127.0.0.1:1', 'proxy.example.com:443']],
+    ['https://sub.example.com/c', ['127.0.0.1:1080']],
+    ['http://localhost:8080/c', ['127.0.0.1:1']],
+  ])('retains usable entries from %s', async (url, addresses) => {
+    const svc = newService(new FakeLog());
+    const uuid = '00000000-0000-4000-8000-000000000001';
+    const body = addresses.map((address) => `vless://${uuid}@${address}#Node`).join('\n');
+    mockFetch.mockResolvedValue(makeResponse({ body }));
+
+    const { servers } = await svc.fetchSubscription(url, SUB_ID);
+    expect(servers).toHaveLength(addresses.length);
+  });
+
   it('正常 JSON-Clash 有节点 → 不 throw，返回 servers', async () => {
     const log = new FakeLog();
     const svc = newService(log);
