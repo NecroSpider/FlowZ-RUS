@@ -17,6 +17,7 @@
 const os = require('os');
 const path = require('path');
 const fsSync = require('fs');
+const HAS_BASH = process.platform !== 'win32' && fsSync.existsSync('/bin/bash');
 
 const TMP = fsSync.mkdtempSync(path.join(os.tmpdir(), 'flowz-priv-test-'));
 
@@ -246,7 +247,9 @@ describe('PlatformPrivilegeService.generateWatchdogScript', () => {
     expect(script).toContain(
       'find -P "$CONFDIR/$d" -xdev -user 0 \\( -type d -o \\( -type f -links 1 \\) \\) -execdir chown -h "$OWNER" {} \\;'
     );
-    expect(require('child_process').spawnSync('/bin/bash', ['-n', result.path]).status).toBe(0);
+    if (HAS_BASH) {
+      expect(require('child_process').spawnSync('/bin/bash', ['-n', result.path]).status).toBe(0);
+    }
   });
 
   it('win32 → PowerShell .ps1：isWindows=true + 路径 flowz-win-watchdog.ps1 + 脚本含 param/Start-Process/Stop-Process', () => {

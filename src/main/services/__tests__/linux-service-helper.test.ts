@@ -16,6 +16,7 @@ import {
 // 「非 Linux 安全降级」只在非 Linux 宿主可测：helper 直接读 process.platform（无注入点）。
 const describeNonLinux = process.platform === 'linux' ? describe.skip : describe;
 const describeLinux = process.platform === 'linux' ? describe : describe.skip;
+const HOST_IS_POSIX = process.platform !== 'win32';
 
 describe('LinuxServiceHelper', () => {
   describeNonLinux('非 Linux 平台安全降级', () => {
@@ -199,8 +200,10 @@ describe('LinuxServiceHelper', () => {
 
     it('pkexec runs a hash-verified root-only copy of a privately written script', () => {
       const w = writePrivateScript('t.sh', 'echo hi\n');
-      expect((fsSync.statSync(w.dir).mode & 0o777).toString(8)).toBe('700');
-      expect((fsSync.statSync(w.scriptPath).mode & 0o777).toString(8)).toBe('600');
+      if (HOST_IS_POSIX) {
+        expect((fsSync.statSync(w.dir).mode & 0o777).toString(8)).toBe('700');
+        expect((fsSync.statSync(w.scriptPath).mode & 0o777).toString(8)).toBe('600');
+      }
       expect(() => fsSync.writeFileSync(w.scriptPath, 'x', { flag: 'wx' })).toThrow();
       const args = pkexecVerifiedArgs(w.scriptPath, w.sha256);
       expect(args.slice(0, 2)).toEqual(['/bin/sh', '-c']);
@@ -210,6 +213,7 @@ describe('LinuxServiceHelper', () => {
     });
 
     const hasSha256sum = (() => {
+      if (!HOST_IS_POSIX) return false;
       try {
         require('child_process').execFileSync('sha256sum', ['--version'], { stdio: 'ignore' });
         return true;

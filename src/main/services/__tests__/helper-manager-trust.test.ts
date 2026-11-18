@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const fsSync = require('fs');
 const cp = require('child_process');
+const HAS_BASH = process.platform !== 'win32' && fsSync.existsSync('/bin/bash');
 
 const TMP = fsSync.mkdtempSync(path.join(os.tmpdir(), 'flowz-hm-test-'));
 
@@ -39,7 +40,7 @@ describe('buildMacElevatedCoreInstallScript', () => {
     expect(s.indexOf('FINAL=$(')).toBeLessThan(s.indexOf('mv -f "$TMP"'));
     expect(s).toContain(`install_one sing-box '/Users/o'\\''neil/dl/sing-box' ${H} 1`);
     expect(s).toContain('pkill -x sing-box');
-    expect(cp.spawnSync('/bin/bash', ['-n'], { input: s }).status).toBe(0);
+    if (HAS_BASH) expect(cp.spawnSync('/bin/bash', ['-n'], { input: s }).status).toBe(0);
   });
 
   it('refuses unexpected names and malformed hashes', () => {
