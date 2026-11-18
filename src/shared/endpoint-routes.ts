@@ -210,6 +210,11 @@ export function referencedServerIds(c: UserConfig): Set<string> {
     R.add(id);
     const s = byId.get(id);
     if (s?.detour && byId.has(s.detour)) stack.push(s.detour); // detour 前置链传递闭包
+    if (Array.isArray(s?.urltestMemberIds)) {
+      for (const memberId of s.urltestMemberIds) {
+        if (byId.has(memberId)) stack.push(memberId);
+      }
+    }
   }
   return R;
 }

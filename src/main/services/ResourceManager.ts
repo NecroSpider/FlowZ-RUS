@@ -282,6 +282,13 @@ export class ResourceManager {
     };
   }
 
+  getXrayPath(): string {
+    return path.join(
+      this.getPlatformResourceDir(),
+      this.platform === 'win32' ? 'xray.exe' : 'xray'
+    );
+  }
+
   private getPlatformResourceDir(): string {
     const baseDir = this.getResourcesBaseDir();
 

@@ -192,6 +192,14 @@ describe('ProxyManager.configGenerationNorm', () => {
     expect(svc.configGenerationNorm(a)).toBe(svc.configGenerationNorm(b));
   });
 
+  it('changing the app update channel leaves the running core configuration unchanged', () => {
+    const svc = makeSvc();
+    const config = makeConfig();
+    expect(svc.configGenerationNorm({ ...config, appUpdateChannel: 'prerelease' })).toBe(
+      svc.configGenerationNorm(config)
+    );
+  });
+
   it('拨图形兼容逃生门 hardwareAcceleration/windowEffects → norm 等价（纯窗口/GPU 偏好，且本就需重启 FlowZ 才生效，绝不应重启内核断流）', () => {
     const svc = makeSvc();
     const base = makeConfig();

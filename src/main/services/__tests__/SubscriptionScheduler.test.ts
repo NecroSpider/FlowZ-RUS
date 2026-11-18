@@ -50,6 +50,26 @@ function makeScheduler(config: ReturnType<typeof makeConfig>, proxyRunning: bool
 }
 
 describe('SubscriptionScheduler per-sub 经代理调度', () => {
+  it('fetches a full body once when saved validators predate the Xray parser', async () => {
+    const config = makeConfig();
+    Object.assign(config.subscriptions[0], { etag: 'old-parser' });
+    const { fetchSubscription, run } = makeScheduler(config, false);
+    fetchSubscription.mockResolvedValue({ servers: [], etag: 'new-parser' });
+
+    await run();
+    Object.assign(config.subscriptions[0], { lastUpdated: '2020-01-01T00:00:00.000Z' });
+    await run();
+
+    expect(fetchSubscription.mock.calls[0][4]).toEqual({
+      etag: undefined,
+      lastModified: undefined,
+    });
+    expect(fetchSubscription.mock.calls[1][4]).toEqual({
+      etag: 'new-parser',
+      lastModified: undefined,
+    });
+  });
+
   it('代理未起：直连订阅照常更新、经代理订阅跳过并置挂起补更标记', async () => {
     const { fetchSubscription, run, pending } = makeScheduler(makeConfig(), false);
     await run();

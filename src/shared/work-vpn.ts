@@ -88,6 +88,8 @@ export function parseMacNetstatRoutes(stdout: string): RouteEntry[] {
 export interface DnsResolverEntry {
   servers: string[];
   domains: string[];
+  /** Windows DNS settings read directly from a recognized VPN adapter. */
+  interfaceName?: string;
   /** true = 仅对 domains 生效的补充解析器（SupplementalMatchDomains / scutil --dns 的 `domain`）。 */
   supplemental: boolean;
 }
@@ -332,18 +334,18 @@ export function detectWorkVpn(input: WorkVpnDetectInput): WorkVpnSnapshot {
     serverIps.push(ip);
   }
 
-  const ifaces = Array.from(vpnIfaces.values()).filter((v) => v.cidrs.length > 0 || v.fullTunnel);
+  const ifaces = Array.from(vpnIfaces.values());
   for (const v of ifaces) v.cidrs = collapseContained(v.cidrs);
 
-  // DNS 归属：补充解析器（只管特定域名）里落在 VPN 网段的服务器即 VPN DNS；全局条目须**全部**服务器都走 VPN
-  // 才算 VPN 自己的（办公网 DHCP 下发的 [内网 DNS, 网关, 8.8.8.8] 这类混合条目不算，哪怕其中一个碰巧被 VPN 路由）。
+  // Adapter DNS has an explicit owner. For other entries, infer ownership by route and accept a
+  // global resolver only if every server belongs to a VPN.
   for (const e of input.dnsEntries) {
-    const owners = e.servers.map((s) => vpnIfaceForIp(s, ifaces));
+    const owners = e.servers.map((s) => e.interfaceName ?? vpnIfaceForIp(s, ifaces));
     if (!e.supplemental && owners.some((o) => o === null)) continue;
     e.servers.forEach((server, i) => {
       const owner = owners[i];
       if (!owner) return;
-      const it = ifaces.find((v) => v.name === owner);
+      const it = vpnIfaces.get(owner);
       if (!it) return;
       if (!it.dnsServers.includes(server)) it.dnsServers.push(server);
       for (const raw of e.domains) {
@@ -353,8 +355,11 @@ export function detectWorkVpn(input: WorkVpnDetectInput): WorkVpnSnapshot {
     });
   }
 
-  ifaces.sort((a, b) => a.name.localeCompare(b.name));
-  return { interfaces: ifaces, serverIps: dedupe(serverIps) };
+  const active = ifaces.filter(
+    (v) => v.cidrs.length > 0 || v.fullTunnel || v.dnsServers.length > 0
+  );
+  active.sort((a, b) => a.name.localeCompare(b.name));
+  return { interfaces: active, serverIps: dedupe(serverIps) };
 }
 
 // ── Windows（PowerShell NetTCPIP / DnsClient 快照）──────────────────────────────────────────
@@ -368,7 +373,7 @@ const WIN_VPN_ADAPTER_RE =
 
 /** work-vpn-detector 的 PowerShell 脚本输出的 JSON（键名缩写；任一段取不到即缺省）。 */
 interface WinNetSnapshotJson {
-  adapters?: Array<{ n?: string; d?: string }>;
+  adapters?: Array<{ n?: string; d?: string; status?: string }>;
   addrs?: Array<{ n?: string; a?: string }>;
   routes?: Array<{ n?: string; p?: string; g?: string }>;
   dns?: Array<{ n?: string; s?: string[] }>;
@@ -390,7 +395,7 @@ const asArray = <T>(v: T[] | T | undefined | null): T[] =>
  * 解析 Windows 网络快照（Get-NetAdapter / Get-NetIPAddress / Get-NetRoute / Get-DnsClientServerAddress /
  * Get-DnsClient / Get-DnsClientNrptPolicy）。外部 VPN 网卡 = 驱动描述命中 WIN_VPN_ADAPTER_RE，或不在网卡列表里却有
  * 地址（系统自带 IKEv2/L2TP/SSTP 等 RAS 连接不是 NDIS 网卡）；FlowZ 自家 TUN 按名排除。
- * DNS：VPN 网卡上配置的服务器 + 连接专用后缀、NRPT 分域规则，都按补充解析器处理（服务器须落在 VPN 网段才采纳）。
+ * Adapter DNS is tied to the adapter. NRPT servers without an adapter are matched by route.
  * 无法解析 → null。
  */
 export function parseWinNetSnapshot(json: string, ownTunName: string): WinWorkVpnInputs | null {
@@ -416,7 +421,9 @@ export function parseWinNetSnapshot(json: string, ownTunName: string): WinWorkVp
   const adapterNames = new Set(adapters.map((a) => str(a.n)));
   const tunnelIfaces = new Set<string>();
   for (const a of adapters) {
-    if (WIN_VPN_ADAPTER_RE.test(str(a.d))) tunnelIfaces.add(str(a.n));
+    if ((!a.status || a.status === 'Up') && WIN_VPN_ADAPTER_RE.test(str(a.d))) {
+      tunnelIfaces.add(str(a.n));
+    }
   }
   // 网卡列表为空（CIM 被拦等）时不做「不在列表里」推断，否则所有接口都成了 VPN。
   if (adapterNames.size > 0) {
@@ -448,7 +455,12 @@ export function parseWinNetSnapshot(json: string, ownTunName: string): WinWorkVp
     const servers = asArray(d.s).map(str).filter(isIpv4);
     if (servers.length === 0) continue;
     const suffix = suffixOf.get(name);
-    dnsEntries.push({ servers, domains: suffix ? [suffix] : [], supplemental: true });
+    dnsEntries.push({
+      servers,
+      domains: suffix ? [suffix] : [],
+      supplemental: true,
+      interfaceName: name,
+    });
   }
   for (const n of asArray(raw.nrpt)) {
     const servers = asArray(n?.s).map(str).filter(isIpv4);

@@ -3,7 +3,7 @@
  *  - #2  provider filter 灾难性回溯正则在预算内被中断，按非法 filter 处理（忽略 + warn）。
  *  - #7  vmess / shadow-tls 的 JSON 错误不回显解码内容。
  *  - #9  节点名含字面 `%` 不再丢节点。
- *  - #10 VLESS Encryption（mlkem768x25519plus…）按不支持传输拒绝（分享链 / Clash / Xray 三路）。
+ *  - #10 VLESS Encryption support and secret-safe errors for unknown methods.
  *  - #11 证书钉扎（hy2 pinSHA256 / Clash fingerprint）无法执行 → 保留节点 + 逐节点告警。
  */
 import {
@@ -124,18 +124,25 @@ describe('#9 节点名含字面 %', () => {
   });
 });
 
-describe('#10 VLESS Encryption 拒绝', () => {
+describe('VLESS Encryption', () => {
   const ENC = 'mlkem768x25519plus.native.0rtt.AAAA.BBBB';
 
-  it('分享链：拒绝且归类为 transport', () => {
+  it('round-trips the case-sensitive Xray encryption string', () => {
+    const { p } = parserWithLog();
+    const node = p.parseUrl(`vless://u@1.2.3.4:443?encryption=${ENC}&security=tls#n`);
+    expect(node.encryption).toBe(ENC);
+    expect(p.parseUrl(p.generateUrl(node)).encryption).toBe(ENC);
+  });
+
+  it('rejects unknown encryption without disclosing keys', () => {
     const { p } = parserWithLog();
     let msg = '';
     try {
-      p.parseUrl(`vless://u@1.2.3.4:443?encryption=${ENC}&security=tls#n`);
+      p.parseUrl('vless://u@1.2.3.4:443?encryption=other.native.0rtt.AAAA.BBBB&security=tls#n');
     } catch (e) {
       msg = (e as Error).message;
     }
-    expect(msg).toMatch(/Unsupported transport type: vless-encryption:mlkem768x25519plus/);
+    expect(msg).toMatch(/Unsupported transport type: vless-encryption:other/);
     expect(msg).not.toContain('AAAA');
     expect(classifySubscriptionError({ message: msg }).errorKind).toBe('transport');
   });
@@ -147,7 +154,7 @@ describe('#10 VLESS Encryption 拒绝', () => {
     expect(p.parseUrl('vless://u@1.2.3.4:443?encryption=auto#n').protocol).toBe('vless');
   });
 
-  it('Clash：encryption 为 VLESS Encryption → 节点失败；none 放行', () => {
+  it('keeps VLESS Encryption in a Clash profile', () => {
     const r = parseClashProxies(
       [
         { name: 'enc', type: 'vless', server: '1.2.3.4', port: 443, uuid: 'u', encryption: ENC },
@@ -156,11 +163,11 @@ describe('#10 VLESS Encryption 拒绝', () => {
       's',
       'now'
     );
-    expect(r.servers.map((s) => s.name)).toEqual(['plain']);
-    expect(r.warnings.join('\n')).toMatch(/vless-encryption/);
+    expect(r.servers.map((s) => s.encryption)).toEqual([ENC, 'none']);
+    expect(r.warnings).toHaveLength(0);
   });
 
-  it('Xray：users[0].encryption 为 VLESS Encryption → 跳过', () => {
+  it('keeps VLESS Encryption in legacy and flat Xray profiles', () => {
     const r = parseXrayOutbounds(
       [
         {
@@ -174,14 +181,17 @@ describe('#10 VLESS Encryption 拒绝', () => {
           protocol: 'vless',
           tag: 'plain',
           settings: {
-            vnext: [{ address: '1.2.3.4', port: 443, users: [{ id: 'u', encryption: 'none' }] }],
+            address: '1.2.3.4',
+            port: 443,
+            id: 'u',
+            encryption: 'none',
           },
         },
       ],
       'now'
     );
-    expect(r.servers.map((s) => s.name)).toEqual(['plain']);
-    expect(r.warnings.join('\n')).toMatch(/vless\+encryption:mlkem768x25519plus/);
+    expect(r.servers.map((s) => s.encryption)).toEqual([ENC, 'none']);
+    expect(r.warnings).toHaveLength(0);
   });
 });
 

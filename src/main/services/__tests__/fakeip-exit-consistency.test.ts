@@ -32,6 +32,9 @@ import { ProxyManager } from '../ProxyManager';
 import type { ServerConfig, UserConfig } from '../../../shared/types';
 import { BUILTIN_GEO_RULESETS, getRuleSetRuntimeDir } from '../builtin-geo-rulesets';
 import { DEFAULT_REGION_ROUTING, REGION_LOCAL_GEO } from '../../../shared/region-routing';
+import { DEFAULT_FAKEIP_FILTER_DOMAINS } from '../../../shared/fakeip-filter';
+import { buildCustomRuleFiles, customRuleFileBase } from '../custom-rule-files';
+import { getCustomRulesDir } from '../../utils/paths';
 
 // 默认地区（本 fork 为 ru）的本地 geosite tag：INV-S0 断言按它取，不写死某个地区。
 const LOCAL_GEOSITE = REGION_LOCAL_GEO[DEFAULT_REGION_ROUTING.region].geosite[0];
@@ -135,6 +138,18 @@ function isTunnelResolver(cfg: AnyCfg, tag: string): boolean {
 }
 /** 一条 DNS 规则是否覆盖 token（exact / 后缀 / 关键字三种承载形态）。 */
 function covers(r: AnyCfg, token: string): boolean {
+  if (r.type === 'logical') {
+    const hasDomains = (child: AnyCfg): boolean =>
+      !!(child.domain || child.domain_suffix || child.domain_keyword || child.domain_regex) ||
+      (child.rules ?? []).some(hasDomains);
+    const domainRules = r.rules.filter(hasDomains);
+    return (
+      domainRules.length > 0 &&
+      (r.mode === 'and'
+        ? domainRules.every((child: AnyCfg) => covers(child, token))
+        : domainRules.some((child: AnyCfg) => covers(child, token)))
+    );
+  }
   const d: string[] = r.domain ?? [];
   const s: string[] = r.domain_suffix ?? [];
   const k: string[] = r.domain_keyword ?? [];
@@ -158,6 +173,121 @@ const directRule = (id: string, values: string[]) => ({
   action: 'direct',
   enabled: true,
   bypassFakeIP: true,
+});
+
+// Domain matching for these fixtures follows sing-box's single-default-rule-set merge semantics.
+// The real-core localhost reproduction also checks that a flat domain_suffix + rule_set is OR, not AND.
+function firstDnsServer(
+  cfg: AnyCfg,
+  domain: string,
+  localDomains: string[] = []
+): string | undefined {
+  const matches = (r: AnyCfg): boolean => {
+    if (r.type === 'logical') {
+      return r.mode === 'and' ? r.rules.every(matches) : r.rules.some(matches);
+    }
+    if (r.inbound || r.preferred_by || r.process_name) return false;
+    if (r.query_type && !r.query_type.includes('A')) return false;
+    const hasDomainMatcher = r.domain || r.domain_suffix || r.domain_keyword || r.domain_regex;
+    const hasGeo = r.rule_set !== undefined;
+    if (!hasDomainMatcher && !hasGeo) return true;
+    return (
+      (r.domain ?? []).includes(domain) ||
+      (r.domain_suffix ?? []).some((s: string) => domain.endsWith(s)) ||
+      (r.domain_keyword ?? []).some((k: string) => domain.includes(k)) ||
+      (r.domain_regex ?? []).some((pattern: string) => new RegExp(pattern).test(domain)) ||
+      (hasGeo && localDomains.includes(domain))
+    );
+  };
+  return dnsRules(cfg).find(matches)?.server;
+}
+
+describe('FakeIP filter DNS routing regressions', () => {
+  it('requires both the exception domain and local geo; unrelated regional domains keep FakeIP', () => {
+    const cfg = gen(baseConfig({ fakeIpFilterList: ['except.example'] }));
+    expect(firstDnsServer(cfg, 'except.example')).toBe('dns-remote');
+    expect(firstDnsServer(cfg, 'child.except.example')).toBe('dns-remote');
+    expect(firstDnsServer(cfg, 'regional.example', ['regional.example'])).toBe('fakeip');
+    expect(firstDnsServer(cfg, 'normal.example')).toBe('fakeip');
+    expect(firstDnsServer(cfg, 'except.example', ['except.example'])).toBe('dns-domestic');
+  });
+
+  it('keeps an explicitly direct meeting domain independent of proxy DNS, without bypassing other domains', () => {
+    const cfg = gen(
+      baseConfig({
+        fakeIpFilterList: ['meet.example.team'],
+        customRules: [
+          { ...directRule('meeting', ['meet.example.team']), type: 'domain', bypassFakeIP: false },
+        ],
+      } as Partial<UserConfig>)
+    );
+    const resolver = firstDnsServer(cfg, 'meet.example.team');
+    expect(resolver).toBeDefined();
+    expect(isTunnelResolver(cfg, resolver!)).toBe(false);
+    expect(firstDnsServer(cfg, 'other.example.team')).toBe('fakeip');
+  });
+
+  it('preserves custom rule order and resolves proxy overrides through their own selector', () => {
+    const cfg = gen(
+      baseConfig({
+        fakeIpFilterList: ['meet.example.team'],
+        customRules: [
+          { ...proxyRule('first', ['meet.example.team']), type: 'domain', bypassFakeIP: false },
+          { ...directRule('second', ['meet.example.team']), type: 'domain', bypassFakeIP: false },
+        ],
+      } as Partial<UserConfig>)
+    );
+    const resolver = firstDnsServer(cfg, 'meet.example.team');
+    expect(cfg.dns.servers.find((s: AnyCfg) => s.tag === resolver)?.detour).toBe('rule-sel-first');
+  });
+
+  it('does not treat a connection port condition as an unconditional DNS override', () => {
+    const cfg = gen(
+      baseConfig({
+        fakeIpFilterList: ['meet.example.team'],
+        customRules: [
+          {
+            ...directRule('conditional', []),
+            conditions: [
+              { type: 'domain', values: ['meet.example.team'] },
+              { type: 'port', values: ['443'] },
+            ],
+            combineMode: 'and',
+            bypassFakeIP: false,
+          },
+        ],
+      } as Partial<UserConfig>)
+    );
+    expect(firstDnsServer(cfg, 'meet.example.team')).toBe('dns-remote');
+  });
+
+  it('uses the existing external route rule-set so domain edits remain live', () => {
+    const config = baseConfig({
+      fakeIpFilterList: ['meet.example.team'],
+      customRules: [
+        {
+          ...directRule('external-meeting', ['meet.example.team']),
+          type: 'domain',
+          bypassFakeIP: false,
+        },
+      ],
+    } as Partial<UserConfig>);
+    const files = buildCustomRuleFiles(config);
+    const dir = getCustomRulesDir();
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      for (const [name, contents] of files) fs.writeFileSync(path.join(dir, name), contents);
+      const cfg = gen(config);
+      const tag = customRuleFileBase('external-meeting');
+      const rule = dnsRules(cfg).find((r) =>
+        r.rules?.some((child: AnyCfg) => child.rule_set?.includes(tag))
+      );
+      expect(rule).toMatchObject({ type: 'logical', mode: 'and', server: 'dns-domestic' });
+      expect(cfg.route.rule_set.some((r: AnyCfg) => r.tag === tag)).toBe(true);
+    } finally {
+      for (const name of files.keys()) fs.rmSync(path.join(dir, name), { force: true });
+    }
+  });
 });
 
 describe('#347 出口一致性 — 门自检（判据非平凡）', () => {
@@ -215,7 +345,10 @@ describe('#347 INV-EXIT-2 — FakeIP 排除清单按出口选解析器', () => {
     const hits = rulesCovering(cfg, 'wise.com');
     expect(hits.length).toBeGreaterThan(0);
     for (const r of hits) {
-      if (!isTunnelResolver(cfg, r.server)) expect(r.rule_set).toBeDefined();
+      if (!isTunnelResolver(cfg, r.server)) {
+        expect(r).toMatchObject({ type: 'logical', mode: 'and' });
+        expect(r.rules.some((child: AnyCfg) => child.rule_set)).toBe(true);
+      }
     }
     expect(hits.some((r) => isTunnelResolver(cfg, r.server))).toBe(true);
   });
@@ -225,6 +358,65 @@ describe('#347 INV-EXIT-2 — FakeIP 排除清单按出口选解析器', () => {
     const hits = rulesCovering(cfg, 'captive.apple.com');
     expect(hits.length).toBeGreaterThan(0);
     for (const r of hits) expect(isTunnelResolver(cfg, r.server)).toBe(false);
+  });
+});
+
+describe('Xbox / PlayFab / Forza default FakeIP exceptions', () => {
+  // Regression from the reported Forza workaround. Keep the expected domains independent of the preset.
+  const domains = [
+    'playfabapi.com',
+    'forzamotorsport.net',
+    'xboxlive.com',
+    'azure.com',
+    'microsoft.com',
+  ];
+
+  it.each(['smart', 'global'] as const)(
+    '%s: games receive real DNS before the FakeIP catch-all, using the exit resolver',
+    (proxyMode) => {
+      const cfg = gen(baseConfig({ proxyMode }));
+      const rules = dnsRules(cfg);
+      const fakeipAt = rules.findIndex((r) => r.server === 'fakeip');
+      expect(fakeipAt).toBeGreaterThan(0);
+      for (const domain of domains) {
+        expect(DEFAULT_FAKEIP_FILTER_DOMAINS).toContain(domain);
+        const hits = rulesCovering(cfg, domain);
+        expect(hits.length).toBeGreaterThan(0);
+        for (const r of hits) {
+          const matcher = r.type === 'logical' ? r.rules[0] : r;
+          expect(matcher.domain_suffix).toEqual(expect.arrayContaining([domain, `.${domain}`]));
+          expect(rules.indexOf(r)).toBeLessThan(fakeipAt);
+          // A local resolver is allowed only behind the same geo condition as direct routing.
+          if (!isTunnelResolver(cfg, r.server)) {
+            expect(r).toMatchObject({ type: 'logical', mode: 'and' });
+            expect(r.rules.some((child: AnyCfg) => child.rule_set)).toBe(true);
+          }
+        }
+        expect(hits.some((r) => !r.rule_set && isTunnelResolver(cfg, r.server))).toBe(true);
+      }
+      expect(rulesCovering(cfg, 'www.example.com')).toHaveLength(0);
+    }
+  );
+
+  it.each([
+    { fakeIpFilter: false },
+    { fakeIpFilterList: [] },
+    { fakeIpFilterList: ['custom.example.com'] },
+    { dnsConfig: FAKEIP_OFF },
+  ])('respects disabled FakeIP / filters and explicitly edited lists: %j', (over) => {
+    const cfg = gen(baseConfig(over as Partial<UserConfig>));
+    for (const domain of domains) expect(rulesCovering(cfg, domain)).toHaveLength(0);
+  });
+
+  it('saving the displayed defaults keeps the same game DNS rules', () => {
+    const preset = gen(baseConfig());
+    const saved = gen(baseConfig({ fakeIpFilterList: [...DEFAULT_FAKEIP_FILTER_DOMAINS] }));
+    for (const domain of domains) {
+      const exits = (cfg: AnyCfg) =>
+        rulesCovering(cfg, domain).map((r) => ({ server: r.server, rule_set: r.rule_set }));
+      expect(exits(preset).length).toBeGreaterThan(0);
+      expect(exits(saved)).toEqual(exits(preset));
+    }
   });
 });
 

@@ -482,6 +482,21 @@ const MESSAGES = {
     ru: 'Скачать тестовую версию',
     fa: 'دانلود نسخه آزمایشی',
   },
+  updStableRollbackTitle: {
+    'en-US': 'Switch to the stable version',
+    ru: 'Возврат к стабильной версии',
+    fa: 'بازگشت به نسخه پایدار',
+  },
+  updStableRollbackWarning: {
+    'en-US': 'This replaces your current test version with an older stable release.',
+    ru: 'Текущая тестовая версия будет заменена более ранним стабильным выпуском.',
+    fa: 'نسخه آزمایشی فعلی با یک نسخه پایدار قدیمی‌تر جایگزین می‌شود.',
+  },
+  updStableRollbackDownload: {
+    'en-US': 'Download stable version',
+    ru: 'Скачать стабильную версию',
+    fa: 'دانلود نسخه پایدار',
+  },
   updRemindTitle: {
     'en-US': 'New version available',
     ru: 'Доступна новая версия',

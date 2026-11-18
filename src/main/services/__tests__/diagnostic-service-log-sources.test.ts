@@ -22,6 +22,8 @@ jest.mock('electron', () => ({
 }));
 
 import { DiagnosticService } from '../DiagnosticService';
+import { LogManager } from '../LogManager';
+import { ProxyManager } from '../ProxyManager';
 import { withPlatformAsync } from './platform-test-utils';
 import {
   getLogsPath,
@@ -41,9 +43,14 @@ afterAll(() => {
 /** B0 汇总行样本：既做桩返回值，也做报告文本断言的靶。 */
 const TIMELINE_LINE = '起核阶段耗时 total=1234ms outcome=ok | killOrphans=181 startTail=44';
 
-function makeSvc(opts: { startedViaHelper?: boolean; lastDnsFlush?: unknown } = {}): any {
+function makeSvc(
+  opts: { startedViaHelper?: boolean; lastDnsFlush?: unknown; logManager?: LogManager } = {}
+): any {
   const configManager: any = { loadConfig: jest.fn().mockResolvedValue({ logLevel: 'info' }) };
-  const logManager: any = { flush: jest.fn().mockResolvedValue(undefined) };
+  const logManager = opts.logManager ?? {
+    flush: jest.fn().mockResolvedValue(undefined),
+    getRecentCoreErrors: jest.fn().mockReturnValue(''),
+  };
   const proxyManager: any = {
     getCoreVersion: jest.fn().mockResolvedValue('1.14.0-beta.2'),
     getStatus: jest.fn().mockReturnValue({ running: false }),
@@ -58,7 +65,12 @@ function makeSvc(opts: { startedViaHelper?: boolean; lastDnsFlush?: unknown } = 
     getLastStartTimeline: jest.fn().mockReturnValue(TIMELINE_LINE),
   };
   const systemProxyManager: any = { getProxyStatus: jest.fn().mockResolvedValue(null) };
-  return new DiagnosticService(configManager, logManager, proxyManager, systemProxyManager) as any;
+  return new DiagnosticService(
+    configManager,
+    logManager as LogManager,
+    proxyManager,
+    systemProxyManager
+  ) as any;
 }
 
 /**
@@ -67,6 +79,31 @@ function makeSvc(opts: { startedViaHelper?: boolean; lastDnsFlush?: unknown } = 
  */
 
 describe('DiagnosticService — 日志取数路径收口', () => {
+  it('keeps a TLS handshake failure in the report after it leaves the recent log tails', async () => {
+    const logManager = new LogManager(path.join(TMP, 'core-errors'));
+    const proxy = Object.create(ProxyManager.prototype);
+    proxy.isDuplicateLog = jest.fn().mockReturnValue(false);
+    proxy.detectTailscaleAuthUrl = jest.fn();
+    proxy.logToManager = logManager.addLog.bind(logManager);
+    proxy.handleProcessOutput(
+      '+0400 2026-11-10 18:18:51 INFO TLS handshake completed\n' +
+        '+0400 2026-11-10 18:18:52 ERROR [123 1ms] TLS handshake: reality verification failed for private-node.example\n'
+    );
+
+    const svc = makeSvc({ logManager });
+    svc.configManager.loadConfig.mockResolvedValue({
+      logLevel: 'info',
+      servers: [{ name: 'Test node', address: 'private-node.example' }],
+    });
+    jest.spyOn(svc, 'readTail').mockResolvedValue('(later log lines)');
+    const report = await svc.buildReport();
+    expect(report).toMatch(
+      /## Recent sing-box errors \(current app session\)[\s\S]*TLS handshake: reality verification failed/
+    );
+    expect(logManager.getLogs()).toHaveLength(1);
+    expect(report).not.toContain('private-node.example');
+  });
+
   it('三段日志各读各的文件，startup log 走 getSingBoxStartupLogPath()（不与 singbox.log 同源）', async () => {
     // pin 非 Windows：Windows 会多收一段看护脚本日志，seen 就不是三条了
     const { seen, md } = await withPlatformAsync('linux', async () => {

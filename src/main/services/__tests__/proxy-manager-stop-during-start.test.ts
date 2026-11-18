@@ -123,6 +123,72 @@ function makeSvc(): any {
 const SP_CFG: any = { proxyModeType: 'systemProxy', servers: [], mixedPort: 7890 };
 const TUN_CFG: any = { proxyModeType: 'tun', servers: [], dnsConfig: {} };
 
+describe('Local dependencies during sing-box shutdown', () => {
+  function makeRunningSvc() {
+    const svc = makeSvc();
+    svc.singboxPid = 4321;
+    svc.raceServerPort = 53535;
+    svc.raceUpstreamIps = ['77.88.8.8'];
+    svc.nodeDnsRaceServer = { stop: jest.fn() };
+    svc.xrayBridge = { stop: jest.fn() };
+    svc.flushOsDnsCacheBestEffort = jest.fn();
+    return svc;
+  }
+
+  it('keeps Xray and DNS available until sing-box has stopped', async () => {
+    const svc = makeRunningSvc();
+    const bridge = svc.xrayBridge;
+    const enteredStop = deferred();
+    const coreExited = deferred();
+    svc.stopSingBoxProcess = jest.fn(async () => {
+      enteredStop.resolve();
+      await coreExited.promise;
+      svc.singboxPid = null;
+    });
+
+    const stopping = svc.stop();
+    await enteredStop.promise;
+    try {
+      expect(bridge.stop).not.toHaveBeenCalled();
+      expect(svc.nodeDnsRaceServer.stop).not.toHaveBeenCalled();
+      expect(svc.raceServerPort).toBe(53535);
+    } finally {
+      coreExited.resolve();
+      await stopping;
+    }
+    expect(bridge.stop).toHaveBeenCalledTimes(1);
+    expect(svc.nodeDnsRaceServer.stop).toHaveBeenCalledTimes(1);
+    expect(svc.xrayBridge).toBeUndefined();
+    expect(svc.raceServerPort).toBe(0);
+    expect(svc.raceUpstreamIps).toEqual([]);
+  });
+
+  it('keeps the local dependencies when stopping sing-box is cancelled', async () => {
+    const svc = makeRunningSvc();
+    const bridge = svc.xrayBridge;
+    svc.stopSingBoxProcess = jest.fn().mockResolvedValue(undefined);
+
+    await svc.stop();
+
+    expect(svc.xrayBridge).toBe(bridge);
+    expect(bridge.stop).not.toHaveBeenCalled();
+    expect(svc.nodeDnsRaceServer.stop).not.toHaveBeenCalled();
+    expect(svc.raceServerPort).toBe(53535);
+  });
+
+  it('cleans up local dependencies when there is no sing-box process', async () => {
+    const svc = makeRunningSvc();
+    const bridge = svc.xrayBridge;
+    svc.singboxPid = null;
+
+    await svc.stop();
+
+    expect(bridge.stop).toHaveBeenCalledTimes(1);
+    expect(svc.nodeDnsRaceServer.stop).toHaveBeenCalledTimes(1);
+    expect(svc.raceServerPort).toBe(0);
+  });
+});
+
 describe('#1 起核尾部的系统代理写入与「停止」串行', () => {
   it('enableProxy 在飞时用户点停止 → 清理排在 enable 之后，最终代理关闭、marker 删除', async () => {
     const svc = makeSvc();

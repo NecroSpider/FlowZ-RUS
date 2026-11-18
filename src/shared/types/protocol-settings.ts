@@ -25,6 +25,8 @@ export interface TlsSettings {
 export interface RealitySettings {
   publicKey: string;
   shortId?: string;
+  spiderX?: string;
+  mldsa65Verify?: string;
 }
 
 export interface WebSocketSettings {
@@ -37,6 +39,14 @@ export interface WebSocketSettings {
 export interface GrpcSettings {
   serviceName?: string;
   multiMode?: boolean;
+  authority?: string;
+}
+
+export interface XrayTcpFragment {
+  packets: string;
+  lengths: string[];
+  delays: string[];
+  maxSplit?: string;
 }
 
 export interface HttpSettings {

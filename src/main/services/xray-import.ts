@@ -10,13 +10,19 @@
 import { randomUUID } from 'crypto';
 import type { ServerConfig, Network, Security } from '../../shared/types';
 import { unsupportedVlessEncryption } from './ProtocolParser';
+import {
+  canUseXray,
+  isXhttpNetwork,
+  readXrayTcpFragment,
+  requiresXray,
+} from '../../shared/xray-node';
 
 /** 本模块可映射的 xray outbound.protocol。 */
-const XRAY_SUPPORTED = new Set(['vmess', 'vless', 'trojan', 'shadowsocks']);
+const XRAY_SUPPORTED = new Set(['vmess', 'vless', 'trojan', 'shadowsocks', 'hysteria']);
 /** xray 内部/非节点 outbound（忽略，不计入 skipped）。 */
 const XRAY_INTERNAL = new Set(['freedom', 'blackhole', 'dns', 'loopback']);
 /**
- * 可映射的 streamSettings.network（raw = xray 新版对 tcp 的改名）。xhttp/splithttp/kcp/quic 等 sing-box 无对应传输：
+ * 可映射到 sing-box 的 streamSettings.network（raw = xray 新版对 tcp 的改名）。VLESS XHTTP 由 Xray 处理。
  * 整节点跳过——落回裸 TCP 会产出连不上的假节点（与 sing-box 订阅路径 SINGBOX_SUPPORTED_TRANSPORTS 同口径）。
  */
 const XRAY_SUPPORTED_NETWORKS = new Set(['tcp', 'raw', 'ws', 'grpc', 'h2', 'http', 'httpupgrade']);
@@ -42,13 +48,25 @@ function num(v: unknown): number | undefined {
   return undefined;
 }
 
+function xrayNetwork(stream: Record<string, unknown> | undefined): string {
+  return (str(stream?.method) || str(stream?.network) || 'tcp').toLowerCase();
+}
+
 /** xray streamSettings → ServerConfig 传输/安全层字段。 */
 function applyStreamSettings(server: ServerConfig, ss: Record<string, unknown> | undefined): void {
   if (!ss || typeof ss !== 'object') return;
+  if (server.protocol === 'vless') {
+    const fragment = readXrayTcpFragment(ss.finalmask);
+    if (fragment) server.xrayTcpFragment = fragment;
+  }
 
   // 传输层
-  const network = (str(ss.network) || 'tcp').toLowerCase();
-  if (network === 'ws') {
+  const network = xrayNetwork(ss);
+  if (isXhttpNetwork(network)) {
+    server.network = 'xhttp';
+    const xhttp = (ss.xhttpSettings ?? ss.splithttpSettings ?? {}) as Record<string, unknown>;
+    server.xhttpSettings = { path: str(xhttp.path), host: str(xhttp.host), mode: str(xhttp.mode) };
+  } else if (network === 'ws') {
     server.network = 'ws';
     const ws = (ss.wsSettings as Record<string, unknown>) || {};
     const headers = (ws.headers as Record<string, unknown>) || {};
@@ -57,7 +75,11 @@ function applyStreamSettings(server: ServerConfig, ss: Record<string, unknown> |
   } else if (network === 'grpc') {
     server.network = 'grpc';
     const grpc = (ss.grpcSettings as Record<string, unknown>) || {};
-    server.grpcSettings = { serviceName: str(grpc.serviceName) || '' };
+    server.grpcSettings = {
+      serviceName: str(grpc.serviceName) || '',
+      ...(grpc.multiMode === true ? { multiMode: true } : {}),
+      ...(str(grpc.authority) ? { authority: str(grpc.authority) } : {}),
+    };
   } else if (network === 'h2' || network === 'http') {
     server.network = 'http';
     const h2 = (ss.httpSettings as Record<string, unknown>) || {};
@@ -75,7 +97,7 @@ function applyStreamSettings(server: ServerConfig, ss: Record<string, unknown> |
     const hu = (ss.httpupgradeSettings as Record<string, unknown>) || {};
     const host = str(hu.host);
     server.wsSettings = { path: str(hu.path) || '/', headers: host ? { Host: host } : undefined };
-  } else {
+  } else if (network !== 'hysteria') {
     server.network = 'tcp' as Network;
   }
 
@@ -99,8 +121,10 @@ function applyStreamSettings(server: ServerConfig, ss: Record<string, unknown> |
       fingerprint: str(reality.fingerprint) || 'chrome',
     };
     server.realitySettings = {
-      publicKey: str(reality.publicKey) || '',
+      publicKey: str(reality.password) || str(reality.publicKey) || '',
       shortId: str(reality.shortId),
+      ...(str(reality.spiderX) ? { spiderX: str(reality.spiderX) } : {}),
+      ...(str(reality.mldsa65Verify) ? { mldsa65Verify: str(reality.mldsa65Verify) } : {}),
     };
   } else {
     server.security = 'none' as Security;
@@ -127,11 +151,13 @@ function mapXrayOutbound(
   });
 
   if (proto === 'vmess' || proto === 'vless') {
-    const vnext = (settings.vnext as Array<Record<string, unknown>>)?.[0];
+    const vnext =
+      (settings.vnext as Array<Record<string, unknown>>)?.[0] ??
+      (proto === 'vless' ? settings : undefined);
     if (!vnext) return null;
     const address = str(vnext.address);
     const port = num(vnext.port);
-    const user = (vnext.users as Array<Record<string, unknown>>)?.[0];
+    const user = (vnext.users as Array<Record<string, unknown>>)?.[0] ?? vnext;
     const uuid = str(user?.id);
     if (!address || !port || !uuid) return null;
     const server = base(address, port);
@@ -141,6 +167,8 @@ function mapXrayOutbound(
       server.vmessSecurity = str(user?.security) || 'auto';
     } else {
       server.flow = str(user?.flow);
+      const encryption = str(user?.encryption)?.trim();
+      if (encryption) server.encryption = encryption;
     }
     applyStreamSettings(server, o.streamSettings as Record<string, unknown>);
     return server;
@@ -170,6 +198,43 @@ function mapXrayOutbound(
     const server = base(address, port);
     server.shadowsocksSettings = { method, password };
     applyStreamSettings(server, o.streamSettings as Record<string, unknown>);
+    return server;
+  }
+
+  if (proto === 'hysteria') {
+    const stream = o.streamSettings as Record<string, unknown> | undefined;
+    const hysteria = stream?.hysteriaSettings as Record<string, unknown> | undefined;
+    const tls = stream?.tlsSettings as Record<string, unknown> | undefined;
+    const address = str(settings.address);
+    const port = num(settings.port);
+    const password = str(hysteria?.auth);
+    if (
+      !address ||
+      !port ||
+      !Number.isInteger(port) ||
+      port < 1 ||
+      port > 65535 ||
+      !password ||
+      num(settings.version) !== 2 ||
+      num(hysteria?.version) !== 2 ||
+      str(stream?.security)?.toLowerCase() !== 'tls'
+    )
+      return null;
+    // Do not turn a pinned connection into ordinary CA validation.
+    if (tls && Object.keys(tls).some((key) => /^(?:pin|verifyPeerCert|certificate)/i.test(key))) {
+      return null;
+    }
+    const mask = stream?.finalmask as { udp?: unknown } | undefined;
+    const udpMasks = mask?.udp ?? [];
+    if (!Array.isArray(udpMasks) || udpMasks.length > 1) return null;
+    const server: ServerConfig = { ...base(address, port), protocol: 'hysteria2', password };
+    applyStreamSettings(server, stream);
+    if (udpMasks.length === 1) {
+      const obfs = udpMasks[0];
+      const obfsPassword = str(obfs?.settings?.password);
+      if (obfs?.type !== 'salamander' || !obfsPassword) return null;
+      server.hysteria2Settings = { obfs: { type: 'salamander', password: obfsPassword } };
+    }
     return server;
   }
 
@@ -203,30 +268,41 @@ function collectXrayOutbounds(
       if (!XRAY_INTERNAL.has(proto)) skip(proto || '(empty)');
       continue;
     }
-    // VLESS Encryption（users[0].encryption = mlkem768x25519plus.…）：sing-box 不支持 → 同不支持传输口径跳过。
     if (proto === 'vless') {
-      const users = (
-        (o.settings as Record<string, unknown> | undefined)?.vnext as
-          | Array<Record<string, unknown>>
-          | undefined
-      )?.[0]?.users as Array<Record<string, unknown>> | undefined;
-      const encMethod = unsupportedVlessEncryption(users?.[0]?.encryption);
+      const settings = o.settings as Record<string, unknown> | undefined;
+      const users = (settings?.vnext as Array<Record<string, unknown>> | undefined)?.[0]?.users as
+        | Array<Record<string, unknown>>
+        | undefined;
+      const encMethod = unsupportedVlessEncryption(users?.[0]?.encryption ?? settings?.encryption);
       if (encMethod) {
         skip(`vless+encryption:${encMethod}`);
         continue;
       }
     }
     const ss = o.streamSettings as Record<string, unknown> | undefined;
-    const network = (
-      str(ss && typeof ss === 'object' ? ss.network : undefined) || 'tcp'
-    ).toLowerCase();
-    if (!XRAY_SUPPORTED_NETWORKS.has(network)) {
+    const network = xrayNetwork(ss);
+    const supported =
+      proto === 'hysteria'
+        ? network === 'hysteria'
+        : XRAY_SUPPORTED_NETWORKS.has(network) || (proto === 'vless' && isXhttpNetwork(network));
+    if (!supported) {
       skip(`${proto}+${network}`);
       continue;
     }
+    if (isXhttpNetwork(network)) {
+      const settings = (ss?.xhttpSettings ?? ss?.splithttpSettings ?? {}) as Record<
+        string,
+        unknown
+      >;
+      if (settings.downloadSettings || settings.extra) {
+        skip('vless+XHTTP extra settings');
+        continue;
+      }
+    }
     try {
       const server = mapXrayOutbound(o, proto, now);
-      if (server) servers.push(server);
+      if (server && requiresXray(server) && !canUseXray(server)) skip('vless+Xray combination');
+      else if (server) servers.push(server);
       else failed++;
     } catch {
       failed++;
@@ -273,23 +349,77 @@ export function parseXrayConfigArray(configs: unknown, now: string): XrayParseRe
   const skipBy = new Map<string, number>();
   if (!isXrayConfigArray(configs)) return { servers, skipped, failed, warnings: [] };
 
-  const seen = new Set<string>();
+  const seen = new Map<string, ServerConfig>();
   for (const config of configs) {
     const r = collectXrayOutbounds(config.outbounds, now, skipBy);
     skipped += r.skipped;
     failed += r.failed;
     const remarks = str(config.remarks)?.trim();
+    const memberIds = new Map<string, string>();
     r.servers.forEach((server, i) => {
+      const outboundTag = server.name;
       if (remarks) {
         server.name =
           r.servers.length === 1 ? remarks : `${remarks} · ${str(server.name) || i + 1}`;
       }
       const { id: _id, name: _name, createdAt: _c, updatedAt: _u, ...params } = server;
       const key = JSON.stringify(params);
-      if (seen.has(key)) return;
-      seen.add(key);
-      servers.push(server);
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, server);
+        servers.push(server);
+      }
+      memberIds.set(outboundTag, existing?.id ?? server.id);
     });
+    const group = remarks
+      ? importDefaultBalancer(config.routing, remarks, memberIds, now)
+      : undefined;
+    if (group) servers.push(group);
   }
   return { servers, skipped, failed, warnings: skipWarnings(skipped, skipBy) };
+}
+
+function importDefaultBalancer(
+  routing: unknown,
+  name: string,
+  ids: Map<string, string>,
+  now: string
+): ServerConfig | undefined {
+  const value = routing as { rules?: unknown; balancers?: unknown } | undefined;
+  if (!Array.isArray(value?.rules) || !Array.isArray(value.balancers)) return undefined;
+  const rule = value.rules[value.rules.length - 1] as Record<string, unknown> | undefined;
+  if (
+    !rule ||
+    typeof rule.balancerTag !== 'string' ||
+    Object.keys(rule).some((key) => !['type', 'network', 'balancerTag'].includes(key))
+  )
+    return undefined;
+  if (rule.network !== undefined) {
+    const networks =
+      typeof rule.network === 'string' ? rule.network.split(',').map((n) => n.trim()) : [];
+    if (!networks.includes('tcp') || !networks.includes('udp')) return undefined;
+  }
+  const balancer = value.balancers.find((candidate) => candidate?.tag === rule.balancerTag);
+  if (!Array.isArray(balancer?.selector)) return undefined;
+  const selectors: string[] = balancer.selector.filter(
+    (tag: unknown) => typeof tag === 'string' && tag.length > 0
+  );
+  const members = new Set<string>();
+  const fallback = ids.get(balancer.fallbackTag);
+  if (fallback) members.add(fallback);
+  for (const [tag, id] of ids) {
+    if (selectors.some((prefix) => tag.startsWith(prefix))) members.add(id);
+  }
+  if (!members.size) return undefined;
+  return {
+    id: randomUUID(),
+    name,
+    protocol: 'custom',
+    address: '',
+    port: 0,
+    customSettings: { outbound: { type: 'urltest' } },
+    urltestMemberIds: [...members],
+    createdAt: now,
+    updatedAt: now,
+  };
 }

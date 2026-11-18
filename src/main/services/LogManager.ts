@@ -16,6 +16,8 @@ export interface ILogManager {
 
 export class LogManager extends EventEmitter implements ILogManager {
   private logs: LogEntry[] = [];
+  private recentCoreErrors: string[] = [];
+  private static readonly MAX_CORE_ERRORS = 40;
   private maxLogs = 1000;
   private logFilePath: string;
   private currentLogLevel: LogLevel = 'info';
@@ -107,6 +109,16 @@ export class LogManager extends EventEmitter implements ILogManager {
     // 本 PR 目标场景（慢盘/磁盘满/连接风暴）——此刻把 FATAL 一并丢弃，事后导出恰缺最关键一行、根因不可复原。
     // fatal/error 相对 sing-box stdout 的 info/debug 洪流是低频，豁免不会重新引入无界增长。
     const critical = level === 'fatal' || level === 'error';
+    if (critical && source === 'sing-box') {
+      const line = this.formatLogEntry(entry);
+      // Keep complete lines so diagnostic redaction can still match identifiers.
+      if (line.length <= 2048) {
+        this.recentCoreErrors.push(line);
+        if (this.recentCoreErrors.length > LogManager.MAX_CORE_ERRORS) {
+          this.recentCoreErrors.shift();
+        }
+      }
+    }
     if (critical || this.pendingWrites.size < LogManager.MAX_PENDING_WRITES) {
       const writePromise = this.writeToFile(entry)
         .catch((error) => {
@@ -148,8 +160,13 @@ export class LogManager extends EventEmitter implements ILogManager {
     return this.logs.slice(-limit);
   }
 
+  getRecentCoreErrors(): string {
+    return this.recentCoreErrors.join('\n');
+  }
+
   clearLogs(): void {
     this.logs = [];
+    this.recentCoreErrors = [];
     // 异步清空日志文件
     this.clearLogFiles().catch((error) => {
       console.error('Failed to clear log files:', error);

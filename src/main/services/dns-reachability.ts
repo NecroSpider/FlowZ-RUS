@@ -3,41 +3,60 @@
  * (see shared/dns-failover.ts for why). Everything that builds a DNS config reads the plan through
  * getYandexDnsPlan(): ProxyManager (dns-bootstrap, domestic DNS, race pool) and SpeedTestService (dns-direct).
  */
-import * as net from 'net';
+import * as http2 from 'http2';
+import {
+  classifyDnsResponse,
+  decodeDnsAnswers,
+  decodeDnsQuestion,
+  encodeDnsQuery,
+} from '../../shared/dns-wire';
 import {
   DEFAULT_YANDEX_DNS_PLAN,
+  FALLBACK_DOH_IPS,
   YANDEX_PROBE_IPS,
   planYandexDns,
   type YandexDnsPlan,
 } from '../../shared/dns-failover';
+import { h2DohQuery } from './node-dns-race-server';
 
-/** One TCP connect. true = the connection was established within the timeout. Never rejects. */
-export function probeTcpReachable(ip: string, port = 443, timeoutMs = 2000): Promise<boolean> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const sock = net.connect({ host: ip, port });
-    const done = (ok: boolean): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      sock.destroy();
-      resolve(ok);
-    };
-    const timer = setTimeout(() => done(false), timeoutMs);
-    sock.once('connect', () => done(true));
-    sock.once('error', () => done(false));
-  });
-}
+const PROBE_DOMAIN = 'example.com';
+const PROBE_QUERY = encodeDnsQuery(PROBE_DOMAIN);
 
 export type ReachabilityProbe = (ips: readonly string[]) => Promise<Record<string, boolean>>;
 
-/** Probes all addresses in parallel. */
-export const probeAllTcp: ReachabilityProbe = async (ips) => {
-  const results = await Promise.all(ips.map((ip) => probeTcpReachable(ip)));
-  const out: Record<string, boolean> = {};
-  ips.forEach((ip, i) => (out[ip] = results[i]));
-  return out;
-};
+/** Use fresh sessions so a reconnect tests the current network and cannot reuse an old route. */
+const probeAllDoh: ReachabilityProbe = async (ips) =>
+  Object.fromEntries(
+    await Promise.all(
+      ips.map(async (ip) => {
+        try {
+          const session = http2.connect(`https://${ip}`);
+          session.on('error', () => {}); // Stream errors are handled by h2DohQuery.
+          try {
+            const response = await h2DohQuery(
+              session,
+              '/dns-query',
+              PROBE_QUERY,
+              AbortSignal.timeout(2500)
+            );
+            const question = decodeDnsQuestion(response);
+            const answered =
+              question?.qname.toLowerCase() === PROBE_DOMAIN &&
+              question.id === 0 &&
+              question.qtype === 1 &&
+              question.qclass === 1 &&
+              classifyDnsResponse(response, 1) === 'HIT' &&
+              decodeDnsAnswers(response).length > 0;
+            return [ip, answered];
+          } finally {
+            session.destroy();
+          }
+        } catch {
+          return [ip, false];
+        }
+      })
+    )
+  );
 
 let currentPlan: YandexDnsPlan = DEFAULT_YANDEX_DNS_PLAN;
 let planAt = 0;
@@ -59,10 +78,14 @@ export async function ensureYandexDnsPlan(
   const now = deps.now ?? Date.now;
   if (maxAgeMs > 0 && planAt > 0 && now() - planAt < maxAgeMs) return currentPlan;
   if (inflight) return inflight;
-  const probe = deps.probe ?? probeAllTcp;
+  const probe = deps.probe ?? probeAllDoh;
   inflight = (async () => {
     try {
-      currentPlan = planYandexDns(await probe(YANDEX_PROBE_IPS));
+      const yandex = await probe(YANDEX_PROBE_IPS);
+      const plan = planYandexDns(yandex);
+      currentPlan = plan.unavailable
+        ? planYandexDns({ ...yandex, ...(await probe(FALLBACK_DOH_IPS)) })
+        : plan;
       planAt = now();
     } catch {
       currentPlan = DEFAULT_YANDEX_DNS_PLAN;

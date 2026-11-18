@@ -14,6 +14,12 @@ import type {
   SingBoxConnectionEvents,
 } from '../singbox-api-client';
 
+const services = new Set<StatsService>();
+afterEach(() => {
+  for (const service of services) service.stop();
+  services.clear();
+});
+
 /**
  * mock SingBoxApiClient：捕获订阅回调供测试 push 流帧；记录订阅/退订次数（验订阅跟随 started）。
  * subscribe* 返回 stop 句柄；调用后回调置 null + statusStopCount/connStopCount++。
@@ -85,6 +91,7 @@ function setup(opts: { withVisible?: boolean; visible?: boolean } = {}) {
   const mock = makeMockClient();
   const isWindowVisible = opts.withVisible ? jest.fn(() => opts.visible ?? true) : undefined;
   const service = new StatsService(onUpdate, () => mock.client, onConnections, isWindowVisible);
+  services.add(service);
   return { service, onUpdate, onConnections, mock, isWindowVisible };
 }
 
@@ -331,6 +338,7 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       const onConnections = jest.fn<void, [ConnectionsSnapshot]>();
       const mock = makeMockClient();
       const service = new StatsService(onUpdate, () => mock.client, onConnections); // 无第 4 参
+      services.add(service);
       service.start();
       mock.pushStatus(STATUS);
       expect(onUpdate).toHaveBeenCalledTimes(1);
@@ -351,6 +359,7 @@ describe('StatsService 流式门控（gRPC streams）', () => {
         onConnections,
         isWindowVisible
       );
+      services.add(service);
       return { service, onUpdate, onConnections, ref, swap: () => (ref.mock = makeMockClient()) };
     }
 

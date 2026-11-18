@@ -103,6 +103,7 @@ export async function checkForUpdates(): Promise<
       fileSize: number;
       publishedAt: string;
       isPrerelease: boolean;
+      isDowngrade?: boolean;
       fileName: string;
     };
   }>

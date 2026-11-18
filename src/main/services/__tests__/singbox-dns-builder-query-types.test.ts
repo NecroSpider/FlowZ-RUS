@@ -38,6 +38,8 @@ const MATCH_KEYS = [
   'domain',
   'domain_suffix',
   'domain_keyword',
+  'domain_regex',
+  'rules', // logical rules carry their domain/geo predicates in children
   'inbound',
   'preferred_by',
   'process_name',

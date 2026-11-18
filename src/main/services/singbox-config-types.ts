@@ -59,11 +59,15 @@ export interface SingBoxDnsServer {
 }
 
 export interface SingBoxDnsRule {
-  rule_set?: string;
+  type?: 'logical';
+  mode?: 'and' | 'or';
+  rules?: SingBoxDnsRule[];
+  rule_set?: string | string[];
   query_type?: string[];
   domain?: string[];
   domain_suffix?: string[];
   domain_keyword?: string[];
+  domain_regex?: string[];
   // source_mac_address / source_hostname（1.14；P6 LAN 网关，Listable[string]）：按源设备 MAC / DHCP 主机名
   // 分流 DNS。仅 Linux/macOS。sing-box check 实证 alpha.32（须配 default_domain_resolver）。
   source_mac_address?: string[];
@@ -117,6 +121,7 @@ export interface SingBoxInbound {
   tag: string;
   listen?: string;
   listen_port?: number;
+  users?: { username: string; password: string }[];
   // TUN 模式
   interface_name?: string;
   address?: string[];
@@ -147,9 +152,12 @@ export interface SingBoxOutbound {
   tag: string;
   detour?: string; // 代理链
   bind_interface?: string; // Dial Fields：工作 VPN 出站绑定 VPN 接口（shared/work-vpn）
+  inet4_bind_address?: string;
   server?: string;
   server_port?: number;
   override_address?: string;
+  url?: string;
+  interval?: string;
   // Shadowsocks
   method?: string;
   password?: string;

@@ -1,4 +1,4 @@
-import { isPrereleaseVersion } from '../../shared/update-channel';
+import { isPrereleaseVersion, normalizeAppUpdateChannel } from '../../shared/update-channel';
 /**
  * 更新检查服务
  * 通过 GitHub API 检查新版本并支持下载
@@ -123,9 +123,9 @@ export class UpdateService {
   // 本会话 checkForUpdate 实际返回过的更新（downloadUrl → UpdateInfo，主进程私有）。下载只认这里的记录：
   // 文件名 / 是否预发布 / 大小 / 版本一律取主进程自己的值，不信渲染端经 IPC 回传的 UpdateInfo 字段。
   private checkedUpdates = new Map<string, UpdateInfo>();
-  // 已通过校验的安装包：filePath → sha256。installUpdate 只执行此表内文件，且执行前重算摘要（防下载后被替换）。
-  private verifiedInstallers = new Map<string, string>();
-  // #60：注入配置读取器（仅用于读 ghProxyPrefix 下载镜像前缀），构造后注入。未配置→null（直连，旧行为）。
+  // Only verified installers can run, and their digests are checked again before installation.
+  private verifiedInstallers = new Map<string, { digest: string; update?: UpdateInfo }>();
+  // Read the saved app update channel and GitHub mirror prefix from the main process.
   // 与 CoreUpdateService.configProvider / CoreDownloader 同口径——App 自更新与内核/资源下载共用同一 gh 加速前缀。
   private configProvider: (() => Promise<UserConfig | null>) | null = null;
   // 更新链路统一会话层（类2：viaProxy/port 决策已收口到 UpdateNetwork.resolveSessionForMainUpdate，providers
@@ -146,9 +146,13 @@ export class UpdateService {
     this.cleanupCallback = callback;
   }
 
-  /** #60：注入配置读取器（读 ghProxyPrefix）。仿 CoreUpdateService.setConfigProvider，构造后由 index.ts 注入。 */
   setConfigProvider(provider: () => Promise<UserConfig | null>): void {
     this.configProvider = provider;
+  }
+
+  private async getUpdateChannel() {
+    const config = await this.configProvider?.().catch(() => null);
+    return normalizeAppUpdateChannel(config?.appUpdateChannel);
   }
 
   /** 注入更新链路统一会话层（类2：决策 providers 改由 index.ts 注入 updateNetwork.setMainUpdateProviders）。 */
@@ -192,7 +196,10 @@ export class UpdateService {
   /**
    * 检查更新（retried：内部一次性重试标记，瞬态网络错误延迟后自重试用）
    */
-  async checkForUpdate(includePrerelease = false, retried = false): Promise<UpdateCheckResult> {
+  async checkForUpdate(
+    options: { allowStableRollback?: boolean } = {},
+    retried = false
+  ): Promise<UpdateCheckResult> {
     try {
       this.logManager.addLog('info', 'Starting update check...', 'UpdateService');
       this.updateProgress({
@@ -201,29 +208,46 @@ export class UpdateService {
         message: 'Checking for updates...',
       });
 
-      const releases = await this.fetchReleases();
+      const channel = await this.getUpdateChannel();
+      const stable = channel === 'stable';
+      let releases = await this.fetchReleases(stable);
+      // An older workflow could publish a beta tag as a full release and mark it Latest.
+      if (
+        stable &&
+        releases.some((release) => isPrereleaseVersion(release.tag_name, release.prerelease))
+      ) {
+        releases = await this.fetchReleases(false);
+      }
+      if (channel !== (await this.getUpdateChannel())) {
+        this.updateProgress({ status: 'idle', percentage: 0, message: '' });
+        return { hasUpdate: false };
+      }
 
-      const validReleases = releases
+      const latestRelease = releases
         .filter(
           (r: any) =>
-            !r.draft && (includePrerelease || !isPrereleaseVersion(r.tag_name, r.prerelease))
+            !r.draft &&
+            typeof r.tag_name === 'string' &&
+            (!stable || !isPrereleaseVersion(r.tag_name, r.prerelease))
         )
-        .sort(
-          (a: any, b: any) =>
-            new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
-        );
+        .sort((a: any, b: any) => compareSemver(b.tag_name, a.tag_name))[0];
 
-      if (validReleases.length === 0) {
+      if (!latestRelease) {
         this.logManager.addLog('warn', 'No releases found', 'UpdateService');
         this.updateProgress({ status: 'no-update', percentage: 0, message: 'No releases found' });
         return { hasUpdate: false };
       }
 
-      const latestRelease = validReleases[0];
       const currentVersion = app.getVersion();
       const latestVersion = latestRelease.tag_name.replace(/^v/, '');
+      const comparison = compareSemver(latestVersion, currentVersion);
+      const isDowngrade =
+        options.allowStableRollback === true &&
+        stable &&
+        comparison < 0 &&
+        isPrereleaseVersion(currentVersion);
 
-      if (!this.isNewerVersion(latestVersion, currentVersion)) {
+      if (comparison <= 0 && !isDowngrade) {
         this.logManager.addLog('info', `Already up to date: ${currentVersion}`, 'UpdateService');
         this.updateProgress({ status: 'no-update', percentage: 0, message: 'Already up to date' });
         return { hasUpdate: false };
@@ -266,10 +290,11 @@ export class UpdateService {
         fileSize: asset.size,
         publishedAt: latestRelease.published_at,
         isPrerelease: isPrereleaseVersion(latestRelease.tag_name, latestRelease.prerelease),
+        ...(isDowngrade && { isDowngrade: true }),
         fileName,
       };
 
-      if (this.skippedVersion === latestVersion) {
+      if (!isDowngrade && this.skippedVersion === latestVersion) {
         this.logManager.addLog(
           'info',
           `Version ${latestVersion} was skipped by the user`,
@@ -303,7 +328,7 @@ export class UpdateService {
           'UpdateService'
         );
         await new Promise((r) => setTimeout(r, 5000));
-        return this.checkForUpdate(includePrerelease, true);
+        return this.checkForUpdate(options, true);
       }
       // 重试后仍失败的瞬态 → warn + 静默（no-update），不弹 error UI；其它 → error。
       this.logManager.addLog(
@@ -336,14 +361,21 @@ export class UpdateService {
     return trusted;
   }
 
-  private async confirmPrerelease(updateInfo: UpdateInfo): Promise<boolean> {
-    if (!isPrereleaseVersion(updateInfo.version, updateInfo.isPrerelease)) return true;
+  private async confirmUpdateDownload(updateInfo: UpdateInfo): Promise<boolean> {
+    const prerelease = isPrereleaseVersion(updateInfo.version, updateInfo.isPrerelease);
+    if (!prerelease && !updateInfo.isDowngrade) return true;
+    const requiredChannel = prerelease ? 'prerelease' : 'stable';
+    if ((await this.getUpdateChannel()) !== requiredChannel) return false;
+    const title = mt(updateInfo.isDowngrade ? 'updStableRollbackTitle' : 'updPrereleaseTitle');
     const options = {
       type: 'warning' as const,
-      title: mt('updPrereleaseTitle'),
-      message: `${mt('updPrereleaseTitle')}: ${updateInfo.version}`,
-      detail: mt('updPrereleaseWarning'),
-      buttons: [mt('updPrereleaseDownload'), mt('updBtnCancel')],
+      title,
+      message: `${title}: ${updateInfo.version}`,
+      detail: mt(updateInfo.isDowngrade ? 'updStableRollbackWarning' : 'updPrereleaseWarning'),
+      buttons: [
+        mt(updateInfo.isDowngrade ? 'updStableRollbackDownload' : 'updPrereleaseDownload'),
+        mt('updBtnCancel'),
+      ],
       defaultId: 1,
       cancelId: 1,
     };
@@ -351,13 +383,13 @@ export class UpdateService {
     const { response } = win
       ? await dialog.showMessageBox(win, options)
       : await dialog.showMessageBox(options);
-    return response === 0;
+    return response === 0 && (await this.getUpdateChannel()) === requiredChannel;
   }
 
   async downloadUpdate(requested: UpdateInfo): Promise<string | null> {
     const updateInfo = this.resolveCheckedUpdate(requested);
-    if (!(await this.confirmPrerelease(updateInfo))) {
-      throw Object.assign(new Error('Prerelease download cancelled'), { code: 'UPDATE_CANCELLED' });
+    if (!(await this.confirmUpdateDownload(updateInfo))) {
+      throw Object.assign(new Error('Update download cancelled'), { code: 'UPDATE_CANCELLED' });
     }
     // 手动下载不传 cancel token → 不可取消、与弹窗流的取消 token 完全隔离（无跨流污染）。
     let downloadDir: string | null = null;
@@ -430,13 +462,21 @@ export class UpdateService {
       }
 
       const expected = this.verifiedInstallers.get(installerPath);
-      if (!expected || (await sha256OfFile(installerPath)) !== expected) {
+      if (!expected || (await sha256OfFile(installerPath)) !== expected.digest) {
         this.logManager.addLog(
           'error',
           `Refusing to install an unverified or modified installer: ${installerPath}`,
           'UpdateService'
         );
         return false;
+      }
+      const update = expected.update;
+      if (update) {
+        const channel = await this.getUpdateChannel();
+        if (channel === 'stable' && isPrereleaseVersion(update.version, update.isPrerelease)) {
+          return false;
+        }
+        if (channel === 'prerelease' && update.isDowngrade) return false;
       }
 
       // Linux deb 安装态：后续 pkexec apt 会弹 polkit 通用授权框（文案不可改）——先在 app 内弹一个说清缘由的确认框。
@@ -570,7 +610,11 @@ export class UpdateService {
           const scriptPath = path.join(makePrivateTempDir('flowz-install-'), 'flowz_update.sh');
           const scriptContent = isAppImage
             ? buildLinuxAppImageScript({ installerPath, appImageTarget: appImageTarget as string })
-            : buildLinuxDebScript({ installerPath, exePath: app.getPath('exe') });
+            : buildLinuxDebScript({
+                installerPath,
+                exePath: app.getPath('exe'),
+                allowDowngrade: update?.isDowngrade === true,
+              });
           fs.writeFileSync(scriptPath, scriptContent, { mode: 0o700 });
           const child = spawn('/bin/bash', [scriptPath], { detached: true, stdio: 'ignore' });
           child.unref();
@@ -680,9 +724,10 @@ export class UpdateService {
   /** 弹窗静态文案（按当前语言 mt 渲染进载荷；弹窗页无 i18n runtime，E5）。 */
   private popupLabels(): UpdatePopupLabels {
     return {
-      remindTitle:
-        this.currentUpdateInfo &&
-        isPrereleaseVersion(this.currentUpdateInfo.version, this.currentUpdateInfo.isPrerelease)
+      remindTitle: this.currentUpdateInfo?.isDowngrade
+        ? mt('updStableRollbackTitle')
+        : this.currentUpdateInfo &&
+            isPrereleaseVersion(this.currentUpdateInfo.version, this.currentUpdateInfo.isPrerelease)
           ? mt('updPrereleaseTitle')
           : mt('updRemindTitle'),
       progressTitle: mt('updProgressTitle'),
@@ -915,7 +960,7 @@ export class UpdateService {
       this.closeUpdatePopup();
       return null;
     }
-    if (!(await this.confirmPrerelease(updateInfo))) {
+    if (!(await this.confirmUpdateDownload(updateInfo))) {
       this.closeUpdatePopup();
       return null;
     }
@@ -1043,7 +1088,10 @@ export class UpdateService {
           : 'Installer verification failed: no official sha256 digest, refusing to install'
       );
     }
-    this.verifiedInstallers.set(filePath, expected);
+    this.verifiedInstallers.set(filePath, {
+      digest: expected,
+      update: this.checkedUpdates.get(downloadUrl),
+    });
     this.logManager.addLog('info', `Installer sha256 verified: ${expected}`, 'UpdateService');
   }
 
@@ -1058,13 +1106,13 @@ export class UpdateService {
 
   // ========== 私有方法 ==========
 
-  private async fetchReleases(): Promise<any[]> {
+  private async fetchReleases(stable: boolean): Promise<any[]> {
     const sess = await this.updateSession();
     return new Promise((resolve, reject) => {
       let settled = false;
       const request = net.request({
         method: 'GET',
-        url: `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`,
+        url: `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases${stable ? '/latest' : '?per_page=100'}`,
         session: sess,
       });
       // 单点收口：防 request/response 双错误源重复 settle；clear timeout；之后任何回调都 no-op。
@@ -1111,10 +1159,13 @@ export class UpdateService {
         res.on('end', () => {
           if (res.statusCode === 200) {
             try {
-              finish(null, JSON.parse(data));
+              const parsed = JSON.parse(data);
+              finish(null, stable ? [parsed] : parsed);
             } catch {
               finish(new Error('Failed to parse the GitHub API response'));
             }
+          } else if (stable && res.statusCode === 404) {
+            finish(null, []);
           } else if (res.statusCode === 403) {
             finish(
               new Error('GitHub API rate limit exceeded (403), try again later or use a proxy')
@@ -1144,12 +1195,6 @@ export class UpdateService {
           ? !!process.env.APPIMAGE
           : false;
     return findSuitableUpdateAsset(assets, process.platform, process.arch, looseForm);
-  }
-
-  private isNewerVersion(latest: string, current: string): boolean {
-    // 收口到 shared/version.compareSemver（与 CoreUpdateService 共用单一权威）：原 split('.').map(Number)
-    // 遇 prerelease（"1.2.3-beta"）某段算成 NaN → 比较恒 false 误判「非新版本」漏更新；compareSemver 容忍 -/+ 后缀。
-    return compareSemver(latest, current) > 0;
   }
 
   /**

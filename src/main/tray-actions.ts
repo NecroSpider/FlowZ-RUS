@@ -198,7 +198,7 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
     },
     onCheckUpdate: async () => {
       const mainWindow = getMainWindow();
-      const result = await updateService.checkForUpdate();
+      const result = await updateService.checkForUpdate({ allowStableRollback: true });
       if (result.hasUpdate && result.updateInfo) {
         const action = await updateService.showUpdateDialog(result.updateInfo);
         if (action === 'update') {

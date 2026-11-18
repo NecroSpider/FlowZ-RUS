@@ -6,6 +6,7 @@ export interface UpdateInfo {
   fileSize: number; // 字节
   publishedAt: string;
   isPrerelease: boolean;
+  isDowngrade?: boolean;
   fileName: string;
 }
 

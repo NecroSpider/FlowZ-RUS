@@ -74,6 +74,9 @@ local.config.*
 # sing-box 内核二进制（由 npm run fetch:core 按 core-manifest.json 版本+coreSha256 下载官方 release，打包时随 resources 打入；每平台 66–74MB、4 平台 ~276MB 不入库防仓库膨胀，CI 现拉现打）
 resources/*/sing-box
 resources/*/sing-box.exe
+resources/*/xray
+resources/*/xray.exe
+resources/*/xray-LICENSE
 
 # NaiveProxy 核心库（由 npm run fetch:cronet 下载，打包时随 resources 打入；体积大不入库）
 resources/*/libcronet.*
@@ -84,6 +87,7 @@ resources/dashboard/
 # 提权 helper 二进制（macOS com.flowz.helper / Windows com.flowz.helper.exe，由 npm run build:helper 交叉编译；构建产物不入库，CI 现编现打）
 resources/*/com.flowz.helper
 resources/*/com.flowz.helper.exe
+resources/linux/flowz-helper-linux
 # helper-win/ 本地 go build 误产的二进制（构建应输出到 resources/win/，源目录的 .exe 不入库）
 helper-win/*.exe
 

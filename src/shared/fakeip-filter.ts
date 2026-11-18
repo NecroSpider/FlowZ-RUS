@@ -2,7 +2,7 @@
  * FakeIP 例外域名（走真实解析、绕过 FakeIP）单一真值。
  * renderer（设置页可编辑清单的 seed / 恢复默认）+ main（singbox-dns-builder 生成 DNS 规则）共用，避免多处漂移。
  *
- * 这些域名用假 IP 会坏：连通性探测/Captive Portal（误判断网、锁屏登录卡死）、NTP 校时（拿不到真实 IP）。
+ * 这些域名用假 IP 会坏：连通性探测/Captive Portal、NTP 校时，以及 Xbox/PlayFab 游戏的区域延迟探测。
  */
 
 /** 连通性探测 / Captive Portal 域名：解析须走「内网解析器」反映真实本地网络（exact domain 匹配）。 */
@@ -33,10 +33,24 @@ export const FAKEIP_FILTER_NTP_SUFFIXES = [
 /** NTP/STUN 关键字（裸子串匹配；始终生效的兜底，非用户可编辑域名清单项）。误伤面极小的 ntp/stun，刻意不含 turn。 */
 export const FAKEIP_FILTER_NTP_STUN_KEYWORDS = ['ntp', 'stun'];
 
-/** 设置页可编辑清单的默认 seed / 恢复默认源：captive + ntp 域名（关键字另由 dns-builder 始终兜底）。 */
+/**
+ * Reported Forza / Xbox / PlayFab compatibility preset. Real DNS preserves the addresses used by game QoS probes.
+ * Unlike captive/NTP, these domains must use the resolver for their traffic's exit (including proxy detour).
+ * The Azure/Microsoft suffixes deliberately match the reported working preset; users can narrow the editable list.
+ */
+export const FAKEIP_FILTER_GAMING_SUFFIXES = [
+  'playfabapi.com',
+  'forzamotorsport.net',
+  'xboxlive.com',
+  'azure.com',
+  'microsoft.com',
+];
+
+/** 设置页可编辑清单的默认 seed / 恢复默认源（关键字另由 dns-builder 始终兜底）。 */
 export const DEFAULT_FAKEIP_FILTER_DOMAINS = [
   ...FAKEIP_FILTER_CAPTIVE_DOMAINS,
   ...FAKEIP_FILTER_NTP_SUFFIXES,
+  ...FAKEIP_FILTER_GAMING_SUFFIXES,
 ];
 
 /**

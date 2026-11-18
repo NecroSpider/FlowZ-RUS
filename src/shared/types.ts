@@ -16,10 +16,12 @@ import type {
   WebSocketSettings,
   GrpcSettings,
   HttpSettings,
+  XrayTcpFragment,
 } from './types/protocol-settings';
 
 import type { Rule, CustomRuleSet, RuleResource, AppRule, CustomAppPreset } from './types/rules';
 import type { SubscriptionProxyPolicy } from './subscription-proxy';
+import type { AppUpdateChannel } from './update-channel';
 
 // ============================================================================
 // 协议设置子类型（re-export，保持所有现有 import 路径不变）
@@ -125,10 +127,10 @@ export type Protocol =
   | 'wireguard'
   | 'tailscale'
   | 'custom';
-export type Network = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
+export type Network = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade' | 'xhttp';
 export type Security = 'none' | 'tls' | 'reality';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
-// 'auto' = 默认档：跟随平台映射（macOS·Windows→gvisor / Linux→system），经 shared/tun-defaults#resolveTunStack
+// 'auto' follows the platform default (macOS → gvisor, Windows and Linux → system) in resolveTunStack.
 // 解析成下发给核的具体栈。system/gvisor/mixed = 显式高级兜底。详见 docs/design/tun-stack-option.md。
 export type TunStack = 'auto' | 'system' | 'gvisor' | 'mixed';
 // 'auto' = 默认档：跟随 (平台 × 具体栈) 映射，经 shared/tun-defaults#resolveTunMtu 解析成下发给核的具体数值；
@@ -166,6 +168,7 @@ export interface SubscriptionConfig {
   // 服务端 304 → 短路 parse/reconcile（零节点扰动、省流省渲染）。缺省=首次/无 validator 源，全量 GET（零回归）。
   etag?: string;
   lastModified?: string;
+  parserRevision?: number;
   // 上次解析含 proxy-providers（Clash provider 型订阅）→ 主正文 304 会掩盖 provider 子资源独立变化 → 不发条件头（保守豁免）。
   hasProviders?: boolean;
   // 订阅 URL 并非用户亲手输入（Clash 本地导入的 provider / 备份恢复）→ 首跳照常过 SSRF guard（不信任内网地址）。
@@ -218,6 +221,8 @@ export interface ServerConfig {
 
   // 自定义协议（raw-JSON 透传，第三方内核用）
   customSettings?: CustomSettings;
+  // Imported Xray balancers reference ordinary nodes in the same subscription.
+  urltestMemberIds?: string[];
 
   anyTlsSettings?: AnyTlsSettings;
 
@@ -244,6 +249,8 @@ export interface ServerConfig {
   wsSettings?: WebSocketSettings;
   grpcSettings?: GrpcSettings;
   httpSettings?: HttpSettings;
+  xhttpSettings?: { path?: string; host?: string; mode?: string };
+  xrayTcpFragment?: XrayTcpFragment;
 
   createdAt?: string;
   updatedAt?: string;
@@ -418,6 +425,7 @@ export interface UserConfig {
   // 可选：存量配置缺该键 → 渲染端首次从旧 localStorage['app-language'] 回填（见 App.tsx 迁移）。
   language?: string;
   autoCheckUpdate: boolean;
+  appUpdateChannel?: AppUpdateChannel;
   autoLightweightMode: boolean;
   // 图形兼容逃生门（正向语义：**默认开**=true，关闭是 opt-in 用户自救；均需重启生效）。
   // 消费一律用 `!== false`（undefined=未设/旧配置=默认开），对齐本仓 autoCheckUpdate 惯例。
@@ -525,9 +533,10 @@ export interface UserConfig {
   // 节点测速端点 URL（经各节点代理 GET 量 TTFB）。默认 generate_204（见 shared/speed-test）；用户可自配，兼容 http/https。
   // 非法值由 SpeedTestService 经 resolveSpeedTestTarget 回落默认，不阻断测速。
   speedTestUrl?: string;
-  // fake-ip-filter 默认清单（NTP/STUN/Captive 等在 FakeIP 下会坏的域名 → 真实解析）。默认开（undefined/true=开），仅 false=关。
+  xrayForVlessReality?: boolean;
+  // fake-ip-filter 默认清单（NTP/STUN/Captive、Xbox/PlayFab → 真实解析）。默认开（undefined/true=开），仅 false=关。
   fakeIpFilter?: boolean;
-  // FakeIP 例外域名清单（用户可编辑）：undefined=用内置默认（DEFAULT_FAKEIP_FILTER_DOMAINS，与历史字节一致）；
+  // FakeIP 例外域名清单（用户可编辑）：undefined=用内置默认（DEFAULT_FAKEIP_FILTER_DOMAINS）；
   // 已编辑则存全量。仅 fakeIpFilter 开时生效。内置 captive 域名仍走内网解析器，其余按出口选解析器（见 singbox-dns-builder）。
   fakeIpFilterList?: string[];
   // #347：拨号前把目的域名解析成真实 IP 再交给出站（sing-box route action `resolve`），而非把域名随包发给节点。

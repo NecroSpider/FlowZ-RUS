@@ -5,6 +5,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fsSync from 'fs';
+import { EventEmitter } from 'node:events';
 
 const TMP = fsSync.mkdtempSync(path.join(os.tmpdir(), 'flowz-updsvc-test-'));
 
@@ -28,12 +29,12 @@ jest.mock('electron', () => ({
   screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
   ipcMain: { on: () => {} },
   dialog: { showMessageBox: jest.fn() },
-  net: {},
+  net: { request: jest.fn() },
   session: {},
   Notification: class {},
 }));
 
-import { shell } from 'electron';
+import { app, net, shell } from 'electron';
 import { UpdateService } from '../UpdateService';
 import { setMainLanguage, mt } from '../../i18n';
 
@@ -145,6 +146,7 @@ describe('prerelease confirmation and stable channel', () => {
   /** 下载只认本会话 checkForUpdate 返回过的记录：测试里直接登记（等价于一次成功的检查）。 */
   const seeded = (record: typeof info = info): any => {
     const svc = new UpdateService(log) as any;
+    svc.setConfigProvider(async () => ({ appUpdateChannel: 'prerelease' }));
     svc.checkedUpdates.set(record.downloadUrl, record);
     return svc;
   };
@@ -233,12 +235,16 @@ describe('prerelease confirmation and stable channel', () => {
 
   it('ordinary checks exclude drafts, flagged prereleases and unflagged beta tags', async () => {
     const svc = new UpdateService(log) as any;
-    jest.spyOn(svc, 'fetchReleases').mockResolvedValue([
-      { tag_name: 'v9.0.3', draft: true, published_at: '2026-11-04' },
-      { tag_name: 'v9.0.2', prerelease: true, published_at: '2026-11-03' },
-      { tag_name: 'v9.0.1-beta.1', prerelease: false, published_at: '2026-11-02' },
-      { tag_name: 'v9.0.0', prerelease: false, published_at: '2026-11-01' },
-    ]);
+    const stable = { tag_name: 'v9.0.0', prerelease: false, published_at: '2026-11-01' };
+    const fetchReleases = jest
+      .spyOn(svc, 'fetchReleases')
+      .mockResolvedValueOnce([stable])
+      .mockResolvedValueOnce([
+        { tag_name: 'v9.0.3', draft: true, published_at: '2026-11-04' },
+        { tag_name: 'v9.0.2', prerelease: true, published_at: '2026-11-03' },
+        { tag_name: 'v9.0.1-beta.1', prerelease: false, published_at: '2026-11-02' },
+        stable,
+      ]);
     jest
       .spyOn(svc, 'findSuitableAsset')
       .mockReturnValue({ name: 'test.exe', browser_download_url: info.downloadUrl, size: 1 });
@@ -246,9 +252,107 @@ describe('prerelease confirmation and stable channel', () => {
       version: 'v9.0.0',
       isPrerelease: false,
     });
-    expect((await svc.checkForUpdate(true)).updateInfo).toMatchObject({
+    expect(fetchReleases).toHaveBeenLastCalledWith(true);
+
+    svc.setConfigProvider(async () => ({ appUpdateChannel: 'prerelease' }));
+    expect((await svc.checkForUpdate()).updateInfo).toMatchObject({
       version: 'v9.0.2',
       isPrerelease: true,
     });
+    expect(fetchReleases).toHaveBeenLastCalledWith(false);
+  });
+
+  it('offers a stable rollback on manual checks from a newer beta and asks before downloading', async () => {
+    jest.spyOn(app, 'getVersion').mockReturnValue('9.1.0-beta.2');
+    const svc = new UpdateService(log) as any;
+    const { dialog } = require('electron');
+    dialog.showMessageBox.mockReset().mockResolvedValue({ response: 1 });
+    jest.spyOn(svc, 'fetchReleases').mockResolvedValue([
+      {
+        tag_name: 'v9.0.0',
+        prerelease: false,
+        assets: [{ name: 'test.exe', browser_download_url: info.downloadUrl, size: 1 }],
+      },
+    ]);
+    jest.spyOn(svc, 'findSuitableAsset').mockImplementation((assets: any) => assets[0]);
+    const download = jest.spyOn(svc, 'downloadFile');
+
+    await expect(svc.checkForUpdate()).resolves.toMatchObject({ hasUpdate: false });
+    const result = await svc.checkForUpdate({ allowStableRollback: true });
+    expect(result.updateInfo).toMatchObject({
+      version: 'v9.0.0',
+      isPrerelease: false,
+      isDowngrade: true,
+    });
+    await expect(svc.downloadUpdate(result.updateInfo)).rejects.toMatchObject({
+      code: 'UPDATE_CANCELLED',
+    });
+    expect(dialog.showMessageBox).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: mt('updStableRollbackTitle'), defaultId: 1, cancelId: 1 })
+    );
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('cancels a stale prerelease offer after switching back to stable', async () => {
+    const svc = seeded();
+    const download = jest.spyOn(svc, 'downloadFile');
+    svc.setConfigProvider(async () => ({ appUpdateChannel: 'stable' }));
+
+    await expect(svc.downloadUpdate(info)).rejects.toMatchObject({ code: 'UPDATE_CANCELLED' });
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the stable release list if GitHub Latest points to a beta tag', async () => {
+    const svc = new UpdateService(log) as any;
+    const beta = { tag_name: 'v9.1.0-beta.1', prerelease: false };
+    const stable = { tag_name: 'v9.0.0', prerelease: false };
+    const fetchReleases = jest
+      .spyOn(svc, 'fetchReleases')
+      .mockResolvedValueOnce([beta])
+      .mockResolvedValueOnce([
+        { tag_name: 'v9.3.0', draft: true },
+        { tag_name: 'v9.2.0', prerelease: true },
+        beta,
+        stable,
+      ]);
+    jest
+      .spyOn(svc, 'findSuitableAsset')
+      .mockReturnValue({ name: 'test.exe', browser_download_url: info.downloadUrl, size: 1 });
+
+    expect((await svc.checkForUpdate()).updateInfo?.version).toBe(stable.tag_name);
+    expect(fetchReleases.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('queries the GitHub Latest endpoint for stable and the release list for prereleases', async () => {
+    const request = jest.mocked(net.request);
+    const latest = { tag_name: 'v1.0.0', assets: [] };
+    const prerelease = { tag_name: 'v1.1.0-beta.1', assets: [] };
+    const respond = (statusCode: number, body: unknown) => {
+      const response = Object.assign(new EventEmitter(), { statusCode });
+      const client = Object.assign(new EventEmitter(), {
+        abort: jest.fn(),
+        setHeader: jest.fn(),
+        end: () => {
+          client.emit('response', response);
+          response.emit('data', Buffer.from(JSON.stringify(body)));
+          response.emit('end');
+        },
+      });
+      request.mockReturnValueOnce(client as unknown as ReturnType<typeof net.request>);
+    };
+    respond(200, latest);
+    respond(200, [latest, prerelease]);
+    respond(404, {});
+
+    const svc = new UpdateService(log) as any;
+    await expect(svc.fetchReleases(true)).resolves.toEqual([latest]);
+    expect(request).toHaveBeenLastCalledWith(
+      expect.objectContaining({ url: expect.stringMatching(/\/releases\/latest$/) })
+    );
+    await expect(svc.fetchReleases(false)).resolves.toEqual([latest, prerelease]);
+    expect(request).toHaveBeenLastCalledWith(
+      expect.objectContaining({ url: expect.stringContaining('/releases?') })
+    );
+    await expect(svc.fetchReleases(true)).resolves.toEqual([]);
   });
 });

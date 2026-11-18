@@ -537,6 +537,37 @@ describe('Windows：parseWinNetSnapshot + detectWorkVpn', () => {
     });
   });
 
+  it('keeps adapter-assigned DNS while OpenVPN is still installing its pushed routes', () => {
+    const name = 'OpenVPN Data Channel Offload';
+    const snap = detectWin({
+      ...WIN_SNAPSHOT,
+      adapters: [{ n: name, d: 'OpenVPN Data Channel Offload', status: 'Up' }],
+      addrs: [{ n: name, a: '10.8.0.6' }],
+      routes: [{ n: name, p: '10.8.0.6/32', g: '0.0.0.0' }],
+      nrpt: [],
+    });
+    expect(snap.interfaces).toEqual([
+      {
+        name,
+        addresses: ['10.8.0.6'],
+        cidrs: [],
+        dnsServers: ['10.175.0.249'],
+        domains: ['corp.example'],
+        fullTunnel: false,
+      },
+    ]);
+  });
+
+  it('ignores lingering DNS settings from a disconnected OpenVPN adapter', () => {
+    const name = 'OpenVPN Data Channel Offload';
+    const snap = detectWin({
+      ...WIN_SNAPSHOT,
+      adapters: [{ n: name, d: 'OpenVPN Data Channel Offload', status: 'Disconnected' }],
+      addrs: [{ n: name, a: '10.8.0.6' }],
+    });
+    expect(snap.interfaces).toEqual([]);
+  });
+
   it('redirect-gateway（0/1 + 128/1 走 VPN 网卡）→ fullTunnel', () => {
     const snap = {
       ...WIN_SNAPSHOT,

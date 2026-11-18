@@ -21,6 +21,7 @@ import { isXrayConfigArray, parseXrayConfigArray, parseXrayOutbounds } from './x
 import { isServerComplete } from '../../shared/server-completeness';
 import { customOutboundRejectReason } from '../../shared/config-portability';
 import { normalizeDuration } from '../../shared/duration';
+import { isXrayVlessEncryption } from '../../shared/xray-node';
 import {
   classifySubscriptionError,
   type SubscriptionPreviewResult,
@@ -214,6 +215,9 @@ export class SubscriptionService {
    * 凭据可区分同 host:port 的并列节点，几乎不随更新变化。
    */
   static serverFingerprint(s: ServerConfig): string {
+    if (s.customSettings?.outbound?.type === 'urltest' && Array.isArray(s.urltestMemberIds)) {
+      return JSON.stringify(['urltest', s.name]);
+    }
     // 凭据按协议落点取：vless/vmess/tuic→uuid；trojan/hy2/anytls→password；ss→shadowsocksSettings.password；
     // naive/socks/http→username；ssh→sshSettings.password。覆盖嵌套落点，避免 SS 等凭据落空致同 host:port 误并。
     const cred =
@@ -227,7 +231,13 @@ export class SubscriptionService {
     // network 维度：同 host:port:cred 但传输不同（tcp vs ws vs grpc）是不同节点，缺此维度会被误并静默吞节点。
     // 指纹不持久化——reconcile 对新旧两侧用同一函数现算，归一化（h2→http/raw→tcp）对两侧等价，
     // 存量节点 id / selectedServerId 不受本次加维度影响。
-    return `${(s.protocol || '').toLowerCase()}|${s.address}|${s.port}|${cred}|${(s.network || 'tcp').toLowerCase()}`;
+    const base = `${(s.protocol || '').toLowerCase()}|${s.address}|${s.port}|${cred}|${(s.network || 'tcp').toLowerCase()}`;
+    const encryption = isXrayVlessEncryption(s.encryption) ? '|encrypted' : '';
+    const xhttp =
+      s.network === 'xhttp'
+        ? JSON.stringify([s.xhttpSettings?.host, s.xhttpSettings?.path, s.xhttpSettings?.mode])
+        : '';
+    return base + encryption + xhttp;
   }
 
   /**
@@ -273,10 +283,20 @@ export class SubscriptionService {
     let added = 0;
     let updated = 0;
     let anyContentChanged = false;
-    for (const ns of fetchedServers) {
-      const key = SubscriptionService.serverFingerprint(ns);
-      const bucket = oldBuckets.get(key);
-      const old = bucket && bucket.length > 0 ? bucket.shift() : undefined;
+    const matches = fetchedServers.map((server) => {
+      const bucket = oldBuckets.get(SubscriptionService.serverFingerprint(server));
+      return { server, old: bucket?.shift() };
+    });
+    const resolvedIds = new Map(
+      matches.map(({ server, old }) => [server.id, old?.id ?? server.id])
+    );
+    for (const { server, old } of matches) {
+      const ns = Array.isArray(server.urltestMemberIds)
+        ? {
+            ...server,
+            urltestMemberIds: server.urltestMemberIds.map((id) => resolvedIds.get(id) ?? id),
+          }
+        : server;
       if (old) {
         // 内容相同（忽略 id/时间戳）则保留 old.updatedAt，避免无变化也刷新 updatedAt「投毒」纯切节点热切换
         const same = contentKey(ns) === contentKey(old);
@@ -695,6 +715,22 @@ export class SubscriptionService {
    */
   static detectProviders(text: string): boolean {
     return /^[ \t]*proxy-providers[ \t]*:/m.test(text) || /"proxy-providers"\s*:/.test(text);
+  }
+
+  private static assertUsableRemoteSubscription(url: string, servers: ServerConfig[]): void {
+    const isLocal = (address: string): boolean =>
+      /^(?:localhost\.?|127(?:\.\d{1,3}){3}|0\.0\.0\.0|::[01]?|\[::[01]?\])$/i.test(address);
+    // Some providers deliver notices as local addresses on port 1 with HTTP 200.
+    // Treat an all-notice response as failed so it cannot replace saved nodes.
+    if (
+      servers.length > 0 &&
+      !isLocal(new URL(url).hostname) &&
+      servers.every((server) => server.port === 1 && isLocal(server.address))
+    ) {
+      throw new Error(
+        'Subscription yielded 0 usable nodes (provider returned only placeholder entries)'
+      );
+    }
   }
 
   /** 同指纹去重（Map 首见保留）：内联在前、provider 按声明序在后 → 同节点多源留内联那份。
@@ -1289,6 +1325,7 @@ export class SubscriptionService {
           userAgent: ua,
         }
       );
+      SubscriptionService.assertUsableRemoteSubscription(url, servers);
 
       return { servers, userInfo, partial, failedProviders, etag, lastModified, hasProviders };
     } catch (error: any) {
@@ -1334,6 +1371,7 @@ export class SubscriptionService {
         userAgent,
         throwOnEmpty: true,
       });
+      SubscriptionService.assertUsableRemoteSubscription(url, servers);
       return { ok: true, nodeCount: servers.length };
     } catch (err: any) {
       // 摊平错误信号交纯分类器（不自己判分类）：message + code(err.code ?? cause.code) + 从

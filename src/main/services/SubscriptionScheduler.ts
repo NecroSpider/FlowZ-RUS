@@ -1,4 +1,9 @@
-import { getSubscriptionConfigEditor, subscriptionRequestKey } from './subscription-config-editor';
+import {
+  SUBSCRIPTION_PARSER_REVISION,
+  getSubscriptionConfigEditor,
+  subscriptionRequestKey,
+  subscriptionValidators,
+} from './subscription-config-editor';
 /**
  * 订阅自动更新调度器
  *
@@ -181,9 +186,7 @@ export class SubscriptionScheduler {
 
         try {
           // §16.3.4：条件 GET——provider 型订阅豁免；否则带上次 validator（304 → notModified 短路）。
-          const conditional = sub.hasProviders
-            ? undefined
-            : { etag: sub.etag, lastModified: sub.lastModified };
+          const conditional = subscriptionValidators(sub);
           const requestKey = subscriptionRequestKey(config, sub);
           const result = await this.subscriptionService.fetchSubscription(
             sub.url,
@@ -267,6 +270,7 @@ export class SubscriptionScheduler {
             sub.etag = f.etag;
             sub.lastModified = f.lastModified;
             sub.hasProviders = f.hasProviders;
+            sub.parserRevision = SUBSCRIPTION_PARSER_REVISION;
             updated++;
             continue;
           }
@@ -290,6 +294,7 @@ export class SubscriptionScheduler {
           sub.etag = f.etag;
           sub.lastModified = f.lastModified;
           sub.hasProviders = f.hasProviders;
+          sub.parserRevision = SUBSCRIPTION_PARSER_REVISION;
           nodesChanged = true; // 走到 merge 路径 = contentChanged 或 partial → 真实节点变更
           updated++;
         }

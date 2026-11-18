@@ -58,7 +58,7 @@ function cfg(over: Partial<UserConfig>): UserConfig {
     proxyMode: 'smart',
     proxyModeType: 'systemProxy',
     // stack/mtu 均取 'auto' = 新装默认档，故快照直接锁住 (平台 × 栈) 查表的**实际下发值**：
-    // Win→gvisor/65535、mac→gvisor/9000、Linux→system/4064。写死具体数字会让默认值改动在此处失去覆盖。
+    // Windows and Linux use system/4064. macOS uses gvisor/9000.
     tunConfig: { mtu: 'auto', stack: 'auto', autoRoute: true, strictRoute: true },
     customRules: [],
     appRules: [],

@@ -11,11 +11,13 @@ import {
 } from '@/bridge/api-wrapper';
 import flowzIcon from '@/assets/flowz-icon.svg';
 import { api } from '@/ipc/api-client';
-import type { UpdateProgress } from '@/ipc/api-client';
+import type { UpdateInfo, UpdateProgress } from '@/ipc/api-client';
 import { useTranslation } from 'react-i18next';
 import { AppUpdateBanner } from './app-update-banner';
 import { useAppStore } from '@/store/app-store';
 import { buildBugReportUrl } from '@/lib/issue-report';
+import { normalizeAppUpdateChannel } from '../../../shared/update-channel';
+import { Srow } from './conduit-controls';
 import {
   AUTHOR_TELEGRAM_URL,
   REPOSITORY_URL,
@@ -38,6 +40,9 @@ export function AboutSettings() {
   // F28：App 更新可用信息放 store（本组件随设置子节切换会卸载，本地 state 无法持久承载入口）
   const availableAppUpdate = useAppStore((s) => s.availableAppUpdate);
   const setAvailableAppUpdate = useAppStore((s) => s.setAvailableAppUpdate);
+  const setConfigValue = useAppStore((s) => s.setConfigValue);
+  const channel = useAppStore((s) => normalizeAppUpdateChannel(s.config?.appUpdateChannel));
+  const [savingChannel, setSavingChannel] = useState(false);
   // 「报告问题」按钮自动带上当前代理模式（系统代理/TUN），是 #57 类问题的关键定位信息
   const proxyModeType = useAppStore((s) => s.config?.proxyModeType);
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
@@ -73,7 +78,20 @@ export function AboutSettings() {
     }
   };
 
-  const handleDownloadAndInstall = async (updateInfo: any) => {
+  const handleChannelChange = async (value: string) => {
+    setSavingChannel(true);
+    try {
+      const nextChannel = normalizeAppUpdateChannel(value);
+      await setConfigValue('appUpdateChannel', nextChannel);
+      if (useAppStore.getState().config?.appUpdateChannel === nextChannel) {
+        setAvailableAppUpdate(null);
+      }
+    } finally {
+      setSavingChannel(false);
+    }
+  };
+
+  const handleDownloadAndInstall = async (updateInfo: UpdateInfo) => {
     setDownloading(true);
     setDownloadProgress(0);
 
@@ -159,11 +177,18 @@ export function AboutSettings() {
         if (data.hasUpdate && data.updateInfo) {
           const updateInfo = data.updateInfo;
           setAvailableAppUpdate(updateInfo); // 常驻入口（toast 8s 后消失，卡片持久）
-          toast.success(t('settings.about.foundUpdate', { version: updateInfo.version }), {
+          const title = updateInfo.isDowngrade ? 'stableVersionAvailable' : 'foundUpdate';
+          const action = updateInfo.isDowngrade ? 'switchToStable' : 'updateNow';
+          const description = updateInfo.isDowngrade
+            ? 'stableRollbackWarning'
+            : updateInfo.isPrerelease
+              ? 'prereleaseWarning'
+              : 'clickToInstall';
+          toast.success(t(`settings.about.${title}`, { version: updateInfo.version }), {
             id: updateToastId,
-            description: t('settings.about.clickToInstall'),
+            description: t(`settings.about.${description}`),
             action: {
-              label: t('settings.about.updateNow'),
+              label: t(`settings.about.${action}`),
               onClick: () => handleDownloadAndInstall(updateInfo),
             },
             duration: 8000,
@@ -211,13 +236,19 @@ export function AboutSettings() {
     );
   }
 
+  const visibleUpdate =
+    availableAppUpdate &&
+    (channel === 'stable' ? !availableAppUpdate.isPrerelease : !availableAppUpdate.isDowngrade)
+      ? availableAppUpdate
+      : null;
+
   return (
     <div className="set-panel">
-      {availableAppUpdate && (
+      {visibleUpdate && (
         <AppUpdateBanner
-          updateInfo={availableAppUpdate}
-          downloading={downloading}
-          onUpdate={() => handleDownloadAndInstall(availableAppUpdate)}
+          updateInfo={visibleUpdate}
+          downloading={downloading || savingChannel}
+          onUpdate={() => handleDownloadAndInstall(visibleUpdate)}
           onDismiss={() => setAvailableAppUpdate(null)}
         />
       )}
@@ -232,13 +263,16 @@ export function AboutSettings() {
             <div className="about-ver">
               {t('settings.about.version', 'Version')}{' '}
               <span className="mono tnum">{versionInfo?.appVersion || '—'}</span>
-              {availableAppUpdate && (
+              {visibleUpdate && (
                 <>
                   {' · '}
                   <span className="pill warn" style={{ verticalAlign: 'middle' }}>
-                    {t('settings.about.updateAvailable', 'Update {{version}} available', {
-                      version: availableAppUpdate.version,
-                    })}
+                    {t(
+                      visibleUpdate.isDowngrade
+                        ? 'settings.about.stableVersionAvailable'
+                        : 'settings.about.updateAvailable',
+                      { version: visibleUpdate.version }
+                    )}
                   </span>
                 </>
               )}
@@ -248,12 +282,30 @@ export function AboutSettings() {
             type="button"
             className="btn ghost sm"
             onClick={handleCheckUpdate}
-            disabled={checkingUpdate || downloading}
+            disabled={checkingUpdate || downloading || savingChannel}
           >
             {checkingUpdate && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {checkingUpdate ? t('settings.about.checking') : t('settings.about.checkUpdate')}
           </button>
         </div>
+
+        <div className="set-hair" />
+        <Srow
+          label={t('settings.about.updateChannel')}
+          desc={t('settings.about.updateChannelDescription')}
+        >
+          <div className="sel">
+            <select
+              aria-label={t('settings.about.updateChannel')}
+              value={channel}
+              onChange={(event) => void handleChannelChange(event.target.value)}
+              disabled={checkingUpdate || downloading || savingChannel}
+            >
+              <option value="stable">{t('settings.about.updateChannelStable')}</option>
+              <option value="prerelease">{t('settings.about.updateChannelPrerelease')}</option>
+            </select>
+          </div>
+        </Srow>
 
         {downloading && (
           <>

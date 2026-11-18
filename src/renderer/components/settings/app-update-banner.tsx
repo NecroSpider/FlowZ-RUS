@@ -21,6 +21,12 @@ export function AppUpdateBanner({
   onDismiss,
 }: AppUpdateBannerProps) {
   const { t } = useTranslation();
+  const title = updateInfo.isDowngrade ? 'stableVersionAvailable' : 'foundUpdate';
+  const description = updateInfo.isDowngrade
+    ? 'stableRollbackWarning'
+    : isPrereleaseVersion(updateInfo.version, updateInfo.isPrerelease)
+      ? 'prereleaseWarning'
+      : 'clickToInstall';
   return (
     <div className="app-update-banner">
       <span className="aub-ic">
@@ -29,16 +35,12 @@ export function AppUpdateBanner({
         </svg>
       </span>
       <div className="aub-tx">
-        <b>{t('settings.about.foundUpdate', { version: updateInfo.version })}</b>
-        <span>
-          {isPrereleaseVersion(updateInfo.version, updateInfo.isPrerelease)
-            ? t('settings.about.prereleaseWarning')
-            : t('settings.about.clickToInstall')}
-        </span>
+        <b>{t(`settings.about.${title}`, { version: updateInfo.version })}</b>
+        <span>{t(`settings.about.${description}`)}</span>
       </div>
       <button type="button" className="btn flow sm" disabled={downloading} onClick={onUpdate}>
         {downloading && <Loader2 className="h-3 w-3 animate-spin" />}
-        {t('settings.about.updateNow')}
+        {t(updateInfo.isDowngrade ? 'settings.about.switchToStable' : 'settings.about.updateNow')}
       </button>
       <button
         type="button"

@@ -178,9 +178,14 @@ export function buildLinuxAppImageScript(opts: {
  * 确认，信任源不变（仍是同一 release 资产）。sha256 校验作为后续统一增强（覆盖 deb/AppImage/core 三类下载件），不在本
  * PR 范围；调用方仅在「形态为 .deb」时才走本脚本（见 installUpdate 的 .deb 守卫）。
  */
-export function buildLinuxDebScript(opts: { installerPath: string; exePath: string }): string {
+export function buildLinuxDebScript(opts: {
+  installerPath: string;
+  exePath: string;
+  allowDowngrade?: boolean;
+}): string {
   const deb = shq(opts.installerPath);
   const exe = shq(opts.exePath);
+  const downgradeFlag = opts.allowDowngrade ? ' --allow-downgrades' : '';
   return [
     '#!/bin/bash',
     'sleep 2',
@@ -190,7 +195,7 @@ export function buildLinuxDebScript(opts: { installerPath: string; exePath: stri
     // -o Dpkg::Options::=--force-conf*：无 tty/detached 下若 deb 含 conffile 冲突，保留旧配置不阻断 install
     // （Electron 应用通常无 conffiles，防御性）。pkexec 弹 PolicyKit GUI 授权框（root 提权）。
     // 成功 → 删临时 deb + 从原 exe 路径启动新版（dpkg 同路径覆盖）。
-    'if pkexec apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$DEB"; then',
+    `if pkexec apt-get install -y${downgradeFlag} -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$DEB"; then`,
     '  rm -f "$DEB" 2>/dev/null',
     '  nohup "$EXE" >/dev/null 2>&1 &',
     'else',

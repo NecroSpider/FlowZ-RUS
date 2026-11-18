@@ -42,6 +42,7 @@ import {
 import { withPlatformAsync } from './platform-test-utils';
 import { spawn } from 'child_process';
 import { powerMonitor } from 'electron';
+import { workVpnFingerprint } from '../../../shared/work-vpn';
 
 const mockFlush = flushOsDnsCache as jest.MockedFunction<typeof flushOsDnsCache>;
 
@@ -71,6 +72,120 @@ function makeSvc(): any {
   svc.linkChangeHandler = jest.fn(() => Promise.resolve());
   return svc;
 }
+
+describe('Windows work VPN changes', () => {
+  const activeVpn = {
+    interfaces: [
+      {
+        name: 'OpenVPN DCO',
+        addresses: ['10.8.0.6'],
+        cidrs: ['10.20.0.0/16'],
+        dnsServers: ['10.8.0.1'],
+        domains: ['corp.example'],
+        fullTunnel: false,
+      },
+    ],
+    serverIps: [],
+  };
+
+  it('removes pinned VPN routes after a confirmed disconnect', async () => {
+    const interfaces = jest.spyOn(os, 'networkInterfaces').mockReturnValue({});
+    try {
+      await withPlatformAsync('win32', async () => {
+        const svc = makeSvc();
+        svc.currentConfig = { proxyModeType: 'tun' };
+        svc.workVpnSnapshot = activeVpn;
+        svc.workVpnFingerprint = workVpnFingerprint(activeVpn);
+        svc.winIfaceFingerprint = 'previous-connected-interfaces';
+        svc.detectWorkVpnNow = jest.fn().mockResolvedValue({ interfaces: [], serverIps: [] });
+        svc.scheduleDebouncedRestart = jest.fn();
+        await svc.checkWorkVpnChange();
+        expect(svc.scheduleDebouncedRestart).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      interfaces.mockRestore();
+    }
+  });
+
+  it('keeps current VPN routes when the network probe fails', async () => {
+    const interfaces = jest.spyOn(os, 'networkInterfaces').mockReturnValue({});
+    try {
+      await withPlatformAsync('win32', async () => {
+        const svc = makeSvc();
+        svc.currentConfig = { proxyModeType: 'tun' };
+        svc.workVpnSnapshot = activeVpn;
+        svc.workVpnFingerprint = workVpnFingerprint(activeVpn);
+        svc.winIfaceFingerprint = 'previous-connected-interfaces';
+        svc.detectWorkVpnNow = jest.fn().mockResolvedValue(null);
+        svc.scheduleDebouncedRestart = jest.fn();
+        await svc.checkWorkVpnChange();
+        expect(svc.scheduleDebouncedRestart).not.toHaveBeenCalled();
+      });
+    } finally {
+      interfaces.mockRestore();
+    }
+  });
+
+  it('ignores a disconnect result from an earlier core generation', async () => {
+    const interfaces = jest.spyOn(os, 'networkInterfaces').mockReturnValue({});
+    try {
+      await withPlatformAsync('win32', async () => {
+        const svc = makeSvc();
+        svc.currentConfig = { proxyModeType: 'tun' };
+        svc.workVpnSnapshot = activeVpn;
+        svc.workVpnFingerprint = workVpnFingerprint(activeVpn);
+        svc.winIfaceFingerprint = 'previous-connected-interfaces';
+        svc.detectWorkVpnNow = jest.fn().mockImplementation(async () => {
+          svc.lifecycleGeneration += 1;
+          return { interfaces: [], serverIps: [] };
+        });
+        svc.scheduleDebouncedRestart = jest.fn();
+        await svc.checkWorkVpnChange();
+        expect(svc.scheduleDebouncedRestart).not.toHaveBeenCalled();
+      });
+    } finally {
+      interfaces.mockRestore();
+    }
+  });
+
+  it('rechecks the same interface address when routes arrive after the first poll', async () => {
+    const interfaces = jest.spyOn(os, 'networkInterfaces').mockReturnValue({
+      'OpenVPN DCO': [{ family: 'IPv4', address: '10.8.0.6' }],
+    });
+    try {
+      await withPlatformAsync('win32', async () => {
+        const svc = makeSvc();
+        svc.currentConfig = { proxyModeType: 'tun' };
+        svc.scheduleDebouncedRestart = jest.fn();
+        svc.detectWorkVpnNow = jest
+          .fn()
+          .mockResolvedValueOnce({ interfaces: [], serverIps: [] })
+          .mockResolvedValueOnce({
+            interfaces: [
+              {
+                name: 'OpenVPN DCO',
+                addresses: ['10.8.0.6'],
+                cidrs: ['10.20.0.0/16'],
+                dnsServers: [],
+                domains: [],
+                fullTunnel: false,
+              },
+            ],
+            serverIps: [],
+          });
+
+        await svc.checkWorkVpnChange();
+        expect(svc.scheduleDebouncedRestart).not.toHaveBeenCalled();
+        await svc.checkWorkVpnChange();
+        expect(svc.scheduleDebouncedRestart).toHaveBeenCalledTimes(1);
+        await svc.checkWorkVpnChange();
+        expect(svc.detectWorkVpnNow).toHaveBeenCalledTimes(2);
+      });
+    } finally {
+      interfaces.mockRestore();
+    }
+  });
+});
 
 beforeEach(() => {
   mockFlush.mockReset();

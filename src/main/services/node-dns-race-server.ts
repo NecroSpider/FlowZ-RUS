@@ -32,7 +32,9 @@ async function queryOneUpstream(
   signal: AbortSignal
 ): Promise<Uint8Array> {
   if (up.kind === 'doh' && !up.dot && up.http2) {
-    return h2DohQuery(`https://${up.ip}:${up.port ?? 443}`, up.path || '/dns-query', query, signal);
+    if (signal.aborted) throw new Error('aborted');
+    const session = getH2Session(`https://${up.ip}:${up.port ?? 443}`);
+    return h2DohQuery(session, up.path || '/dns-query', query, signal);
   }
   if (up.kind === 'doh' && !up.dot) {
     const url = `https://${up.ip}:${up.port ?? 443}${up.path || '/dns-query'}`;
@@ -86,8 +88,8 @@ export function closeH2DohSessions(): void {
 }
 
 /** DoH over HTTP/2（RFC 8484 POST）：TLS 按 IP 校验证书（IP SAN）。非 200 / 流错误 / signal 取消 → reject。 */
-function h2DohQuery(
-  origin: string,
+export function h2DohQuery(
+  session: http2.ClientHttp2Session,
   path: string,
   query: Uint8Array,
   signal: AbortSignal
@@ -97,7 +99,7 @@ function h2DohQuery(
     let req: http2.ClientHttp2Stream;
     try {
       const body = Buffer.from(query);
-      req = getH2Session(origin).request({
+      req = session.request({
         ':method': 'POST',
         ':path': path,
         'content-type': 'application/dns-message',

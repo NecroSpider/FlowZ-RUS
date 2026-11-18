@@ -18,6 +18,7 @@ import { DEFAULT_SINGLE_ID } from '../../shared/node-resolver-upstreams';
 import { ruleConditions } from '../../shared/rules';
 import { getAppPreset } from '../../shared/app-rules-preset';
 import { BUILTIN_GEO_RULESETS } from './builtin-geo-rulesets';
+import { XRAY_EGRESS_TAG } from './xray-bridge';
 import type {
   SingBoxConfig,
   SingBoxRouteRule,
@@ -29,6 +30,7 @@ import type {
  * 单一真值——id→tag 映射与「按名解析 tailscale endpoint tag」均以此为基准（杜绝多处重抄漂移）。
  */
 const RESERVED_OUTBOUND_TAGS: readonly string[] = [
+  XRAY_EGRESS_TAG,
   'proxy-selector',
   'direct',
   'block',

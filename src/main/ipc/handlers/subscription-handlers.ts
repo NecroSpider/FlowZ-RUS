@@ -1,6 +1,8 @@
 import {
+  SUBSCRIPTION_PARSER_REVISION,
   getSubscriptionConfigEditor,
   subscriptionRequestKey,
+  subscriptionValidators,
 } from '../../services/subscription-config-editor';
 import { IpcMainInvokeEvent, dialog } from 'electron';
 import * as fs from 'fs/promises';
@@ -79,7 +81,7 @@ export function registerSubscriptionHandlers(
           sendHwid: incoming.sendHwid,
           // 用户在对话框里保存 = 亲手确认该 URL → 撤销「导入来源」标记，首跳恢复信任。
           imported: undefined,
-          ...(previous.url !== incoming.url
+          ...(previous.url !== incoming.url || previous.userAgent !== incoming.userAgent
             ? { etag: undefined, lastModified: undefined, hasProviders: undefined }
             : {}),
         };
@@ -129,9 +131,7 @@ export function registerSubscriptionHandlers(
       const requestKey = subscriptionRequestKey(config, subscription);
       try {
         // §16.3.4：条件 GET——provider 型订阅豁免（主正文 304 会掩盖 provider 独立变化）；否则带上次 validator。
-        const conditional = subscription.hasProviders
-          ? undefined
-          : { etag: subscription.etag, lastModified: subscription.lastModified };
+        const conditional = subscriptionValidators(subscription);
         const result = await subscriptionService.fetchSubscription(
           subscription.url,
           subscription.id,
@@ -191,6 +191,7 @@ export function registerSubscriptionHandlers(
             subscription.etag = result.etag;
             subscription.lastModified = result.lastModified;
             subscription.hasProviders = result.hasProviders;
+            subscription.parserRevision = SUBSCRIPTION_PARSER_REVISION;
             await configManager.saveConfig(config);
             return {
               success: true,
@@ -241,6 +242,7 @@ export function registerSubscriptionHandlers(
           subscription.etag = result.etag;
           subscription.lastModified = result.lastModified;
           subscription.hasProviders = result.hasProviders;
+          subscription.parserRevision = SUBSCRIPTION_PARSER_REVISION;
 
           await configManager.saveConfig(config);
 

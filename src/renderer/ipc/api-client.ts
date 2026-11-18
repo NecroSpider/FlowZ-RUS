@@ -559,6 +559,7 @@ export interface UpdateInfo {
   fileSize: number;
   publishedAt: string;
   isPrerelease: boolean;
+  isDowngrade?: boolean;
   fileName: string;
 }
 
@@ -577,8 +578,8 @@ export interface UpdateProgress {
 }
 
 export const updateApi = {
-  async check(includePrerelease = false): Promise<UpdateCheckResult> {
-    return ipcClient.invoke(IPC_CHANNELS.UPDATE_CHECK, { includePrerelease });
+  async check(): Promise<UpdateCheckResult> {
+    return ipcClient.invoke(IPC_CHANNELS.UPDATE_CHECK);
   },
 
   async download(

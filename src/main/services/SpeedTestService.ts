@@ -40,6 +40,9 @@ import { isEndpointProtocol, isSpeedTestable } from '../../shared/endpoint-route
 import { normalizeDuration } from '../../shared/duration';
 import { DOH_YANDEX_IP, EXIT_RESOLVER_IP } from '../../shared/dns';
 import { ensureYandexDnsPlan, getYandexDnsPlan } from './dns-reachability';
+import { requiresXray, wantsXray } from '../../shared/xray-node';
+import { XrayBridge } from './xray-bridge';
+import { buildImportedGroup, importedGroupMembers, isImportedGroupMember } from './singbox-urltest';
 
 /** 基于 UDP/QUIC 的协议，需要走真实代理测速 */
 const UDP_PROTOCOLS = new Set(['hysteria2', 'tuic']);
@@ -149,7 +152,9 @@ export class SpeedTestService {
     servers: ServerConfig[],
     onResult?: (serverId: string, latency: number | null) => void,
     onProgress?: (tested: number, ok: number, total: number) => void,
-    testUrl?: string
+    testUrl?: string,
+    preferXrayReality?: boolean,
+    allServers: ServerConfig[] = servers
   ): Promise<SpeedTestRunResult> {
     // 单一真值闸（下沉于此，UI/托盘两入口共用）：此处仅剔「**永久**不可测」节点（自定义 endpoint / reverseMesh system
     // 内核接口 / mesh-only 无出口）——它们对任何路径都返 null→-1「超时」，与 UI 角标「不适用」口径冲突。
@@ -180,8 +185,24 @@ export class SpeedTestService {
     const run = inFlight
       ? inFlight
           .catch(() => {}) // 吞前一次异常，仅为串行不断链（本次独立、不受前次成败影响）
-          .then(() => this.doTestAllServers(testable, onResult, onProgress, testUrl))
-      : this.doTestAllServers(testable, onResult, onProgress, testUrl);
+          .then(() =>
+            this.doTestAllServers(
+              testable,
+              onResult,
+              onProgress,
+              testUrl,
+              preferXrayReality,
+              allServers
+            )
+          )
+      : this.doTestAllServers(
+          testable,
+          onResult,
+          onProgress,
+          testUrl,
+          preferXrayReality,
+          allServers
+        );
     this.currentTest = run;
     this.currentTestIds = requestIds;
     void run.finally(() => {
@@ -198,7 +219,9 @@ export class SpeedTestService {
     servers: ServerConfig[],
     onResult?: (serverId: string, latency: number | null) => void,
     onProgress?: (tested: number, ok: number, total: number) => void,
-    testUrl?: string
+    testUrl?: string,
+    preferXrayReality?: boolean,
+    allServers: ServerConfig[] = servers
   ): Promise<SpeedTestRunResult> {
     // §15.11：起测时快照核生命周期世代——本次测速 = 绑定于 gen0 的作业，任一核 start/stop/restart/config-regen
     // 中途跃迁 → getCoreGeneration()!==gen0 → 超代 abort（保留已测、未测节点缺席 map、绝不写假 -1）。缺省 ()=>0 恒不超代。
@@ -260,7 +283,9 @@ export class SpeedTestService {
         runCtx,
         onResult,
         onProgress,
-        testUrl
+        testUrl,
+        preferXrayReality,
+        allServers
       );
       const ok = [...results.values()].filter((v) => v !== null).length;
       // 仅汇总，不逐节点列明（结果由 UI 节点延迟徽标承载）。
@@ -393,7 +418,9 @@ export class SpeedTestService {
     runCtx?: SpeedTestRunContext,
     onResult?: (serverId: string, latency: number | null) => void,
     onProgress?: (tested: number, ok: number, total: number) => void,
-    testUrl?: string
+    testUrl?: string,
+    preferXrayReality?: boolean,
+    allServers: ServerConfig[] = servers
   ): Promise<Map<string, number | null>> {
     const results = new Map<string, number | null>();
     // 进度计数：每个节点得出结果（含 null/不可用/失败）即 tested++，成功 ok++；total 含不可用节点。
@@ -436,24 +463,64 @@ export class SpeedTestService {
     let tempConfig: Record<string, unknown> | undefined;
     let stderrOutput = '';
     let stdoutOutput = '';
+    const requestedIds = new Set(servers.map((server) => server.id));
+    const memberIds = new Set(servers.flatMap((server) => importedGroupMembers(server) ?? []));
+    const extraMembers = allServers.filter(
+      (server) =>
+        memberIds.has(server.id) && !requestedIds.has(server.id) && isImportedGroupMember(server)
+    );
+    const candidates = [...servers, ...extraMembers];
+    const xrayNodes = candidates.filter((server) => wantsXray(server, preferXrayReality));
+    let xray: XrayBridge | undefined;
+    if (xrayNodes.length) {
+      try {
+        xray = await XrayBridge.start(resourceManager.getXrayPath(), xrayNodes);
+      } catch {
+        this.logManager.addLog('warn', 'Xray core failed to start for speed test', 'SpeedTest');
+      }
+    }
 
     // 构造各节点出站；不可用（naive 缺 libcronet / 异常）→ 直接 null，不进临时核（避免预初始化 FATAL 拖垮整批）。
     const getOutbound =
       this.buildOutboundFn ?? ((s: ServerConfig, t: string) => this.buildOutbound(s, t));
     const usable: { server: ServerConfig; tag: string; outbound: Record<string, unknown> }[] = [];
-    for (const s of servers) {
+    const supportOutbounds: Record<string, unknown>[] = [];
+    const availableMembers = new Map<string, string>();
+    for (const s of candidates) {
+      if (importedGroupMembers(s)) continue;
       const tag = `out-${s.id.slice(0, 8)}`;
-      const ob = getOutbound(s, tag);
-      if (ob) usable.push({ server: s, tag, outbound: ob });
+      const xrayOutbound = xray?.outbound(s.id, tag);
+      const ob = xrayOutbound
+        ? { ...xrayOutbound }
+        : !requiresXray(s)
+          ? getOutbound(s, tag)
+          : undefined;
+      if (ob) {
+        if (isImportedGroupMember(s)) availableMembers.set(s.id, tag);
+        if (requestedIds.has(s.id)) usable.push({ server: s, tag, outbound: ob });
+        else supportOutbounds.push(ob);
+      } else if (requestedIds.has(s.id)) {
+        results.set(s.id, null);
+        noteNodeFail(requiresXray(s) ? 'xray-unavailable' : 'unusable', s, tag);
+        report(s.id, null);
+      }
+    }
+    for (const s of servers) {
+      const ids = importedGroupMembers(s);
+      if (!ids) continue;
+      const tag = `out-${s.id.slice(0, 8)}`;
+      const group = buildImportedGroup(ids, tag, availableMembers);
+      if (group) usable.push({ server: s, tag, outbound: { ...group } });
       else {
         results.set(s.id, null);
-        noteNodeFail('unusable', s, tag); // naive 缺 libcronet / 构造异常 → 不可测节点
+        noteNodeFail('group-no-members', s, tag);
         report(s.id, null);
       }
     }
     // 解析测速端点（一次，预热+正式共用）；非法 testUrl 经 resolveSpeedTestTarget 回落默认 generate_204。
     const target = resolveSpeedTestTarget(testUrl);
     if (usable.length === 0) {
+      xray?.stop();
       this.lastDiagnostics = {
         generatedAt: new Date().toISOString(),
         target,
@@ -474,7 +541,7 @@ export class SpeedTestService {
 
       // 2. 生成临时 sing-box 配置（每节点独立 HTTP 入站 → 该节点出站；端点目标解析走穿隧道 EXIT_RESOLVER_IP，geo 正确）
       await ensureYandexDnsPlan(5 * 60_000);
-      const config = this.generateProxyTestConfig(usable, serverPortMap);
+      const config = this.generateProxyTestConfig(usable, serverPortMap, xray, supportOutbounds);
       tempConfig = config;
 
       // 3. 写入临时配置文件
@@ -537,11 +604,23 @@ export class SpeedTestService {
           return;
         }
         const port = serverPortMap.get(u.server.id)!;
-        const { latency, reason } = await this.measureViaTunnel(
+        let { latency, reason } = await this.measureViaTunnel(
           port,
           SpeedTestService.MEASURE_TIMEOUT_MS,
           target
         );
+        // URLTest checks members asynchronously when the temporary core starts.
+        if (
+          latency === null &&
+          importedGroupMembers(u.server) &&
+          this.getCoreGeneration() === gen0
+        ) {
+          ({ latency, reason } = await this.measureViaTunnel(
+            port,
+            SpeedTestService.MEASURE_TIMEOUT_MS,
+            target
+          ));
+        }
         // 超代再检（measure 期间核可能刚 START）：绝不写假 -1——超代的未测 vs measureViaTunnel 真实失败(-1) 由此分流。
         if (this.getCoreGeneration() !== gen0) {
           if (runCtx) runCtx.outcome = 'interrupted';
@@ -578,6 +657,7 @@ export class SpeedTestService {
         }
       }
     } finally {
+      xray?.stop();
       this.lastDiagnostics = {
         generatedAt: new Date().toISOString(),
         target,
@@ -810,12 +890,18 @@ export class SpeedTestService {
 
   private generateProxyTestConfig(
     usable: { server: ServerConfig; tag: string; outbound: Record<string, unknown> }[],
-    serverPortMap: Map<string, number>
+    serverPortMap: Map<string, number>,
+    xray?: XrayBridge,
+    supportOutbounds: Record<string, unknown>[] = []
   ): Record<string, unknown> {
     const inbounds: Record<string, unknown>[] = [];
-    const outbounds: Record<string, unknown>[] = [];
+    const outbounds: Record<string, unknown>[] = [...supportOutbounds];
     const endpoints: Record<string, unknown>[] = [];
     const routeRules: Record<string, unknown>[] = [];
+    if (xray) {
+      inbounds.push({ ...xray.directInbound() });
+      routeRules.push({ ...xray.directRule() });
+    }
     // 解析节点 server 地址的国内 DNS（见下「两类解析不变量」）；端点另加穿隧道 DNS（dns-exit-<id8>）。
     // Yandex IP-DoH（上游为 AliDNS UDP 53）：节点域名不以明文 UDP 交给运营商路径（防劫持/投毒、不外泄节点域名）。
     const dnsServers: Record<string, unknown>[] = [
@@ -896,6 +982,7 @@ export class SpeedTestService {
 
     // 必须有 direct 出站（sing-box 启动要求）
     outbounds.push({ type: 'direct', tag: 'direct' });
+    if (xray) outbounds.push({ ...xray.directOutbound('dns-direct') });
 
     // 两类解析不变量（issue #154 + 2026-07 端点修正，真机 debug 确证）：
     //  · 代理出站（vless/vmess/trojan/hy2/tuic/ss/snell/anytls/naive/ssh…）：目标域名以 ATYP=domain **透传给出口远程

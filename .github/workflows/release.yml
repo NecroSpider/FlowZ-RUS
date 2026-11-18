@@ -63,47 +63,15 @@ jobs:
 
       - name: Create DMG (macOS, arm64 + x64)
         if: matrix.platform == 'mac'
-        run: |
-          # electron-builder.json mac.target.arch = [arm64, x64] → 两个架构的 .app 都已构建，但
-          # 多架构下 electron-builder 会把其中一个架构放进【无后缀】的 dist-package/mac/
-          # （v4.1.0 实测：x64 落 dist-package/mac、arm64 落 dist-package/mac-arm64），各自含对应架构的提权 helper。
-          # 故此处按 arch 后缀目录优先、回退无后缀目录，并用 lipo 校验确属目标架构；缺则【报错失败】（不再静默跳过，
-          # 避免 v4.1.0 那样绿灯却漏发 mac-x64 包）。
-          VERSION=${GITHUB_REF#refs/tags/v}
-          for ARCH in arm64 x64; do
-            DMG_PATH="dist-package/FlowZ-${VERSION}-mac-${ARCH}.dmg"
-            case "$ARCH" in arm64) WANT=arm64 ;; x64) WANT=x86_64 ;; esac
-            APP_PATH=""
-            for CAND in "dist-package/mac-${ARCH}/FlowZ.app" "dist-package/mac/FlowZ.app"; do
-              [ -d "$CAND" ] || continue
-              EXE=$(ls "$CAND"/Contents/MacOS/* 2>/dev/null | head -1)
-              if [ -n "$EXE" ] && lipo -archs "$EXE" 2>/dev/null | tr ' ' '\n' | grep -qx "$WANT"; then
-                APP_PATH="$CAND"; break
-              fi
-            done
-            if [ -z "$APP_PATH" ]; then
-              echo "::error::FlowZ.app for ${ARCH} (${WANT}) not found (checked dist-package/mac-${ARCH}/ and dist-package/mac/); the release would miss the mac-${ARCH} package. Check the electron-builder --${ARCH} output of package:mac."
-              exit 1
-            fi
-            echo "Using ${ARCH} app bundle: $APP_PATH"
-            echo "Ad-hoc deep signing ${ARCH} app bundle (fix Team ID mismatch)..."
-            codesign --force --deep --sign - "$APP_PATH"
+        run: bash scripts/create-macos-dmg.sh "${GITHUB_REF#refs/tags/v}"
 
-            echo "Creating ${ARCH} DMG..."
-            TEMP_DIR=$(mktemp -d)
-            cp -R "$APP_PATH" "$TEMP_DIR/"
-            ln -s /Applications "$TEMP_DIR/Applications"
-            # ad-hoc 签名（无付费 Developer ID/公证）→ 从下载的 DMG 拖出的 app 带 quarantine，
-            # macOS 首次打开报「已损坏，应移到废纸篓」，且右键→打开无效、须 xattr -cr。
-            # DMG 内附首次打开引导（中英），教用户清除隔离属性。文件名带序号让它排在 app 前、更显眼。
-            cp "build/macos-dmg-open-guide.txt" "$TEMP_DIR/0 READ ME FIRST.txt"
-            hdiutil create -volname "FlowZ ${VERSION} (${ARCH})" \
-              -srcfolder "$TEMP_DIR" \
-              -ov -format UDZO \
-              "$DMG_PATH"
-            rm -rf "$TEMP_DIR"
-            echo "Created: $DMG_PATH"
-          done
+      - name: Create Windows ZIP (beta)
+        if: matrix.platform == 'win' && contains(github.ref_name, '-beta.')
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          tar.exe -a -cf "dist-package/FlowZ-${version}-win-x64.zip" -C dist-package/win-unpacked .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -114,6 +82,7 @@ jobs:
             dist-package/*.dmg
             dist-package/*.AppImage
             dist-package/*.deb
+            dist-package/*.zip
           retention-days: 5
 
   create-release:
@@ -132,6 +101,14 @@ jobs:
       - name: Display structure of downloaded files
         run: ls -R artifacts
 
+      - name: Prepare diagnostics and checksums
+        run: |
+          cp scripts/collect-flowz-windows.ps1 artifacts/
+          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.zip' -o -name '*.ps1' \) -print0 | sort -z | while IFS= read -r -d '' file; do
+            digest=$(sha256sum "$file" | cut -d ' ' -f 1)
+            printf '%s  %s\n' "$digest" "$(basename "$file")"
+          done > artifacts/SHA256SUMS.txt
+
       - name: Extract version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
@@ -144,12 +121,15 @@ jobs:
         with:
           name: Release ${{ steps.version.outputs.VERSION }}
           draft: true
-          prerelease: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
           generate_release_notes: true
           files: |
             artifacts/**/*.exe
             artifacts/**/*.dmg
             artifacts/**/*.AppImage
             artifacts/**/*.deb
+            artifacts/**/*.zip
+            artifacts/collect-flowz-windows.ps1
+            artifacts/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

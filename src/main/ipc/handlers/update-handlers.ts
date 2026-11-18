@@ -11,15 +11,12 @@ export function setUpdateService(service: UpdateService): void {
 }
 
 export function registerUpdateHandlers(): void {
-  registerIpcHandler<{ includePrerelease?: boolean }, UpdateCheckResult>(
-    IPC_CHANNELS.UPDATE_CHECK,
-    async (_event: IpcMainInvokeEvent, args) => {
-      if (!updateService) {
-        return { hasUpdate: false, error: 'UpdateService not initialized' };
-      }
-      return updateService.checkForUpdate(args?.includePrerelease ?? false);
+  registerIpcHandler<void, UpdateCheckResult>(IPC_CHANNELS.UPDATE_CHECK, async () => {
+    if (!updateService) {
+      return { hasUpdate: false, error: 'UpdateService not initialized' };
     }
-  );
+    return updateService.checkForUpdate({ allowStableRollback: true });
+  });
 
   registerIpcHandler<
     { updateInfo: UpdateInfo },

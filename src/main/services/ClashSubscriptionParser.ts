@@ -17,6 +17,7 @@ import { normalizeDuration } from '../../shared/duration';
 import { dedupeTrim } from '../../shared/collections';
 import * as vm from 'vm';
 import { certPinWarning, unsupportedVlessEncryption, vlessEncryptionError } from './ProtocolParser';
+import { canUseXray, isXrayVlessEncryption, requiresXray } from '../../shared/xray-node';
 
 // ── 探测正则 / 校验 ──────────────────────────────────────────────────────────
 /** 内联 proxies: 或 proxy-providers: 任一命中即「确为 Clash 意图」。 */
@@ -402,15 +403,18 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       const uuid = str(p['uuid']);
       if (!uuid) return { kind: 'fail', reason: `vless node "${name}" missing uuid` };
       config.uuid = uuid;
-      // mihomo vless 的 encryption 若是 VLESS Encryption（mlkem768x25519plus.…）→ 内核不支持，同 xhttp 口径拒绝。
-      const encMethod = unsupportedVlessEncryption(p['encryption']);
+      const encryption = str(p['encryption'])?.trim();
+      const encMethod = unsupportedVlessEncryption(encryption);
       if (encMethod) throw vlessEncryptionError(encMethod);
-      config.encryption = 'none';
+      config.encryption = isXrayVlessEncryption(encryption) ? encryption : 'none';
       const flow = str(p['flow']);
       if (flow) config.flow = flow;
       const pe = str(p['packet-encoding']);
       if (pe !== undefined) config.packetEncoding = pe;
       applyTransportAndTls(config, p, false);
+      if (requiresXray(config) && !canUseXray(config)) {
+        throw new Error('Unsupported transport type: Xray VLESS combination');
+      }
     } else if (protocol === 'vmess') {
       const uuid = str(p['uuid']);
       if (!uuid) return { kind: 'fail', reason: `vmess node "${name}" missing uuid` };

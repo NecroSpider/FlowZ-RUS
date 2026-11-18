@@ -87,6 +87,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Smoke test Windows diagnostic collector
+        if: github.event_name == 'workflow_dispatch' && matrix.platform == 'win'
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'flowz-diagnostic-smoke'
+          $originalAppData = $env:APPDATA
+          try {
+            $env:APPDATA = Join-Path $root 'appdata'
+            $logs = New-Item -ItemType Directory -Path (Join-Path $env:APPDATA 'OpenVPN Connect\log') -Force
+            @(
+              "2026-11-10 12:00:00 PUSH: Received control message: 'PUSH_REPLY,route 10.23.0.0 255.255.0.0,dhcp-option DNS 10.23.0.53,auth-token sample-secret'"
+              '2026-11-10 12:00:01 Initialization Sequence Completed'
+            ) | Set-Content -LiteralPath (Join-Path $logs.FullName 'openvpn.log')
+            .\scripts\collect-flowz-windows.ps1 -OutputRoot $root -SnapshotOnly
+            $archive = Get-ChildItem -LiteralPath $root -Filter '*.zip' -File
+            if (@($archive).Count -ne 1) { throw 'Expected a diagnostic ZIP' }
+            Expand-Archive -LiteralPath $archive.FullName -DestinationPath (Join-Path $root 'extracted')
+            $report = Get-Content -LiteralPath (Join-Path $root 'extracted\snapshot.json') -Raw
+            $snapshot = $report | ConvertFrom-Json
+            if (-not $snapshot.adapters.rows -or -not $snapshot.routes.rows) { throw 'Missing adapter or route data' }
+            if ($report -notmatch 'dhcp-option DNS 10\.23\.0\.53' -or $report -match 'sample-secret|auth-token') {
+              throw 'OpenVPN summary omitted DNS or exposed an auth token'
+            }
+          } finally {
+            $env:APPDATA = $originalAppData
+          }
+
       # PR 冒烟：完整 prep（helper 编译 + 资产 fetch + build）+ `electron-builder --dir`——验证打包链能过，
       # 跳过 nsis/portable/压缩/签名/上传（省 PR 时长且语义诚实：冒烟就是冒烟，不假装出安装包）。
       #

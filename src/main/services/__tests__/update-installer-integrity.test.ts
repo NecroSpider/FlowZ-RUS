@@ -35,7 +35,7 @@ const URL = 'https://github.com/NecroSpider/FlowZ-RUS/releases/download/v1.1.0/F
 
 type Internals = {
   assetSha256ByUrl: Map<string, string>;
-  verifiedInstallers: Map<string, string>;
+  verifiedInstallers: Map<string, { digest: string }>;
   verifyInstaller(filePath: string, url: string): Promise<void>;
   localizeDownloadError(raw: string): string;
   fetchReleases: () => Promise<any[]>;
@@ -89,7 +89,7 @@ describe('UpdateService 安装包完整性校验', () => {
 
     await internals(svc).verifyInstaller(file, URL);
 
-    expect(internals(svc).verifiedInstallers.get(file)).toBe(sha('good'));
+    expect(internals(svc).verifiedInstallers.get(file)).toMatchObject({ digest: sha('good') });
     expect(fsSync.existsSync(file)).toBe(true);
   });
 

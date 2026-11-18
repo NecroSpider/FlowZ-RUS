@@ -1283,10 +1283,8 @@ export class ConfigManager implements IConfigManager {
    * 而非用户真实选择（旧 UI 既不暴露 stack 也不暴露 mtu）→ 归 'auto'，由解析期按 PLATFORM_DEFAULT_STACK /
    * PLATFORM_DEFAULT_MTU **当前表**落值。
    *
-   * **别把它读成「行为零变化」**：模型统一那批（表仍是旧值）确实零变化，但默认值一换，存量用户就随之被抬到
-   * 新档（Windows 存量 system/1350 → gvisor/65535，栈实现、吞吐、热切换路径全变）——这正是接入 'auto' 的目的：
-   * 改一张表即全量生效，无需第二次迁移。真正守住的不变量只有一条：**用户显式选择不被回灌**（两个 *Migrated
-   * 守卫各自把守，迁移只跑一次）。
+   * Later platform default changes apply automatically to settings stored as 'auto'. The two
+   * migration markers preserve explicit choices made after the initial migration.
    * 详见 docs/design/tun-stack-option.md §7 与 shared/tun-defaults#migrateTunDefaults。
    */
   private async migrateTunDefaults(config: UserConfig): Promise<void> {

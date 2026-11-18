@@ -18,15 +18,15 @@ import {
 } from '../tun-defaults';
 
 describe('resolveTunStack — Auto 平台映射', () => {
-  it('auto → 平台默认（mac·win gvisor / linux system）', () => {
+  it('uses gvisor on macOS and system on Windows and Linux in Auto', () => {
     expect(resolveTunStack('auto', 'darwin')).toBe('gvisor');
-    expect(resolveTunStack('auto', 'win32')).toBe('gvisor');
+    expect(resolveTunStack('auto', 'win32')).toBe('system');
     expect(resolveTunStack('auto', 'linux')).toBe('system');
   });
 
   it('缺省（undefined/null）等同 auto → 平台默认', () => {
     expect(resolveTunStack(undefined, 'darwin')).toBe('gvisor');
-    expect(resolveTunStack(undefined, 'win32')).toBe('gvisor');
+    expect(resolveTunStack(undefined, 'win32')).toBe('system');
     expect(resolveTunStack(null, 'linux')).toBe('system');
   });
 
@@ -123,12 +123,12 @@ describe('resolveTunMtu — Auto 按 (平台 × 具体栈) 解析', () => {
   });
 
   /** 各平台 Auto 档的实际落值 = (Auto 栈, 该栈 MTU)，UI 占位符与下发值都依赖这条闭环。 */
-  it('Auto 档端到端落值：win gvisor+65535 / mac gvisor+9000 / linux system+4064', () => {
+  it('resolves Auto to system/4064 on Windows and Linux and gvisor/9000 on macOS', () => {
     const autoOf = (p: string) => {
       const st = resolveTunStack('auto', p);
       return [st, resolveTunMtu('auto', p, st)];
     };
-    expect(autoOf('win32')).toEqual(['gvisor', 65535]);
+    expect(autoOf('win32')).toEqual(['system', 4064]);
     expect(autoOf('darwin')).toEqual(['gvisor', 9000]);
     expect(autoOf('linux')).toEqual(['system', 4064]);
   });
@@ -222,7 +222,7 @@ describe('迁移后解析闭环：存量被抬到新档，用户显式值不动'
   it('存量 (旧强制默认 stack + 旧强制默认 mtu) 迁移成 auto 后，解析到新平台档', () => {
     const cases = [
       { platform: 'darwin' as const, stack: 'gvisor' as const, mtu: 1400, want: ['gvisor', 9000] },
-      { platform: 'win32' as const, stack: 'system' as const, mtu: 1350, want: ['gvisor', 65535] },
+      { platform: 'win32' as const, stack: 'system' as const, mtu: 1350, want: ['system', 4064] },
       { platform: 'linux' as const, stack: 'system' as const, mtu: 1350, want: ['system', 4064] },
     ];
     for (const { platform, stack, mtu, want } of cases) {
@@ -355,7 +355,7 @@ describe('常量单一真值', () => {
 
   it('PLATFORM_DEFAULT_STACK 映射正确', () => {
     expect(PLATFORM_DEFAULT_STACK.darwin).toBe('gvisor');
-    expect(PLATFORM_DEFAULT_STACK.win32).toBe('gvisor'); // 本批改：实测 +133% 吞吐、CPU 减半
+    expect(PLATFORM_DEFAULT_STACK.win32).toBe('system');
     expect(PLATFORM_DEFAULT_STACK.linux).toBe('system');
   });
 

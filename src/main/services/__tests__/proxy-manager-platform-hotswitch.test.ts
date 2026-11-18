@@ -162,10 +162,7 @@ describe('ProxyManager.planHotSwitch 平台/栈矩阵', () => {
 
   const PUT_A_TO_B = [{ selectorTag: 'proxy-selector', memberTag: 'tagB', oldMemberTag: 'tagA' }];
 
-  /**
-   * 核心回归：Windows Auto 档现解析为 gvisor（PLATFORM_DEFAULT_STACK.win32）。旧 guard 在此正好命中
-   * 「非 system → 退回重启」→ 全体 Windows 用户换节点都要重启核。必须是 global。
-   */
+  // Keep hot switching available on every Windows TUN stack.
   it.each(['gvisor', 'mixed', 'auto', 'system'])(
     'win32 + tun + stack=%s：换全局节点 → kind="global"（guard 已删，不再退回重启）',
     (stack) => {

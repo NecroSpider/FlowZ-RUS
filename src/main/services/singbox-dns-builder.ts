@@ -50,12 +50,13 @@ import {
   effectiveAppRules,
   DOMESTIC_BANK_AND_STOCK_DOMAINS,
 } from './singbox-config-helpers';
-// fake-ip-filter 默认清单（captive→真实本地解析、ntp→真实 DoH）。单一真值在 shared，renderer 设置页可编辑清单 seed 共用。
+// fake-ip-filter 默认清单（captive/NTP + Xbox/PlayFab）。单一真值在 shared，renderer 设置页可编辑清单 seed 共用。
 // 启动必经规则、刻意硬编码不依赖远程 rule_set（防 404 FATAL）。用户编辑后存 config.fakeIpFilterList。
 import {
   FAKEIP_FILTER_CAPTIVE_DOMAINS,
   FAKEIP_FILTER_NTP_SUFFIXES,
   FAKEIP_FILTER_NTP_STUN_KEYWORDS,
+  FAKEIP_FILTER_GAMING_SUFFIXES,
   FAKEIP_INET4_RANGE,
   FAKEIP_INET6_RANGE,
 } from '../../shared/fakeip-filter';
@@ -435,12 +436,67 @@ export function buildDnsConfig(
   // split 不生效时出口恒是代理 → fallthrough 恒隧道。原实现无模式门控，global+reverse 下会错误地给 dns-domestic。
   const fakeipFallthroughResolver =
     fakeipSplitActive && fakeipRegion.reverse ? 'dns-domestic' : 'dns-remote';
+  const dnsCustomRules = effectiveCustomRules(config);
 
   // fake-ip-filter 默认清单（仅 FakeIP 开启时有意义；config.fakeIpFilter === false 可关）：NTP/STUN/Captive 等
   // 在 FakeIP 下会坏的域名 → 在 fakeip catch-all 之前命中、改走真实解析器，绕过 FakeIP。内联硬编码、无下载依赖。
   if (enableFakeIp && config.fakeIpFilter !== false) {
+    // Shared by the built-in game preset and edited lists: real DNS must follow the traffic's exit.
+    const pushExitAwareFilter = (domains: string[]) => {
+      if (domains.length === 0) return;
+      const suffixes = domains.flatMap(withDotPrefix);
+      const filterMatcher: SingBoxDnsRule = { domain_suffix: suffixes };
+      if (proxyMode === 'direct') {
+        dnsRules.push({ domain_suffix: suffixes, server: 'dns-domestic' } as SingBoxDnsRule);
+        return;
+      }
+      // Mirror unconditional domain routing before the regional fallback. DNS exceptions must not
+      // make an explicitly direct site depend on the proxy; preserve first-match custom rule order.
+      // Port/process/IP conditions describe a connection, so projecting their domain part alone is unsafe.
+      for (const rule of dnsCustomRules) {
+        if (!rule.enabled) continue;
+        if (
+          !ruleConditions(rule).every((c) =>
+            ['domain', 'domainSuffix', 'domainKeyword', 'domainRegex'].includes(c.type)
+          )
+        )
+          continue;
+        const plan = planCustomRule(rule);
+        if (plan.kind !== 'ext') continue;
+        const base = customRuleFileBase(rule.id);
+        // Reuse the route rule-set when externalized, so edits keep working through fswatch.
+        const matcher = require('fs').existsSync(path.join(getCustomRulesDir(), `${base}.json`))
+          ? { rule_set: [base] }
+          : (plan.fileRules[0] as SingBoxDnsRule);
+        let resolver = getDomesticResolverTag(config, 'dns-domestic');
+        if (rule.action === 'proxy') {
+          resolver = `dns-filter-${base}`;
+          dnsServers.push(buildUserDns(resolver, foreign, `rule-sel-${rule.id}`));
+        }
+        dnsRules.push({
+          type: 'logical',
+          mode: 'and',
+          rules: [filterMatcher, matcher],
+          server: resolver,
+        });
+      }
+      if (fakeipSplitActive && fakeipLocalGeo.length > 0) {
+        // A single-default geosite rule-set is merged into a flat rule's domain OR group by sing-box.
+        // Explicit logical AND prevents it from matching every exception OR every regional domain.
+        dnsRules.push({
+          type: 'logical',
+          mode: 'and',
+          rules: [filterMatcher, { rule_set: fakeipLocalGeo }],
+          server: fakeipLocalResolver,
+        });
+      }
+      dnsRules.push({
+        domain_suffix: suffixes,
+        server: fakeipFallthroughResolver,
+      } as SingBoxDnsRule);
+    };
     if (config.fakeIpFilterList === undefined) {
-      // 默认（未编辑）：与历史逐字节一致。captive→internalResolverTag（接入网/LAN 解析器反映真实本地网络，
+      // 默认（未编辑）：captive→internalResolverTag（接入网/LAN 解析器反映真实本地网络，
       // 否则系统误判断网/锁屏登录卡死）；ntp/stun→dns-domestic（真实 DoH，校时与 P2P 需真实 IP）。
       dnsRules.push({
         domain: FAKEIP_FILTER_CAPTIVE_DOMAINS,
@@ -451,6 +507,7 @@ export function buildDnsConfig(
         domain_keyword: FAKEIP_FILTER_NTP_STUN_KEYWORDS,
         server: 'dns-domestic',
       } as SingBoxDnsRule);
+      pushExitAwareFilter(FAKEIP_FILTER_GAMING_SUFFIXES);
     } else {
       // 用户编辑过的清单：内置 captive 域名仍→internalResolverTag（保 captive 检测正确）；其余按**出口**选解析器。
       // ntp/stun 关键字（裸子串、非域名清单项）始终兜底保留。
@@ -463,30 +520,7 @@ export function buildDnsConfig(
       if (captive.length > 0) {
         dnsRules.push({ domain: captive, server: internalResolverTag } as SingBoxDnsRule);
       }
-      if (others.length > 0) {
-        const otherSuffixes = others.flatMap(withDotPrefix);
-        if (proxyMode === 'direct') {
-          // direct 模式出口恒直连（且该模式压根不发 fakeip catch-all，本块只是兼容残留）→ 保持境内，零 delta。
-          dnsRules.push({
-            domain_suffix: otherSuffixes,
-            server: 'dns-domestic',
-          } as SingBoxDnsRule);
-        } else {
-          // 与 R1 影子规则同一口径。两键并存（domain_suffix + rule_set）在 sing-box 是 AND 语义；
-          // localGeo 为空（.srs 缺失）时自动只剩隧道腿 = fail-closed，不会退化成「全部境内」。
-          if (fakeipSplitActive && fakeipLocalGeo.length > 0) {
-            dnsRules.push({
-              domain_suffix: otherSuffixes,
-              rule_set: fakeipLocalGeo.length === 1 ? fakeipLocalGeo[0] : fakeipLocalGeo,
-              server: fakeipLocalResolver,
-            } as unknown as SingBoxDnsRule);
-          }
-          dnsRules.push({
-            domain_suffix: otherSuffixes,
-            server: fakeipFallthroughResolver,
-          } as SingBoxDnsRule);
-        }
-      }
+      pushExitAwareFilter(others);
       dnsRules.push({
         domain_keyword: FAKEIP_FILTER_NTP_STUN_KEYWORDS,
         server: 'dns-domestic',
@@ -498,7 +532,6 @@ export function buildDnsConfig(
   // 可外化规则（smart/global + 已落盘 <base>.dns.json）→ 引用其 <base>-dns rule_set，值不进 DNS 配置
   // （改值原子替换文件 → fswatch 热重载、零重启）；inline / direct 模式 / 文件缺失降级 → 仍按值提取合并（现状）。
   // 用户路由仅 smart 生效（effectiveCustomRules）：global/direct 下 route 侧不 emit 自定义规则，其 bypassFakeIP DNS 也不应注入
-  const dnsCustomRules = effectiveCustomRules(config);
   if (dnsCustomRules.length && enableFakeIp) {
     // #347：按**规则自身的去向**分桶，而非合并成一条恒 dns-bootstrap。bypassFakeIP 的语义是「不要假 IP、
     // 给我真实 IP」，而「真实 IP」是否可用取决于用谁解析：去向=代理的域名被境内递归解析（且这批域名恰恰

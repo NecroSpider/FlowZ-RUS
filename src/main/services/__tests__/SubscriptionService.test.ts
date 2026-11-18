@@ -138,6 +138,36 @@ describe('HIGH-1 + M5 — 0 节点必须 throw（不穿仓）', () => {
     );
   });
 
+  it('rejects a remote subscription containing only provider placeholders', async () => {
+    const svc = newService(new FakeLog());
+    const uuid = '00000000-0000-4000-8000-000000000001';
+    const body = Buffer.from(
+      `vless://${uuid}@0.0.0.0:1#Account\nvless://${uuid}@127.0.0.1:1#Support\nvless://${uuid}@[::1]:1#Notice`
+    ).toString('base64');
+    const url = 'https://sub.example.com/c';
+    mockFetch.mockImplementation(() => Promise.resolve(makeResponse({ body })));
+
+    await expect(svc.fetchSubscription(url, SUB_ID)).rejects.toThrow('only placeholder entries');
+    await expect(svc.previewSubscription(url, {})).resolves.toMatchObject({
+      ok: false,
+      errorKind: 'empty',
+    });
+  });
+
+  it.each([
+    ['https://sub.example.com/c', ['127.0.0.1:1', 'proxy.example.com:443']],
+    ['https://sub.example.com/c', ['127.0.0.1:1080']],
+    ['http://localhost:8080/c', ['127.0.0.1:1']],
+  ])('retains usable entries from %s', async (url, addresses) => {
+    const svc = newService(new FakeLog());
+    const uuid = '00000000-0000-4000-8000-000000000001';
+    const body = addresses.map((address) => `vless://${uuid}@${address}#Node`).join('\n');
+    mockFetch.mockResolvedValue(makeResponse({ body }));
+
+    const { servers } = await svc.fetchSubscription(url, SUB_ID);
+    expect(servers).toHaveLength(addresses.length);
+  });
+
   it('正常 JSON-Clash 有节点 → 不 throw，返回 servers', async () => {
     const log = new FakeLog();
     const svc = newService(log);
@@ -661,20 +691,23 @@ describe('issue #263 — 聚合可见性 / 指纹传输维度 / ssh 映射', () 
     expect(infos).toMatch(/plus 3 skipped\/failed/);
   });
 
-  it('URL-list：xhttp 节点 fail 计入结果 info（issue #263 主症状可见化）', async () => {
+  it('imports XHTTP and counts KCP as unsupported in URL-list subscriptions', async () => {
     const log = new FakeLog();
     const svc = newService(log);
-    const content = ['anytls://pw@a.com:443#any', 'vless://uuid-1@a.com:443?type=xhttp#dead'].join(
-      '\n'
-    );
+    const content = [
+      'anytls://pw@a.com:443#any',
+      'vless://uuid-1@a.com:443?type=xhttp#xhttp',
+      'vless://uuid-1@a.com:443?type=kcp#dead',
+    ].join('\n');
     const r = await (svc as any).parseSubscriptionContent(content, 'sub-x', CTX);
-    expect(r.servers).toHaveLength(1);
+    expect(r.servers).toHaveLength(2);
     expect(r.servers[0].protocol).toBe('anytls');
     const warns = log.entries
       .filter((e) => e.level === 'warn')
       .map((e) => e.message)
       .join('\n');
-    expect(warns).toMatch(/Unsupported transport type: xhttp/);
+    expect(r.servers[1].network).toBe('xhttp');
+    expect(warns).toMatch(/Unsupported transport type: kcp/);
     const infos = log.entries
       .filter((e) => e.level === 'info')
       .map((e) => e.message)
@@ -972,6 +1005,28 @@ describe('§16.3.4 reconcileServers contentChanged（手动 force-restart / 渲�
   // uuid=指纹凭据（serverFingerprint 用之）；id 独立（reconcile 保留旧 id）；name 只入 contentKey 不入指纹。
   const node = (uuid: string, addr: string, name = uuid, id = `id-${uuid}`): ServerConfig =>
     ({ id, name, protocol: 'vless', address: addr, port: 443, uuid }) as ServerConfig;
+
+  it('keeps imported group references valid after refreshing matching nodes', () => {
+    const group = (id: string, memberId: string): ServerConfig => ({
+      id,
+      name: 'Automatic',
+      protocol: 'custom',
+      address: '',
+      port: 0,
+      customSettings: { outbound: { type: 'urltest' } },
+      urltestMemberIds: [memberId],
+    });
+    const result = SubscriptionService.reconcileServers(
+      [group('old-group', 'old-member'), node('u1', '1.1.1.1', 'Node', 'old-member')],
+      [group('new-group', 'new-member'), node('u1', '1.1.1.1', 'Node', 'new-member')],
+      'NOW'
+    );
+    expect(result.contentChanged).toBe(false);
+    expect(result.servers[0]).toMatchObject({
+      id: 'old-group',
+      urltestMemberIds: ['old-member'],
+    });
+  });
 
   it('新增节点 → contentChanged=true', () => {
     const r = SubscriptionService.reconcileServers(
