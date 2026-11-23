@@ -1,6 +1,6 @@
 # Release Guide
 
-This document describes how to ship a new FlowZ release. The single trigger for a release is **pushing a `v*` tag**: CI (`.github/workflows/release.yml`) then builds on three platforms and creates the GitHub Release automatically. Local full packaging is for verification / offline builds only and is not part of the release path.
+This document describes how to ship a new FlowZ release. The single trigger for a release is **pushing a `v*` tag**: CI (`.github/workflows/release.yml`) then builds on three platforms and creates a **draft** GitHub Release automatically. Publish the draft manually only after verification. Local full packaging is for verification / offline builds only and is not part of the release path.
 
 ## Prerequisites
 
@@ -35,16 +35,16 @@ This document describes how to ship a new FlowZ release. The single trigger for 
    ```
    The script (`scripts/push-release.js`) checks the working tree is clean, whether the local/remote tag already exists, and — after confirmation — creates and pushes the tag. **It only pushes the tag**; building and publishing are done entirely by CI.
 
-4. **CI builds and publishes automatically**
+4. **CI builds and creates a draft automatically**
 
    On a `v*` tag push, `release.yml`:
-   - runs `npm run package:<platform>` in parallel on `windows-2022` / `macos-14` / `ubuntu-latest`;
+   - runs `npm run package:<platform>` in parallel on `windows-2022` / `macos-15` / `ubuntu-latest`;
    - fetches the core and dashboard at build time (see "Build-time external artifacts"); on macOS it also packs both the arm64 and x64 `.app` into DMGs;
-   - collects each platform's artifacts, generates Release Notes, and creates the GitHub Release via `softprops/action-gh-release`, uploading all installers.
+   - collects each platform's artifacts, generates Release Notes, and creates the draft GitHub Release via `softprops/action-gh-release`, uploading all installers. Versions with a hyphen are marked as prereleases; drafts stay out of the updater until published.
 
 5. **Verify the Release**
 
-   Open the repo's Releases page and confirm the version and all platform artifacts are present — in particular both mac arm64 and x64 (one of them has historically gone missing).
+   Open the repo's Releases page while signed in and confirm the draft version and all platform artifacts are present — in particular both mac arm64 and x64 (one of them has historically gone missing). Download and test the draft assets on the target machines. Keep the release as a draft until those checks pass and publication is authorized.
 
 ## Local full packaging (optional: verify / offline build, no release)
 
@@ -101,7 +101,7 @@ Tags look like `v4.1.4` (`push-release.js` adds the `v` prefix automatically —
 ## CI/CD
 
 - **`.github/workflows/build.yml`** — build verification on branch pushes.
-- **`.github/workflows/release.yml`** — packages on three platforms + auto-creates the Release on a `v*` tag push.
+- **`.github/workflows/release.yml`** — packages on three platforms + creates a draft Release on a `v*` tag push.
 - Env: CI uses the built-in `GITHUB_TOKEN` (`permissions: contents: write`) to create the Release; the electron binary is pulled via an npmmirror mirror for speed.
 - To change CI: edit the files under `.github/workflows/`.
 

@@ -43,6 +43,7 @@ import { withPlatformAsync } from './platform-test-utils';
 import { spawn } from 'child_process';
 import { powerMonitor } from 'electron';
 import { workVpnFingerprint } from '../../../shared/work-vpn';
+import * as raceDns from '../node-dns-race-server';
 
 const mockFlush = flushOsDnsCache as jest.MockedFunction<typeof flushOsDnsCache>;
 
@@ -405,6 +406,30 @@ describe('startDnsInterfaceWatcher 接线', () => {
       svc.stopDnsInterfaceWatcher();
       expect(svc.linkChangeHandler).toBeNull(); // 停时一并收，防跨代触发
     });
+  });
+
+  it('drops cached DoH connections when the network fingerprint changes', async () => {
+    const resetConnections = jest.spyOn(raceDns, 'closeH2DohSessions').mockImplementation(() => {});
+    try {
+      await withPlatformAsync('linux', async () => {
+        const svc = makeSvc();
+        (spawn as unknown as jest.Mock).mockReturnValue(makeFakeChild().child);
+        svc.checkWorkVpnChange = jest.fn().mockResolvedValue(undefined);
+        svc.readNetworkFingerprint = jest.fn().mockReturnValue('new-network');
+        svc.lastNetworkFingerprint = 'old-network';
+        svc.flushOsDnsCacheBestEffort = jest.fn().mockResolvedValue(undefined);
+        svc.startDnsInterfaceWatcher();
+        try {
+          await svc.linkChangeHandler();
+          expect(resetConnections).toHaveBeenCalledTimes(1);
+          expect(svc.flushOsDnsCacheBestEffort).toHaveBeenCalledWith('link-change', 'new-network');
+        } finally {
+          svc.stopDnsInterfaceWatcher();
+        }
+      });
+    } finally {
+      resetConnections.mockRestore();
+    }
   });
 
   it('唤醒豁免限频真的接上了（onResume → lastLinkChangeFlushAt 归零）', async () => {

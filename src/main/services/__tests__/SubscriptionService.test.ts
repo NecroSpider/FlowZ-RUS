@@ -15,12 +15,14 @@
 // ── electron mock（必须在 import SubscriptionService 之前）──────────────────────
 const mockFetch = jest.fn();
 const mockSetProxy = jest.fn().mockResolvedValue(undefined);
+const mockClearHostResolverCache = jest.fn().mockResolvedValue(undefined);
 jest.mock('electron', () => ({
   app: { getVersion: () => '9.9.9' },
   net: { fetch: (...a: unknown[]) => mockFetch(...a) },
   session: {
     fromPartition: () => ({
       setProxy: mockSetProxy,
+      clearHostResolverCache: mockClearHostResolverCache,
       fetch: (...a: unknown[]) => mockFetch(...a),
     }),
   },
@@ -91,8 +93,29 @@ function allowAllDns() {
 
 beforeEach(() => {
   mockFetch.mockReset();
+  mockClearHostResolverCache.mockClear();
   mockLookup.mockReset();
   allowAllDns();
+});
+
+describe('direct subscription DNS after a VPN change', () => {
+  it('refreshes Chromium DNS before each request, including a reused session', async () => {
+    const svc = newService(new FakeLog());
+    const body = JSON.stringify({
+      outbounds: [{ type: 'trojan', server: 'proxy.example.com', server_port: 443, password: 'p' }],
+    });
+    mockFetch
+      .mockResolvedValueOnce(makeResponse({ body }))
+      .mockResolvedValueOnce(makeResponse({ body }));
+    await svc.fetchSubscription('https://sub.example.com/sub', SUB_ID);
+    await svc.fetchSubscription('https://sub.example.com/sub', SUB_ID);
+    expect(mockClearHostResolverCache).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 2; i++) {
+      expect(mockClearHostResolverCache.mock.invocationCallOrder[i]).toBeLessThan(
+        mockFetch.mock.invocationCallOrder[i]
+      );
+    }
+  });
 });
 
 describe('HIGH-1 + M5 — 0 节点必须 throw（不穿仓）', () => {

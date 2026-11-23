@@ -859,6 +859,7 @@
     "sni": "SNI",
     "sniPlaceholder": "например, example.com",
     "sniDesc": "TLS Server Name Indication, оставьте пустым для использования адреса сервера",
+    "allNodes": "Все",
     "manualNodes": "Свои узлы",
     "meshNodes": "Mesh",
     "addSubscription": "Добавить подписку",

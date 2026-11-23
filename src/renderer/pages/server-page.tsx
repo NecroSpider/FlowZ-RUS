@@ -101,7 +101,8 @@ export function ServerPage() {
   const [tabOverride, setTabOverride] = useState<string | null>(null);
   const activeTab =
     tabOverride &&
-    (tabOverride === 'manual' ||
+    (tabOverride === 'all' ||
+      tabOverride === 'manual' ||
       // 组网 Tab 常显（承载接入入口）→ override 到 mesh 恒有效，不再要求有组网节点。
       tabOverride === 'mesh' ||
       subscriptionIds.has(tabOverride))
@@ -278,6 +279,14 @@ export function ServerPage() {
         <div className="tabs">
           <button
             type="button"
+            className={activeTab === 'all' ? 'on' : ''}
+            onClick={() => setTabOverride('all')}
+          >
+            {t('servers.allNodes')}
+            {servers.length > 0 && ` · ${servers.length}`}
+          </button>
+          <button
+            type="button"
             className={activeTab === 'manual' ? 'on' : ''}
             onClick={() => setTabOverride('manual')}
           >
@@ -312,6 +321,22 @@ export function ServerPage() {
           })}
         </div>
       </div>
+
+      {activeTab === 'all' && (
+        <ServerList
+          key="all"
+          servers={servers}
+          showAddButton={false}
+          selectedServerId={selectedServerId ?? undefined}
+          onAddServer={handleAddServer}
+          onEditServer={handleEditServer}
+          onDeleteServer={handleDeleteServer}
+          onDeleteServers={handleDeleteServers}
+          onCloneServer={handleCloneServer}
+          onSelectServer={handleSelectServer}
+          onImportClick={() => setIsLocalImportOpen(true)}
+        />
+      )}
 
       {activeTab === 'manual' && (
         <ServerList

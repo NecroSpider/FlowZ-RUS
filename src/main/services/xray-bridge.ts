@@ -7,6 +7,8 @@ import {
   canUseXray,
   isXrayVlessEncryption,
   normalizeXrayTcpFragment,
+  normalizeXrayCertificatePins,
+  normalizeXrayCertificateNames,
 } from '../../shared/xray-node';
 import type {
   SingBoxDomainResolver,
@@ -20,7 +22,7 @@ const USER = 'flowz';
 const DIRECT_TAG = 'flowz-xray-direct';
 export const XRAY_EGRESS_TAG = 'flowz-xray-egress';
 
-function makeXrayOutbound(node: ServerConfig, tag: string) {
+export function makeXrayOutbound(node: ServerConfig, tag: string) {
   const network = node.network ?? 'tcp';
   const security = node.security ?? 'none';
   const tls = node.tlsSettings;
@@ -46,6 +48,12 @@ function makeXrayOutbound(node: ServerConfig, tag: string) {
       serverName: tls?.serverName || node.address,
       fingerprint: tls?.fingerprint,
       alpn: tls?.alpn,
+      ...(tls?.pinnedPeerCertSha256 !== undefined && {
+        pinnedPeerCertSha256: normalizeXrayCertificatePins(tls.pinnedPeerCertSha256),
+      }),
+      ...(tls?.verifyPeerCertByName !== undefined && {
+        verifyPeerCertByName: normalizeXrayCertificateNames(tls.verifyPeerCertByName),
+      }),
     };
   }
   if (network === 'grpc') {

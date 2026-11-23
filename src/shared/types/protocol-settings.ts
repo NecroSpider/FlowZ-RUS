@@ -5,6 +5,9 @@ export interface TlsSettings {
   allowInsecure?: boolean;
   alpn?: string[];
   fingerprint?: string;
+  /** Xray TLS certificate verification from VLESS share-link pcs / vcn. */
+  pinnedPeerCertSha256?: string;
+  verifyPeerCertByName?: string;
   ech?: boolean; // Encrypted Client Hello（隐藏 SNI）；sing-box tls.ech.enabled
   echConfig?: string; // 可选 ECHConfigList(PEM)；空=sing-box 从 DNS(HTTPS RR type65) 自取，填=下发 tls.ech.config
   fragment?: boolean; // TLS ClientHello 分片，抗 SNI-DPI；sing-box tls.fragment

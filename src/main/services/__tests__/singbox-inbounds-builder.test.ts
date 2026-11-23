@@ -223,6 +223,25 @@ describe('buildInbounds — TUN', () => {
     expect(tun.route_exclude_address).toContain('223.5.5.5/32'); // 核心 DNS 防回流
   });
 
+  it('macOS keeps bootstrap DNS outside the TUN while capturing the controlled system DNS', () => {
+    const tun = byTag(
+      withPlatform('darwin', () =>
+        buildInbounds(
+          cfg({ proxyModeType: 'tun' }),
+          undefined,
+          deps({ raceUpstreamIps: ['9.9.9.9', '2001:4860:4860::8844'] })
+        )
+      ),
+      'tun-in'
+    );
+    for (const ip of BOOTSTRAP_DIRECT_DNS_IPS) {
+      expect(tun.route_exclude_address).toContain(`${ip}/32`);
+    }
+    expect(tun.route_exclude_address).toContain('9.9.9.9/32');
+    expect(tun.route_exclude_address).toContain('2001:4860:4860::8844/128');
+    expect(tun.route_exclude_address).not.toContain(`${CONTROLLED_TUN_DNS_IP}/32`);
+  });
+
   it('Windows TUN：核心 DNS 排除表 ⊇ 派生集（BOOTSTRAP_DIRECT_DNS_IPS + 受控 TUN DNS IP，各 /32），不含 SoT 外杂项 1.1.1.1', () => {
     const excl = byTag(
       withPlatform('win32', () => buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())),
@@ -580,12 +599,16 @@ describe('buildInbounds — TUN 连入来源排除 (inboundExcludeCidrs)', () =>
     expect(byTag(ibs, 'tun-in').route_exclude_address).toContain('192.168.50.0/24');
   });
 
-  it('无 inboundExcludeCidrs → route_exclude 仅回环（零变化，darwin）', () => {
+  it('without user exclusions macOS still bypasses loopback and bootstrap DNS', () => {
     const ibs = withPlatform('darwin', () =>
       buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
     );
     const tun = byTag(ibs, 'tun-in');
-    expect(tun.route_exclude_address).toEqual(['127.0.0.0/8', '::1/128']);
+    expect(tun.route_exclude_address).toEqual([
+      '127.0.0.0/8',
+      '::1/128',
+      ...BOOTSTRAP_DIRECT_DNS_IPS.map((ip) => `${ip}/32`),
+    ]);
   });
 });
 

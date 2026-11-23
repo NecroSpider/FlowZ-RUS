@@ -24,6 +24,8 @@ import {
   isXrayVlessEncryption,
   readXrayTcpFragment,
   requiresXray,
+  normalizeXrayCertificatePins,
+  normalizeXrayCertificateNames,
 } from '../../shared/xray-node';
 import type { LogManager } from './LogManager';
 
@@ -309,7 +311,7 @@ export class ProtocolParser implements IProtocolParser {
     if (security) {
       config.security = security;
       if (security === 'tls' || security === 'reality') {
-        config.tlsSettings = this.parseTlsSettings(params);
+        config.tlsSettings = this.parseTlsSettings(params, true);
       }
       if (security === 'reality') {
         config.realitySettings = this.parseRealitySettings(params);
@@ -317,6 +319,17 @@ export class ProtocolParser implements IProtocolParser {
           // 缺 pbk 的 reality 节点无法握手（builder 不生成 reality tls 块 → 退化裸 TCP 假节点），整节点拒绝。
           throw new Error('Reality node missing pbk (public key) parameter');
         }
+      }
+    }
+
+    if (params.has('pcs') || params.has('vcn')) {
+      if (security !== 'tls') throw new Error('Xray certificate verification requires VLESS TLS');
+      config.tlsSettings ??= {};
+      if (params.has('pcs')) {
+        config.tlsSettings.pinnedPeerCertSha256 = normalizeXrayCertificatePins(params.get('pcs'));
+      }
+      if (params.has('vcn')) {
+        config.tlsSettings.verifyPeerCertByName = normalizeXrayCertificateNames(params.get('vcn'));
       }
     }
 
@@ -1090,7 +1103,10 @@ export class ProtocolParser implements IProtocolParser {
     return settings;
   }
 
-  private parseTlsSettings(params: URLSearchParams): TlsSettings {
+  private parseTlsSettings(params: URLSearchParams, xrayVless = false): TlsSettings {
+    if (!xrayVless && (params.has('pcs') || params.has('vcn'))) {
+      throw new Error('Xray certificate verification is only supported for VLESS TLS');
+    }
     const settings: TlsSettings = {};
 
     const sni = params.get('sni') || params.get('host') || params.get('peer');
@@ -1141,6 +1157,13 @@ export class ProtocolParser implements IProtocolParser {
   }
 
   generateUrl(config: ServerConfig): string {
+    if (
+      (config.tlsSettings?.pinnedPeerCertSha256 !== undefined ||
+        config.tlsSettings?.verifyPeerCertByName !== undefined) &&
+      (config.protocol !== 'vless' || config.security !== 'tls')
+    ) {
+      throw new Error('Xray certificate verification is only supported for VLESS TLS');
+    }
     const protocol = config.protocol?.toLowerCase();
 
     if (protocol === 'vless') {
@@ -1521,6 +1544,12 @@ export class ProtocolParser implements IProtocolParser {
       }
       if (config.tlsSettings.fingerprint) {
         params.set('fp', config.tlsSettings.fingerprint);
+      }
+      if (config.tlsSettings.pinnedPeerCertSha256 !== undefined) {
+        params.set('pcs', normalizeXrayCertificatePins(config.tlsSettings.pinnedPeerCertSha256)!);
+      }
+      if (config.tlsSettings.verifyPeerCertByName !== undefined) {
+        params.set('vcn', normalizeXrayCertificateNames(config.tlsSettings.verifyPeerCertByName)!);
       }
     }
 

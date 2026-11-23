@@ -9,6 +9,7 @@ import type {
 import { ProtocolParser } from './ProtocolParser';
 import { LogManager } from './LogManager';
 import { safeRedirectFetch } from '../safe-redirect-fetch';
+import { fetchDirectSubscription } from './subscription-direct-fetch';
 import { deviceHeaders, getDeviceInfo } from './device-identity';
 import {
   CLASH_PROBE_RE,
@@ -191,10 +192,14 @@ export class SubscriptionService {
 
   /** 懒加载强制直连会话（默认会话在代理运行时会走代理，直连拉取须绕开它）。 */
   private async getDirectSession(): Promise<Session> {
-    if (this.directSession) return this.directSession;
-    const s = session.fromPartition('flowz-subscription-direct');
-    await s.setProxy({ mode: 'direct' });
-    this.directSession = s;
+    const s = this.directSession ?? session.fromPartition('flowz-subscription-direct');
+    if (!this.directSession) {
+      await s.setProxy({ mode: 'direct' });
+      this.directSession = s;
+    }
+    // Chromium keeps its own resolver cache across TUN/VPN changes. An old FakeIP
+    // remains unreachable after FlowZ stops even when the OS DNS cache was flushed.
+    await s.clearHostResolverCache?.();
     return s;
   }
 
@@ -819,7 +824,21 @@ export class SubscriptionService {
     if (conditional?.lastModified) condHeaders['If-Modified-Since'] = conditional.lastModified;
     const reqHeaders = { ...condHeaders, ...extraHeaders };
     const response = await safeRedirectFetch<GlobalResponse>({
-      fetchImpl: (u, init) => fetchImpl(u, init),
+      fetchImpl: (u, init) =>
+        viaProxiedSession
+          ? fetchImpl(u, init)
+          : fetchDirectSubscription(
+              (target, options) => fetchImpl(target, options),
+              u,
+              init,
+              SubscriptionService.MAX_BODY_BYTES,
+              () =>
+                this.logManager.addLog(
+                  'info',
+                  'Direct subscription request failed; retrying this hop over HTTP/2',
+                  'Subscription'
+                )
+            ),
       url,
       userAgent,
       exemptFakeIp: viaProxiedSession,

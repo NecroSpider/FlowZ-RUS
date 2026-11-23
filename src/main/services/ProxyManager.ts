@@ -88,7 +88,7 @@ import {
   buildOutbounds,
   type PendingRuleSelector,
 } from './singbox-outbound-builder';
-import { NodeDnsRaceServer } from './node-dns-race-server';
+import { closeH2DohSessions, NodeDnsRaceServer } from './node-dns-race-server';
 import { resolveUpstreams, DEFAULT_POOL_IDS } from '../../shared/node-resolver-upstreams';
 import {
   isEndpointProtocol,
@@ -1787,6 +1787,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    */
   private async captureDefaultRoute(): Promise<void> {
     if (process.platform !== 'darwin') return;
+    this.savedDefaultGateway = null;
     const execFileAsync = require('util').promisify(require('child_process').execFile);
     try {
       const { stdout } = await execFileAsync('route', ['-n', 'get', 'default'], { timeout: 4000 });
@@ -1814,7 +1815,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     const execFileAsync = require('util').promisify(require('child_process').execFile);
     try {
       const { stdout } = await execFileAsync('route', ['-n', 'get', 'default'], { timeout: 4000 });
-      if (parseDefaultGateway(String(stdout))) return; // default 仍在 → 无需补回（不记日志）
+      // Point-to-point VPN defaults have an interface but no IPv4 gateway.
+      // They are valid routes; replacing them with a saved physical gateway breaks the other VPN.
+      if (parseMacRouteInterface(String(stdout))) return;
     } catch {
       /* route get 抛错多为 default 已不存在（返非零）→ 落补回腿（若实为读失败而 default 在，下方 route add 无害失败被忽略） */
     }
@@ -4414,6 +4417,7 @@ done
         getYandexDnsPlan().primaryIp ?? undefined
       ),
       inbounds: buildInbounds(config, resolvedIps, {
+        raceUpstreamIps: this.raceServerPort > 0 ? this.raceUpstreamIps : [],
         probeDirectPort: this.probeDirectPort,
         probeProxyPort: this.probeProxyPort,
         updateInPort: this.updateInPort,
@@ -8085,7 +8089,10 @@ rm -f "$STOPFLAG"
         },
         readFingerprint: () => this.readNetworkFingerprint(),
         getLastFingerprint: () => this.lastNetworkFingerprint,
-        flush: (fingerprint) => this.flushOsDnsCacheBestEffort('link-change', fingerprint),
+        flush: (fingerprint) => {
+          closeH2DohSessions();
+          return this.flushOsDnsCacheBestEffort('link-change', fingerprint);
+        },
         onWarn: (message) => this.logToManager('warn', message),
       });
       this.linkChangeHandler = handler;

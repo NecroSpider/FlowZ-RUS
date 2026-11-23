@@ -859,6 +859,7 @@
     "sni": "SNI",
     "sniPlaceholder": "e.g., example.com",
     "sniDesc": "TLS Server Name Indication, leave empty to use server address",
+    "allNodes": "All",
     "manualNodes": "Custom Nodes",
     "meshNodes": "Mesh",
     "addSubscription": "Add Subscription",

@@ -859,6 +859,7 @@
     "sni": "SNI",
     "sniPlaceholder": "مثلاً example.com",
     "sniDesc": "TLS Server Name Indication، برای استفاده از آدرس سرور خالی بگذارید",
+    "allNodes": "همه",
     "manualNodes": "نودهای سفارشی",
     "meshNodes": "Mesh",
     "addSubscription": "افزودن اشتراک",

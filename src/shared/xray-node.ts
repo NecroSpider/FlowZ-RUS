@@ -61,10 +61,54 @@ export function isXhttpNetwork(value: string | undefined): boolean {
   return value === 'xhttp' || value === 'splithttp';
 }
 
+export function normalizeXrayCertificatePins(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new Error('Invalid Xray certificate pin (pcs)');
+  const pins = value.split(',').map((pin) => pin.trim().replace(/:/g, '').toLowerCase());
+  if (pins.length > 32 || pins.some((pin) => !/^[0-9a-f]{64}$/.test(pin))) {
+    throw new Error('Invalid Xray certificate pin (pcs)');
+  }
+  return [...new Set(pins)].join(',');
+}
+
+export function normalizeXrayCertificateNames(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.length > 4096) {
+    throw new Error('Invalid Xray certificate verification names (vcn)');
+  }
+  const names = value.split(',').map((name) => name.trim());
+  if (names.some((name) => !/^[\x21-\x7e]+$/.test(name))) {
+    throw new Error('Invalid Xray certificate verification names (vcn)');
+  }
+  return [...new Set(names)].join(',');
+}
+
+function hasXrayTlsVerification(server: ServerConfig): boolean {
+  return (
+    server.tlsSettings?.pinnedPeerCertSha256 !== undefined ||
+    server.tlsSettings?.verifyPeerCertByName !== undefined
+  );
+}
+
+function supportsXrayTlsVerification(server: ServerConfig): boolean {
+  if (!hasXrayTlsVerification(server)) return true;
+  if (server.security !== 'tls') return false;
+  try {
+    normalizeXrayCertificatePins(server.tlsSettings?.pinnedPeerCertSha256);
+    normalizeXrayCertificateNames(server.tlsSettings?.verifyPeerCertByName);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function requiresXray(server: ServerConfig): boolean {
   return (
     server.protocol === 'vless' &&
     (isXrayVlessEncryption(server.encryption) ||
+      hasXrayTlsVerification(server) ||
+      // sing-box rejects this Xray-specific flow before any nodes can be tested.
+      server.flow === 'xtls-rprx-vision-udp443' ||
       server.network === 'xhttp' ||
       Boolean(server.xrayTcpFragment) ||
       Boolean(server.realitySettings?.mldsa65Verify))
@@ -77,6 +121,7 @@ export function canUseXray(server: ServerConfig): boolean {
   return (
     server.protocol === 'vless' &&
     Boolean(server.uuid) &&
+    supportsXrayTlsVerification(server) &&
     (!server.xrayTcpFragment || Boolean(normalizeXrayTcpFragment(server.xrayTcpFragment))) &&
     ['tcp', 'grpc', 'xhttp', 'ws', 'httpupgrade'].includes(network) &&
     (!server.security || ['none', 'tls', 'reality'].includes(server.security)) &&

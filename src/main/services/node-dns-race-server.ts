@@ -79,7 +79,9 @@ function getH2Session(origin: string): http2.ClientHttp2Session {
 export function closeH2DohSessions(): void {
   for (const s of h2Sessions.values()) {
     try {
-      s.close();
+      // A route change can leave an established HTTP/2 connection silently blackholed.
+      // Destroy it immediately so the next query dials on the current network.
+      s.destroy();
     } catch {
       /* ignore */
     }

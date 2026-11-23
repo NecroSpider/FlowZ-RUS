@@ -164,6 +164,10 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
               allowInsecure: security === 'tls' ? values.tlsAllowInsecure : false,
               fingerprint: values.tlsFingerprint || 'chrome',
               alpn: serverConfig?.tlsSettings?.alpn,
+              ...(security === 'tls' && {
+                pinnedPeerCertSha256: serverConfig?.tlsSettings?.pinnedPeerCertSha256,
+                verifyPeerCertByName: serverConfig?.tlsSettings?.verifyPeerCertByName,
+              }),
               engine:
                 security === 'tls' && values.tlsEngine && values.tlsEngine !== 'go'
                   ? values.tlsEngine

@@ -43,6 +43,8 @@ export interface InboundsDeps {
   updateInPort: number | null;
   /** 动态探测到的系统/活动网卡实际分配的生效 DNS 解析器列表（由 SystemDnsManager.getEffectiveResolvers 提供）。 */
   effectiveResolvers?: string[];
+  /** DNS bootstrap connections must reach their upstream without re-entering the TUN. */
+  raceUpstreamIps?: string[];
   /** 本次起核实际使用的 Windows TUN 接口名（含轮换后缀，由 ProxyManager 起核入口定）。缺省 = resolveWinTunInterfaceName(config)。 */
   winTunName?: string;
   /** §15 主核测速探测池：K 个 probe-in-k http 入站的端口（allocateProbePorts 3+K 产出）。空/缺省=不注入池。 */
@@ -251,6 +253,22 @@ export function buildInbounds(
       excludeAddr = [];
     } else {
       excludeAddr = ['127.0.0.0/8', '::1/128'];
+    }
+
+    // macOS must keep the main process's bootstrap DoH sockets outside its own TUN too.
+    // The controlled system DNS address stays captured on macOS for DNS hijacking.
+    if (process.platform === 'darwin') {
+      const customDns = getCustomDomesticDnsEndpoint(config);
+      excludeAddr.push(
+        ...[...BOOTSTRAP_DIRECT_DNS_IPS, ...(deps.raceUpstreamIps ?? [])]
+          .map(hostToExcludeCidr)
+          .filter((cidr): cidr is string => cidr !== null)
+      );
+      if (customDns) {
+        const cidr = hostToExcludeCidr(customDns.ip);
+        if (cidr) excludeAddr.push(cidr);
+      }
+      excludeAddr = dedupe(excludeAddr);
     }
 
     // Windows 下额外排除核心 DNS IP，防止 WFP 进程匹配失效时产生回流死循环。

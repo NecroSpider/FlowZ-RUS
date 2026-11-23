@@ -15,6 +15,8 @@ import {
   isXhttpNetwork,
   readXrayTcpFragment,
   requiresXray,
+  normalizeXrayCertificatePins,
+  normalizeXrayCertificateNames,
 } from '../../shared/xray-node';
 
 /** 本模块可映射的 xray outbound.protocol。 */
@@ -107,11 +109,23 @@ function applyStreamSettings(server: ServerConfig, ss: Record<string, unknown> |
     server.security = 'tls' as Security;
     const tls = (ss.tlsSettings as Record<string, unknown>) || {};
     const alpn = tls.alpn;
+    if (
+      server.protocol !== 'vless' &&
+      (tls.pinnedPeerCertSha256 !== undefined || tls.verifyPeerCertByName !== undefined)
+    ) {
+      throw new Error('Xray certificate verification is only supported for VLESS TLS');
+    }
     server.tlsSettings = {
       serverName: str(tls.serverName),
       allowInsecure: tls.allowInsecure === true,
       alpn: Array.isArray(alpn) ? (alpn as string[]) : undefined,
       fingerprint: str(tls.fingerprint) || 'chrome',
+      ...(tls.pinnedPeerCertSha256 !== undefined && {
+        pinnedPeerCertSha256: normalizeXrayCertificatePins(tls.pinnedPeerCertSha256),
+      }),
+      ...(tls.verifyPeerCertByName !== undefined && {
+        verifyPeerCertByName: normalizeXrayCertificateNames(tls.verifyPeerCertByName),
+      }),
     };
   } else if (security === 'reality') {
     server.security = 'reality' as Security;
